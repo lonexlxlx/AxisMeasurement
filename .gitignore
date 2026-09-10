@@ -7,9 +7,9 @@
 *.sdf
 
 # Build outputs
-x64/
-Debug/
-Release/
+/x64/
+/Debug/
+/Release/
 bin/
 obj/
 *.obj
@@ -47,3 +47,6 @@ _github_upload/
 graphical_roi_trial_backup_*/
 graphical_upgrade_backup_*/
 program_integration_backup_*/
+
+# Visual Studio conversion logs
+UpgradeLog*.htm
