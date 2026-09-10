@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AxisMeasurement 界面优化预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; background: #E9EDF2; padding: 24px; color: #1F2937; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { color: #6B7280; font-size: 13px; margin-bottom: 20px; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; }
+  .panel { flex: 1; min-width: 420px; }
+  .panel-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+  .old-title { color: #92400E; }
+  .new-title { color: #2563EB; }
+  .card { padding: 16px; border-radius: 8px; height: 560px; overflow: hidden; }
+
+  /* ============ 左：现状（模拟 Qt 默认灰） ============ */
+  .qt-default { background: #F0F0F0; border: 1px solid #ADADAD; }
+  .qt-default .group { border: 1px solid #808080; border-radius: 4px; margin-bottom: 12px; padding: 10px; background: #F0F0F0; }
+  .qt-default .group .gt { color: #000; font-weight: bold; font-size: 13px; margin: -18px 0 8px 6px; background: #F0F0F0; display: inline-block; padding: 0 4px; }
+  .qt-btn { display: inline-block; border: 1px solid #767676; background: linear-gradient(#E1E1E1,#EDEDED); padding: 5px 16px; font-size: 12px; color: #000; border-radius: 2px; margin: 2px; }
+  .qt-btn.yellow { background: rgb(255,255,127); }
+  .qt-btn.cyan { background: rgb(85,255,255); }
+  .qt-btn.green { background: rgb(170,255,0); }
+  .qt-btn.red { background: rgb(255,0,0); color: #fff; }
+  .qt-input { border: 1px solid #767676; background: #fff; padding: 4px 8px; font-size: 12px; width: 180px; border-radius: 2px; }
+  .qt-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid #767676; }
+  .qt-table th { background: #E4E4E4; border: 1px solid #767676; padding: 5px; font-weight: bold; text-align: left; }
+  .qt-table td { border: 1px solid #C0C0C0; padding: 5px; }
+  .qt-bar { background: #E4E4E4; border: 1px solid #767676; height: 16px; border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .qt-bar .fill { width: 62%; height: 100%; background: #9C9C9C; }
+  .old-note { margin-top: 10px; font-size: 12px; color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 4px; padding: 8px; line-height: 1.7; }
+
+  /* ============ 右：优化后 ============ */
+  .themed { background: #F3F4F6; border: 1px solid #E5E7EB; }
+  .themed .group { background: #fff; border: 1px solid #E5E7EB; border-radius: 6px; margin-bottom: 12px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .themed .group .gt { color: #2563EB; font-weight: bold; font-size: 13px; margin: -21px 0 10px 8px; background: #F3F4F6; display: inline-block; padding: 0 6px; }
+  .th-btn { display: inline-block; border: 1px solid #D1D5DB; background: #fff; padding: 5px 16px; font-size: 12px; color: #1F2937; border-radius: 4px; margin: 2px; }
+  .th-btn:hover { border-color: #2563EB; color: #2563EB; background: #EFF6FF; }
+  .th-btn.primary { background: #2563EB; border-color: #2563EB; color: #fff; }
+  .th-btn.danger { background: #DC2626; border-color: #DC2626; color: #fff; }
+  .th-btn.success { border-color: #16A34A; color: #16A34A; }
+  .th-btn.warn { border-color: #D97706; color: #B45309; }
+  .th-input { border: 1px solid #D1D5DB; background: #fff; padding: 4px 8px; font-size: 12px; width: 180px; border-radius: 4px; }
+  .th-input:focus { outline: none; border-color: #2563EB; box-shadow: 0 0 0 2px #DBEAFE; }
+  .th-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid #E5E7EB; border-radius: 4px; overflow: hidden; }
+  .th-table th { background: #F3F4F6; color: #374151; padding: 6px; text-align: left; border-bottom: 1px solid #E5E7EB; font-size: 12px; }
+  .th-table td { padding: 6px; border-bottom: 1px solid #F3F4F6; color: #1F2937; }
+  .th-table tr:nth-child(even) td { background: #F9FAFB; }
+  .th-table tr.sel td { background: #DBEAFE; }
+  .ok { color: #16A34A; font-weight: bold; }
+  .ng { color: #DC2626; font-weight: bold; }
+  .th-bar { background: #E5E7EB; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+  .th-bar .fill { width: 62%; height: 100%; background: #2563EB; border-radius: 6px; }
+  .new-note { margin-top: 10px; font-size: 12px; color: #1E40AF; background: #DBEAFE; border: 1px solid #BFDBFE; border-radius: 4px; padding: 8px; line-height: 1.7; }
+  .combo { display: inline-flex; align-items: center; gap: 6px; }
+  .combo::after { content: ""; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #6B7280; }
+</style>
+</head>
+<body>
+  <h1>AxisMeasurement 界面优化预览</h1>
+  <div class="sub">左：当前 Qt 默认灰 + 荧光色状态样式 ｜ 右：应用 config/theme.qss 全局主题后的效果（卡片化分组 / 统一微软雅黑 / 语义色按钮 / 斑马纹表格 / 细滚动条）</div>
+
+  <div class="row">
+    <!-- 现状 -->
+    <div class="panel">
+      <div class="panel-title old-title">▍现状（默认样式）</div>
+      <div class="card qt-default">
+        <div class="group">
+          <span class="gt">自动测量</span>
+          <span class="qt-btn">自动测量</span><span class="qt-btn">停止</span><span class="qt-btn">急停</span>
+          <div style="margin-top:8px;font-size:12px;">测量程序状态：<span class="qt-btn green">运行中</span>　自动测量进度：</div>
+          <div class="qt-bar"><div class="fill"></div></div>
+        </div>
+        <div class="group">
+          <span class="gt">轴控制</span>
+          <span class="qt-btn">回零</span><span class="qt-btn">上移</span><span class="qt-btn">下移</span><span class="qt-btn yellow">转台慢转</span><span class="qt-btn cyan">转台快转</span>
+          <div style="margin-top:8px" class="combo"><input class="qt-input" value="31_J644124B-260"></div>
+        </div>
+        <div class="group">
+          <span class="gt">测量结果</span>
+          <table class="qt-table">
+            <tr><th>特征号</th><th>测量值</th><th>判定</th></tr>
+            <tr><td>D1</td><td>26.0123</td><td><span class="qt-btn green">OK</span></td></tr>
+            <tr><td>D2</td><td>26.0871</td><td><span class="qt-btn red">NG</span></td></tr>
+          </table>
+        </div>
+        <div class="old-note">
+          问题：①字体混用（Agency FB + 宋体）②荧光黄/青/黄绿刺眼 ③分组框全是灰色描边 ④按钮无悬停反馈 ⑤表格无斑马纹、表头样式原始
+        </div>
+      </div>
+    </div>
+
+    <!-- 优化后 -->
+    <div class="panel">
+      <div class="panel-title new-title">▍优化后（theme.qss 全局主题）</div>
+      <div class="card themed">
+        <div class="group">
+          <span class="gt">自动测量</span>
+          <span class="th-btn primary">自动测量</span><span class="th-btn warn">停止</span><span class="th-btn danger">急停</span>
+          <div style="margin-top:8px;font-size:12px;color:#374151;">测量程序状态：<span class="ok">● 运行中</span>　自动测量进度：</div>
+          <div class="th-bar"><div class="fill"></div></div>
+        </div>
+        <div class="group">
+          <span class="gt">轴控制</span>
+          <span class="th-btn">回零</span><span class="th-btn">上移</span><span class="th-btn">下移</span><span class="th-btn">转台慢转</span><span class="th-btn">转台快转</span>
+          <div style="margin-top:8px" class="combo"><input class="th-input" value="31_J644124B-260"></div>
+        </div>
+        <div class="group">
+          <span class="gt">测量结果</span>
+          <table class="th-table">
+            <tr><th>特征号</th><th>测量值</th><th>判定</th></tr>
+            <tr class="sel"><td>D1</td><td>26.0123</td><td class="ok">OK</td></tr>
+            <tr><td>D2</td><td>26.0871</td><td class="ng">NG</td></tr>
+          </table>
+        </div>
+        <div class="new-note">
+          改善：①全部控件统一微软雅黑 ②状态用语义色（红=NG/急停，黄=警告，绿=OK）③分组框卡片化+蓝色标题 ④按钮悬停/按下/禁用三态 ⑤表格斑马纹+浅蓝选中
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

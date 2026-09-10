@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="18.11.0.1">
+<procedure name="main">
+<interface/>
+<body>
+<l>*read_image (Image, 'E:/331after/suanfa/features/孔测1.bmp')</l>
+<l>*read_image (Image, 'E:/331after/suanfa/features/0518花键/孔4.bmp')</l>
+<l>read_image (Image, 'E:/331after/suanfa/features/0619/20230619_143809/cam1_1_1.png')</l>
+<c>*7.光照不均匀处理</c>
+<c>*这里如果是灰度图像可以通过图像增强和直方图均衡化进行处理</c>
+<c>*彩色图像的处理可以通过颜色三通道进行处理，这里主要是彩色处理</c>
+<c>*把分离出的三张照片分别通过滤波和均衡化进行处理，然后子合成彩色图片</c>
+<l>mean_image (Image, ImageMean1, 9, 9)</l>
+<c>*图像增强</c>
+<l>emphasize (ImageMean1, ImageEmphasize1, 3, 3, 0.7)</l>
+<c>*照射增强对比。图像中非常暗的部分被强烈“照亮”，非常亮的部分被“暗化”</c>
+<l>illuminate (ImageEmphasize1, ImageIlluminate, 10, 160, 0.75)</l>
+<l>equ_histo_image (ImageIlluminate, ImageEquHisto)</l>
+<l>dev_display (ImageEquHisto)</l>
+<c></c>
+<l>create_metrology_model (MetrologyHandle)</l>
+<l>Line1 := [300,1083,300,1240]</l>
+<l>Line2 := [1547,1100,1547,1300]</l>
+<l>add_metrology_object_generic (MetrologyHandle, 'line',[Line1,Line2], 70, 16, 10, 10, [], [], LineIndices)</l>
+<l>get_metrology_object_measures (LineContours, MetrologyHandle, 'all', 'all', RowLine, ColumnLine)</l>
+<l>apply_metrology_model (ImageEquHisto, MetrologyHandle)</l>
+<l>dev_set_color ('yellow')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContours)</l>
+<l>get_metrology_object_result_contour (LineContour, MetrologyHandle, 'all', 'all', 1.5)</l>
+<l>get_metrology_object_result (MetrologyHandle, 'all', 'all', 'used_edges', 'row', UsedRow)</l>
+<l>get_metrology_object_result (MetrologyHandle, 'all', 'all', 'used_edges', 'column', UsedColumn)</l>
+<l>*get_metrology_object_model_contour (ModelContour, MetrologyHandle, 'all', 1.5)</l>
+<l>fit_line_contour_xld (LineContour, 'tukey', -1, 0, 5, 2, RowBegin, ColBegin, RowEnd, ColEnd, Nr, Nc, Dist)</l>
+<l>dev_set_color ('blue')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContour)</l>
+<c></c>
+<c></c>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

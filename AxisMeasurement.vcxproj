@@ -1,0 +1,352 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\axisGoHome_thread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\AxisMeasurement.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\cam_device.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\camThread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\logIn.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\ls_device.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\lsThread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\moveControl.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\moveThread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_0.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_1.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_2.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_3.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_4.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_5.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_6.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_7.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_8.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_9.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_10.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\program_11.h" />
+    <QtMoc Include="myCode\head\program_12.h" />
+    <QtMoc Include="myCode\head\program_13.h" />
+    <QtMoc Include="myCode\head\program_14.h" />
+    <QtMoc Include="myCode\head\program_15.h" />
+    <QtMoc Include="myCode\head\program_16.h" />
+    <QtMoc Include="myCode\head\program_17.h" />
+    <QtMoc Include="myCode\head\program_18.h" />
+    <QtMoc Include="myCode\head\program_19.h" />
+    <QtMoc Include="myCode\head\program_20.h" />
+    <QtMoc Include="myCode\head\program_21.h" />
+    <QtMoc Include="myCode\head\program_22.h" />
+    <QtMoc Include="myCode\head\program_23.h" />
+    <QtMoc Include="myCode\head\program_24.h" />
+    <QtMoc Include="myCode\head\program_25.h" />
+    <QtMoc Include="myCode\head\program_26.h" />
+    <QtMoc Include="myCode\head\program_27.h" />
+    <QtMoc Include="myCode\head\program_28.h" />
+    <QtMoc Include="myCode\head\program_29.h" />
+    <QtMoc Include="myCode\head\program_30.h" />
+    <QtMoc Include="myCode\head\program_31.h" />
+    <QtMoc Include="myCode\head\program_32.h" />
+    <QtMoc Include="myCode\head\program_33.h" />
+    <QtMoc Include="myCode\head\program_34.h" />
+    <QtMoc Include="myCode\head\program_35.h" />
+    <QtMoc Include="myCode\head\program_36.h" />
+    <QtMoc Include="myCode\head\program_37.h" />
+    <QtMoc Include="myCode\head\program_38.h" />
+    <QtMoc Include="myCode\head\program_39.h" />
+    <QtMoc Include="myCode\head\program_40.h" />
+    <QtMoc Include="myCode\head\program_41.h" />
+    <QtMoc Include="myCode\head\program_42.h" />
+    <QtMoc Include="myCode\head\program_43.h" />
+    <QtMoc Include="myCode\head\program_44.h" />
+    <QtMoc Include="myCode\head\program_45.h" />
+    <QtMoc Include="myCode\head\program_46.h" />
+    <QtMoc Include="myCode\head\program_47.h" />
+    <QtMoc Include="myCode\head\program_48.h" />
+    <QtMoc Include="myCode\head\program_49.h" />
+    <QtMoc Include="myCode\head\program_50.h" />
+    <ClInclude Include="myCode\head\resource.h" />
+    <ClInclude Include="myCode\head\roughnessFun.h" />
+    <QtMoc Include="myCode\head\sdk_assist.h" />
+    <QtMoc Include="myCode\head\graphical_canvas.h" />
+    <ClInclude Include="myCode\head\graphical_program_editor.h" />
+    <ClInclude Include="myCode\head\sharedFun.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\checkStoppingCriteria.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\computeFiniteDifferences.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\driver.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\factoryConstruct.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_data.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_initialize.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_terminate.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\hasFiniteBounds.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\jacobianFiniteDifference.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\linearLeastSquares.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\lsqcurvefit.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\norm.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rtGetInf.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rtGetNaN.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rt_nonfinite.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xgemv.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xnrm2.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xzlarf.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xzlarfg.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine_initialize.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine_terminate.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\mean.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rtGetInf.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rtGetNaN.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rt_nonfinite.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xaxpy.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xdotc.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xnrm2.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+      <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)funFitLine_xnrm2.obj</ObjectFileName>
+      <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)funFitLine_xnrm2.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xrot.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xrotg.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xswap.cpp" />
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xzsvdc.cpp" />
+    <ClCompile Include="myCode\sourceCode\axisGoHome_thread.cpp" />
+    <ClCompile Include="myCode\sourceCode\AxisMeasurement.cpp" />
+    <ClCompile Include="myCode\sourceCode\camThread.cpp" />
+    <ClCompile Include="myCode\sourceCode\cam_device.cpp" />
+    <ClCompile Include="myCode\sourceCode\logIn.cpp" />
+    <ClCompile Include="myCode\sourceCode\lsThread.cpp" />
+    <ClCompile Include="myCode\sourceCode\ls_device.cpp" />
+    <ClCompile Include="myCode\sourceCode\main.cpp" />
+    <ClCompile Include="myCode\sourceCode\moveControl.cpp" />
+    <ClCompile Include="myCode\sourceCode\moveThread.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_0.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_1.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_10.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_11.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_12.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_13.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_14.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_15.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_16.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_17.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_18.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_19.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_2.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_20.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_21.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_22.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_23.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_24.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_25.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_26.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_27.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_28.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_29.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_3.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_30.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_31.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_32.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_33.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_34.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_35.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_36.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_37.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_38.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_39.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_4.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_40.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_41.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_42.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_43.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_44.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_45.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_46.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_47.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_48.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_49.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_5.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_50.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_6.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_7.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_8.cpp" />
+    <ClCompile Include="myCode\sourceCode\program_9.cpp" />
+    <ClCompile Include="myCode\sourceCode\roughnessFun.cpp" />
+    <ClCompile Include="myCode\sourceCode\sdk_assist.cpp" />
+    <ClCompile Include="myCode\sourceCode\graphical_canvas.cpp" />
+    <ClCompile Include="myCode\sourceCode\graphical_program_editor.cpp" />
+    <ClCompile Include="myCode\sourceCode\sharedFun.cpp" />
+    <ClCompile Include="源.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="AxisMeasurement.qrc" />
+    <QtRcc Include="logIn.qrc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="AxisMeasurement.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="AxisMeasurement.ui" />
+    <QtUic Include="logIn.ui" />
+    <QtUic Include="sdk_assist.ui" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{53FE936D-BE2A-4EAC-B877-06EA0737729B}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0.19041.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0.19041.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>5.14.2_msvc2017_64</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>5.14.2_msvc2017_64</QtInstall>
+    <QtModules>core;sql;gui;axserver;axcontainer;widgets</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <IncludePath>.\inc\guGaoCard;.\inc\ls9000;.\inc\daHengCam;.\inc\opencv2\include;.\inc\opencv2\include\opencv2;.\inc\halcon18.11\include;.\inc\halcon18.11\include\halconcpp;.\myCode\matlabForC++\funFitLine\headCode;.\myCode\matlabForC++\funFitCos\headCode;.\myCode\head;$(IncludePath)</IncludePath>
+    <LibraryPath>.\lib\x64\opencv4.7;.\lib\x64\ls9000;.\lib\x64\halcon18.11;.\lib\x64\guGaoCard;.\lib\x64\daHengCam;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Link>
+      <AdditionalDependencies>GxIAPICPPEx.lib;LS9_IF.lib;gts.lib;opencv_world470.lib;halconcpp.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <ClCompile>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <PreprocessorDefinitions>HCPP_LEGACY_API;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

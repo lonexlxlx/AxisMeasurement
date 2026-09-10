@@ -1,0 +1,49 @@
+# Local IDE/cache files
+.vs/
+.idea/
+*.user
+*.suo
+*.opensdf
+*.sdf
+
+# Build outputs
+x64/
+Debug/
+Release/
+bin/
+obj/
+*.obj
+*.pdb
+*.ilk
+*.tlog
+*.lastbuildstate
+*.ipch
+*.log
+
+# Runtime measurement data and generated reports
+measureData/
+
+# Temporary/generated working folders
+.codex-tmp-generated/
+.codex-tmp-spreadsheet/
+.workbuddy/
+_github_upload/
+
+# Large local model/data assets.
+# Keep these outside Git, or publish with Git LFS / Release assets if needed.
+*.h5
+*.bmp
+*.zip
+
+# Office temporary files
+~$*
+
+# Codex/project-local metadata
+.agents/
+
+# Historical backup snapshots kept outside the GitHub source tree
+0418/
+备用/
+graphical_roi_trial_backup_*/
+graphical_upgrade_backup_*/
+program_integration_backup_*/

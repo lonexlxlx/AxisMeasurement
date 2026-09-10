@@ -1,0 +1,14 @@
+"特征编号" << "特征名称" << "测量结果" << "测量值" << "公称值" << "下限值" << "上限值"
+
+double lsDiameterResult[24][7] = { //0号是一次测量值，1号为2次测量值，2号是两次均值，3号是工序卡序号,4为标准值，5为上限，6为下限
+
+pushback_vectors(double fResult, int fType, double fIndex, double fNominalsize, double fLowerTolerance, double fUpperTolerance);//将一条完整的测量数据储存并
+
+fResult;//特征测得值
+// fType;//特征类型 1：直径 2：倒角尺寸 3：倒角角度 4：轴向尺寸 5：跳动 6：圆柱度 7：花键尺寸 8：孔径 9：粗糙度 10：圆度
+// fIndex;//特征序号
+// fNominalsize;//特征公称值
+// fUpperTolerance;//特征上公差
+// fLowerTolerance;//特征下公差
+// fQualify;//特征是否合格0合格1不合格
+

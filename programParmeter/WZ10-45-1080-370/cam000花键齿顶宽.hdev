@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="18.11.0.1">
+<procedure name="main">
+<interface/>
+<body>
+<c>*读取模板和图像进行模板匹配*</c>
+<l>read_image(Image, 'C:/Users/11267/Desktop/halcon331/features/92/oldlongzhou92/20230914_171542/cam1_2_1.bmp')</l>
+<l>get_image_size (Image, Width, Height)</l>
+<c></c>
+<c>*创建测量模型</c>
+<l>create_metrology_model (MetrologyHandle)</l>
+<c>*添加直线测量工具 这里的卡尺参数要根据模板的长度进行修改</c>
+<c>*第一行</c>
+<l>Line1 := [200,400,400,400]</l>
+<l>Line2 := [200,600,400,600]</l>
+<l>Line3 := [200,1145,400,1145]</l>
+<l>Line4 := [200,1345,400,1345]</l>
+<l>Line5 := [200,1890,400,1890]</l>
+<l>Line6 := [200,2090,400,2090]</l>
+<c>*第二行</c>
+<l>Line7 := [600,400,800,400]</l>
+<l>Line8 := [600,600,800,600]</l>
+<l>Line9 := [600,1145,800,1145]</l>
+<l>Line10 := [600,1345,800,1345]</l>
+<l>Line11 := [600,1890,800,1890]</l>
+<l>Line12 := [600,2090,800,2090]</l>
+<c>*第三行</c>
+<l>Line13 := [800,400,950,400]</l>
+<l>Line14 := [800,600,950,600]</l>
+<l>Line15 := [1100,1145,1250,1145]</l>
+<l>Line16 := [1100,1345,1250,1345]</l>
+<l>Line17 := [1100,1890,1250,1890]</l>
+<l>Line18 := [1100,2090,1250,2090]</l>
+<c>*第四行</c>
+<l>Line19 := [1400,400,1600,400]</l>
+<l>Line20 := [1400,600,1600,600]</l>
+<l>Line21 := [1400,1145,1600,1145]</l>
+<l>Line22 := [1400,1345,1600,1345]</l>
+<l>Line23 := [1400,1890,1600,1890]</l>
+<l>Line24 := [1400,2090,1600,2090]</l>
+<c>*第五行</c>
+<l>Line25 := [1800,400,2000,400]</l>
+<l>Line26 := [1800,600,2000,600]</l>
+<l>Line27 := [1800,1145,2000,1145]</l>
+<l>Line28 := [1800,1345,2000,1345]</l>
+<l>Line29 := [1800,1890,2000,1890]</l>
+<l>Line30 := [1800,2090,2000,2090]</l>
+<c></c>
+<c></c>
+<l>*add_metrology_object_generic (MetrologyHandle, 'line',[Line1,Line2,Line3,Line4,Line5,Line6], 80, 10, 1, 10, [], [], LineIndices)</l>
+<l>*add_metrology_object_generic (MetrologyHandle, 'line',[Line7,Line8,Line9,Line10,Line11,Line12], 80, 10, 1, 10, [], [], LineIndices)</l>
+<l>add_metrology_object_generic (MetrologyHandle, 'line',[Line13,Line14,Line15,Line16,Line17,Line18], 70, 10, 2, 8, [], [], LineIndices)</l>
+<l>*add_metrology_object_generic (MetrologyHandle, 'line',[Line19,Line20,Line21,Line22,Line23,Line24], 80, 10, 1, 10, [], [], LineIndices)</l>
+<l>*add_metrology_object_generic (MetrologyHandle, 'line',[Line25,Line26,Line27,Line28,Line29,Line30], 80, 10, 1, 10, [], [], LineIndices)</l>
+<c></c>
+<l>set_metrology_object_param (MetrologyHandle, LineIndices, 'num_instances', 1)</l>
+<l>*set_metrology_object_param (MetrologyHandle, LineIndices, 'measure_transition', 'positive')</l>
+<l>get_metrology_object_measures (LineContours, MetrologyHandle, 'all', 'all', RowLine, ColumnLine)</l>
+<c>*卡尺找直线</c>
+<l>apply_metrology_model (Image, MetrologyHandle)</l>
+<c></c>
+<l>dev_set_color ('yellow')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContours)</l>
+<l>get_metrology_object_result_contour (LineContour, MetrologyHandle, 'all', 'all', 1.5)</l>
+<l>*get_metrology_object_model_contour (ModelContour, MetrologyHandle, 'all', 1.5)</l>
+<l>dev_set_color ('blue')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContour)</l>
+<l>fit_line_contour_xld (LineContour, 'tukey', -1, 0, 5, 2, RowBegin, ColBegin, RowEnd, ColEnd, Nr, Nc, Dist)</l>
+<c></c>
+<c></c>
+<c></c>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

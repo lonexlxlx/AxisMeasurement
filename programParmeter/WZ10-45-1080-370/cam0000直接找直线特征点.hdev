@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="18.11.0.1">
+<procedure name="main">
+<interface/>
+<body>
+<l>read_image(Image, 'D:/temporary_sun/AxisMeasurement/measureData/WZ10-45-1080-370/20231019_155649/cam0_10.bmp')</l>
+<l>create_metrology_model (MetrologyHandle)</l>
+<l>Line1 := [274, 2000, 274, 2060]</l>
+<l>add_metrology_object_generic (MetrologyHandle, 'line',Line1,150, 12, 1, 20, [], [], LineIndices)</l>
+<l>set_metrology_object_param (MetrologyHandle, 'all', 'measure_distance', 0.3)</l>
+<c></c>
+<l>apply_metrology_model (Image, MetrologyHandle)</l>
+<c></c>
+<l>get_metrology_object_measures (LineContours, MetrologyHandle, 'all', 'all', RowLine, ColumnLine)</l>
+<l>dev_set_color ('yellow')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContours)</l>
+<l>get_metrology_object_result_contour (LineContour, MetrologyHandle, 'all', 'all', 1.5)</l>
+<l>*get_metrology_object_model_contour (ModelContour, MetrologyHandle, 'all', 1.5)</l>
+<l>dev_set_color ('blue')</l>
+<l>dev_set_line_width (2)</l>
+<l>dev_display (LineContour)</l>
+<l>fit_line_contour_xld (LineContour, 'tukey', -1, 0, 5, 2, RowBegin, ColBegin, RowEnd, ColEnd, Nr, Nc, Dist)</l>
+<c></c>
+<c></c>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

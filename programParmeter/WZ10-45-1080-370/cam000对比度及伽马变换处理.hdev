@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="18.11.0.1">
+<procedure name="main">
+<interface/>
+<body>
+<c>*读取模板和图像进行模板匹配*</c>
+<l>read_image(Image, 'C:/Users/11267/Desktop/1080/1080-370-1/cam0_4.bmp')</l>
+<l>get_image_size (Image, Width, Height)</l>
+<l>gamma_image (Image, GammaImage, 0.416667, 0.055, 0.018, 255, 'true')</l>
+<l>emphasize (GammaImage, ImageEmphasize, Width, Height, 1.4)</l>
+<l>write_image( ImageEmphasize , 'bmp' , 0 , 'C:/Users/11267/Desktop/1080/1080-370-1/cam0_4_new' )</l>
+<c></c>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

@@ -1,0 +1,42 @@
+//
+// File: checkStoppingCriteria.h
+//
+// MATLAB Coder version            : 5.6
+// C/C++ source code generated on  : 24-Jul-2023 19:50:37
+//
+
+#ifndef CHECKSTOPPINGCRITERIA_H
+#define CHECKSTOPPINGCRITERIA_H
+
+// Include Files
+#include "rtwtypes.h"
+#include <cstddef>
+#include <cstdlib>
+
+// Function Declarations
+namespace coder {
+namespace optim {
+namespace coder {
+namespace levenbergMarquardt {
+int b_checkStoppingCriteria(const double gradf[3], double relFactor,
+                            double funDiff, const double x[3],
+                            const double dx[3], int funcCount,
+                            boolean_T stepSuccessful, int &iter,
+                            double projSteepestDescentInfNorm,
+                            boolean_T hasFiniteBounds);
+
+int checkStoppingCriteria(const double gradf[3], double relFactor,
+                          int funcCount, double projSteepestDescentInfNorm,
+                          boolean_T hasFiniteBounds);
+
+} // namespace levenbergMarquardt
+} // namespace coder
+} // namespace optim
+} // namespace coder
+
+#endif
+//
+// File trailer for checkStoppingCriteria.h
+//
+// [EOF]
+//

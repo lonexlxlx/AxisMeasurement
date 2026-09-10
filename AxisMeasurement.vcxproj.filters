@@ -1,0 +1,571 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+    </Filter>
+    <Filter Include="Form Files\Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files\Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="Form Files\Header Files\myCode">
+      <UniqueIdentifier>{ffacf908-7c30-47da-98c1-fbcce2df5547}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\myCode">
+      <UniqueIdentifier>{a4ec8a68-2b4e-438d-832a-9c4e2f12bc2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\matlabCode">
+      <UniqueIdentifier>{2674d053-03f5-410c-85d3-880c165375b3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\matlabCode\fitCos">
+      <UniqueIdentifier>{ddb2228d-15a5-483b-bb2c-f44804a40f15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\matlabCode\fitLine">
+      <UniqueIdentifier>{37cac724-ea07-4089-8a29-c547de779cf3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="myCode\head\axisGoHome_thread.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\AxisMeasurement.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\cam_device.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\camThread.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\logIn.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\ls_device.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\lsThread.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\moveControl.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\moveThread.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_0.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_1.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_2.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_3.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_4.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_5.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_6.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_7.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_8.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_9.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_10.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_11.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_12.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_13.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_14.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_15.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_16.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_17.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_18.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_19.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\sdk_assist.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\graphical_canvas.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <ClInclude Include="myCode\head\graphical_program_editor.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+    <QtMoc Include="myCode\head\program_20.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_21.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_22.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_23.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_24.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_25.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_26.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_27.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_28.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_29.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_30.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_31.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_32.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_33.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_34.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_35.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_36.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_37.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_38.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_39.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_40.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_41.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_42.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_43.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_44.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_45.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_46.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_47.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_48.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_49.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+    <QtMoc Include="myCode\head\program_50.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="myCode\head\resource.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+    <ClInclude Include="myCode\head\roughnessFun.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+    <ClInclude Include="myCode\head\sharedFun.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="myCode\sourceCode\axisGoHome_thread.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\AxisMeasurement.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\cam_device.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\camThread.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\logIn.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\ls_device.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\lsThread.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\main.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\moveControl.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\moveThread.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_0.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_1.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_2.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_3.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_4.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_5.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_6.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_7.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_8.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_9.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_10.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\roughnessFun.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\sharedFun.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\checkStoppingCriteria.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\computeFiniteDifferences.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\driver.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\factoryConstruct.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_data.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_initialize.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\funFitCos_terminate.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\hasFiniteBounds.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\jacobianFiniteDifference.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\linearLeastSquares.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\lsqcurvefit.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\norm.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rt_nonfinite.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rtGetInf.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\rtGetNaN.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xgemv.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xnrm2.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xzlarf.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitCos\sourceCode\xzlarfg.cpp">
+      <Filter>Source Files\matlabCode\fitCos</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine_initialize.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\funFitLine_terminate.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\mean.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rt_nonfinite.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rtGetInf.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\rtGetNaN.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xaxpy.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xdotc.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xnrm2.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xrot.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xrotg.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xswap.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\matlabForC++\funFitLine\sourceCode\xzsvdc.cpp">
+      <Filter>Source Files\matlabCode\fitLine</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_11.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_12.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_13.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="源.cpp">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_14.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_15.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_16.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_17.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_18.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_19.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\sdk_assist.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\graphical_canvas.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\graphical_program_editor.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_20.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_21.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_22.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_23.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_24.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_25.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_26.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_27.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_28.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_29.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_30.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_31.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_32.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_33.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_34.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_35.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_37.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_36.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_38.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_39.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_40.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_41.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_42.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_43.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_44.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_45.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_46.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_47.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_48.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_49.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+    <ClCompile Include="myCode\sourceCode\program_50.cpp">
+      <Filter>Source Files\myCode</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="AxisMeasurement.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtRcc Include="logIn.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="AxisMeasurement.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="AxisMeasurement.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="logIn.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="sdk_assist.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+  </ItemGroup>
+</Project>
