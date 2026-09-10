@@ -4,6 +4,11 @@
 
 #include <QAction>
 #include <QToolBar>
+#include <QScrollArea>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QLabel>
+#include <QGroupBox>
 
 QString runtimePath(const QString& relativePath);
 
@@ -13,6 +18,77 @@ sdk_assist::sdk_assist(QWidget* parent)
 	ui.setupUi(this);
 	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
 	this->setWindowTitle("sdkAssist");
+	//====== 布局整理（2026-09-10 第二轮）：模块对齐、标题居中、底部信息初始可见 ======
+	//1) 隐藏重复遗留的孤儿标签：label_82(跳动点数)/label_75(孔径点数) 坐标在 y1090/1148
+	//   的真内容之外，与 groupBox_7 内部统计重复，且代码中零引用——它们把内容高度虚撑到 1199。
+	ui.label_82->hide();
+	ui.label_75->hide();
+
+	//2) 垂直重排：压缩行间浪费（原布局行间隙达 300px），底部"测量信息与点位输出/表单生成路径"初始可见。
+	//   行1：标题 y36 / 组 y68；行2：标题 y407 / 组 y439（模块6 双行标题 y407+430、组 y459）；
+	//   模块7：标题 y698 / 组 y730；路径条 y907。内容总高约 950（原 1199）。
+	ui.label->setGeometry(10, 4, 1091, 28);
+	ui.label->setAlignment(Qt::AlignCenter);
+	ui.label_2->move(ui.label_2->x(), 36);
+	ui.label_15->move(ui.label_15->x(), 36);
+	ui.label_29->move(ui.label_29->x(), 36);
+	ui.groupBox->move(10, 68);
+	ui.groupBox_3->move(340, 68);
+	ui.groupBox_5->move(790, 68);
+	ui.label_12->move(ui.label_12->x(), 407);
+	ui.label_21->move(ui.label_21->x(), 407);
+	ui.label_42->move(ui.label_42->x(), 407);
+	ui.label_43->move(ui.label_43->x(), 430);
+	ui.groupBox_4->move(10, 439);
+	ui.groupBox_2->move(340, 439);
+	ui.groupBox_6->move(790, 459);
+	ui.label_56->move(ui.label_56->x(), 698);
+	ui.groupBox_7->move(10, 730);
+	ui.label_57->move(ui.label_57->x(), 907);
+	ui.label_57->resize(ui.label_57->width(), 36);
+
+	//3) 各模块小标题统一居中，并与对应组左右对齐（原 label_2/12 靠左、其余居中，宽窄不一）
+	const QPair<QLabel*, QGroupBox*> titleFixes[] = {
+		{ ui.label_2,  ui.groupBox   },  //1 直径
+		{ ui.label_15, ui.groupBox_3 },  //2 粗糙度
+		{ ui.label_29, ui.groupBox_5 },  //3 孔径
+		{ ui.label_12, ui.groupBox_4 },  //4 圆柱度
+		{ ui.label_21, ui.groupBox_2 },  //5 跳动
+		{ ui.label_42, ui.groupBox_6 },  //6 长度/角度/圆弧半径
+		{ ui.label_43, ui.groupBox_6 },  //6 副标题（远心相机）
+	};
+	for (const auto& fix : titleFixes) {
+		fix.first->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+		fix.first->setGeometry(fix.second->x(), fix.first->y(), fix.second->width(), fix.first->height());
+	}
+	ui.label_56->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+	ui.label_56->setGeometry(10, ui.label_56->y(), 1091, ui.label_56->height());
+	ui.label_57->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+	ui.label_57->setGeometry(10, ui.label_57->y(), 1091, ui.label_57->height());
+
+	//4) 各组内部布局容器右缘内收：原来右缘距卡片边框仅 3~9px，下拉框视觉上顶出背景边界
+	QGroupBox* moduleBoxes[] = { ui.groupBox, ui.groupBox_2, ui.groupBox_3, ui.groupBox_4, ui.groupBox_5, ui.groupBox_6, ui.groupBox_7 };
+	for (QGroupBox* box : moduleBoxes) {
+		const QList<QWidget*> directChildren = box->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+		for (QWidget* child : directChildren) {
+			if (child->layout() && child->objectName().startsWith(QStringLiteral("layoutWidget"))) {
+				child->setGeometry(12, child->y(), box->width() - 24, child->height());
+			}
+		}
+	}
+
+	//5) 滚动区承载 + 窗口初始高度适配屏幕：重排后内容高约 950，一屏尽览；小屏滚动兜底
+	ui.centralwidget->setMinimumSize(1142, 950);
+	QScrollArea* centralScrollArea = new QScrollArea(this);
+	centralScrollArea->setWidget(ui.centralwidget);
+	centralScrollArea->setWidgetResizable(true);
+	centralScrollArea->setFrameShape(QFrame::NoFrame);
+	setCentralWidget(centralScrollArea);
+	QScreen* primaryScreen = QGuiApplication::primaryScreen();
+	if (primaryScreen) {
+		const int availableHeight = primaryScreen->availableGeometry().height();
+		resize(1160, qMin(1010, availableHeight - 60));
+	}
 	QToolBar* graphicalToolBar = addToolBar(QStringLiteral("图形化编程"));
 	graphicalToolBar->setObjectName(QStringLiteral("graphicalProgrammingEntryToolBar"));
 	graphicalToolBar->setMovable(false);

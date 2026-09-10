@@ -31,13 +31,16 @@
     </property>
     <property name="font">
      <font>
-      <pointsize>15</pointsize>
+      <pointsize>14</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
     </property>
     <property name="text">
-     <string>1，直径点位记录模块（光幕）</string>
+     <string>1.直径点位记录模块（光幕）</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QGroupBox" name="groupBox_4">
@@ -1066,10 +1069,10 @@
    <widget class="QGroupBox" name="groupBox_5">
     <property name="geometry">
      <rect>
-      <x>790</x>
-      <y>70</y>
+      <x>780</x>
+      <y>60</y>
       <width>311</width>
-      <height>331</height>
+      <height>321</height>
      </rect>
     </property>
     <property name="title">
@@ -1493,12 +1496,15 @@
     </widget>
    </widget>
    <widget class="QGroupBox" name="groupBox">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>70</y>
+      <y>60</y>
       <width>311</width>
-      <height>241</height>
+      <height>261</height>
      </rect>
     </property>
     <property name="title">
@@ -1508,7 +1514,7 @@
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>0</y>
+       <y>10</y>
        <width>291</width>
        <height>241</height>
       </rect>
@@ -2219,10 +2225,10 @@
    <widget class="QGroupBox" name="groupBox_3">
     <property name="geometry">
      <rect>
-      <x>340</x>
-      <y>70</y>
+      <x>330</x>
+      <y>60</y>
       <width>431</width>
-      <height>241</height>
+      <height>261</height>
      </rect>
     </property>
     <property name="title">
@@ -2231,25 +2237,65 @@
     <widget class="QWidget" name="layoutWidget">
      <property name="geometry">
       <rect>
-       <x>11</x>
-       <y>1</y>
+       <x>10</x>
+       <y>10</y>
        <width>416</width>
-       <height>237</height>
+       <height>258</height>
       </rect>
      </property>
      <layout class="QGridLayout" name="gridLayout_2">
       <property name="horizontalSpacing">
        <number>15</number>
       </property>
-      <item row="0" column="0">
-       <widget class="QLabel" name="label_4">
+      <item row="6" column="1">
+       <widget class="QPushButton" name="roughnessReferenceDRecord">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>30</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>光幕补偿点位记录</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_31">
         <property name="font">
          <font>
           <pointsize>13</pointsize>
          </font>
         </property>
         <property name="text">
-         <string>粗糙度顺序号：</string>
+         <string>参考直径：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QPushButton" name="roughnessPostionRecord">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>30</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>粗糙度点位记录</string>
         </property>
        </widget>
       </item>
@@ -2420,6 +2466,18 @@
         </item>
        </widget>
       </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_14">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>备注信息：</string>
+        </property>
+       </widget>
+      </item>
       <item row="1" column="0">
        <widget class="QLabel" name="label_10">
         <property name="font">
@@ -2440,6 +2498,44 @@
           <weight>75</weight>
           <bold>true</bold>
          </font>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_28">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>曝光（默认）：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1" colspan="2">
+       <widget class="QLineEdit" name="roughnessPostionNote">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_4">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>粗糙度顺序号：</string>
         </property>
        </widget>
       </item>
@@ -2469,124 +2565,6 @@
         </property>
        </widget>
       </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_28">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>曝光（默认）：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="1" colspan="2">
-       <widget class="QLineEdit" name="roughnessExposeTime">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>550</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="0">
-       <widget class="QLabel" name="label_31">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>参考直径：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="1" colspan="2">
-       <widget class="QLineEdit" name="roughnessReferenceD">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="label_14">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>备注信息：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="1" colspan="2">
-       <widget class="QLineEdit" name="roughnessPostionNote">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="0">
-       <widget class="QPushButton" name="roughnessPostionRecord">
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>粗糙度点位记录</string>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="1">
-       <widget class="QPushButton" name="roughnessReferenceDRecord">
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>光幕补偿点位记录</string>
-        </property>
-       </widget>
-      </item>
       <item row="6" column="2">
        <widget class="QPushButton" name="roughnessPostionClear">
         <property name="minimumSize">
@@ -2607,13 +2585,41 @@
         </property>
        </widget>
       </item>
+      <item row="3" column="1" colspan="2">
+       <widget class="QLineEdit" name="roughnessExposeTime">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>550</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1" colspan="2">
+       <widget class="QLineEdit" name="roughnessReferenceD">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </widget>
    <widget class="QLabel" name="label_15">
     <property name="geometry">
      <rect>
-      <x>340</x>
+      <x>350</x>
       <y>40</y>
       <width>421</width>
       <height>31</height>
@@ -2627,7 +2633,10 @@
      </font>
     </property>
     <property name="text">
-     <string>2，粗糙度点位记录模块(粗糙度相机+光幕)</string>
+     <string>2.粗糙度点位记录模块(粗糙度相机+光幕)</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QGroupBox" name="groupBox_2">
@@ -2636,7 +2645,7 @@
       <x>340</x>
       <y>350</y>
       <width>431</width>
-      <height>251</height>
+      <height>271</height>
      </rect>
     </property>
     <property name="title">
@@ -2645,8 +2654,8 @@
     <widget class="QWidget" name="layoutWidget">
      <property name="geometry">
       <rect>
-       <x>11</x>
-       <y>1</y>
+       <x>10</x>
+       <y>10</y>
        <width>411</width>
        <height>257</height>
       </rect>
@@ -2658,6 +2667,124 @@
       <property name="verticalSpacing">
        <number>5</number>
       </property>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_22">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>特征号：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutUpperRelativeLocation">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_23">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>上偏移脉冲数：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="2" colspan="2">
+       <widget class="QPushButton" name="roundoutPostionClear">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>30</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>点位清除</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutBottomRelativeLocation">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutPostionNote1">
+        <property name="minimumSize">
+         <size>
+          <width>116</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutNominalValue">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_33">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>外圆基准1顺序号：</string>
+        </property>
+       </widget>
+      </item>
       <item row="4" column="0">
        <widget class="QLabel" name="label_27">
         <property name="font">
@@ -2667,6 +2794,40 @@
         </property>
         <property name="text">
          <string>下偏移脉冲数：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutPostionNote2">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="0" colspan="2">
+       <widget class="QPushButton" name="roundoutPostionRecord">
+        <property name="minimumSize">
+         <size>
+          <width>130</width>
+          <height>30</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>点位记录</string>
         </property>
        </widget>
       </item>
@@ -2682,6 +2843,18 @@
         </property>
        </widget>
       </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_26">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>外圆基准2顺序号：</string>
+        </property>
+       </widget>
+      </item>
       <item row="2" column="0">
        <widget class="QLabel" name="label_25">
         <property name="font">
@@ -2691,6 +2864,17 @@
         </property>
         <property name="text">
          <string>公称值：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1" colspan="3">
+       <widget class="QLineEdit" name="roundoutFeatureNb">
+        <property name="font">
+         <font>
+          <pointsize>13</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
         </property>
        </widget>
       </item>
@@ -3211,181 +3395,6 @@
         </item>
        </widget>
       </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="label_22">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>特征号：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_23">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>上偏移脉冲数：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="7" column="2" colspan="2">
-       <widget class="QPushButton" name="roundoutPostionClear">
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>点位清除</string>
-        </property>
-       </widget>
-      </item>
-      <item row="7" column="0" colspan="2">
-       <widget class="QPushButton" name="roundoutPostionRecord">
-        <property name="minimumSize">
-         <size>
-          <width>130</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>点位记录</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutNominalValue">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutFeatureNb">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutBottomRelativeLocation">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutUpperRelativeLocation">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutPostionNote1">
-        <property name="minimumSize">
-         <size>
-          <width>116</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="1" colspan="3">
-       <widget class="QLineEdit" name="roundoutPostionNote2">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="0">
-       <widget class="QLabel" name="label_26">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>外圆基准2顺序号：</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="label_33">
-        <property name="font">
-         <font>
-          <pointsize>13</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>外圆基准1顺序号：</string>
-        </property>
-       </widget>
-      </item>
      </layout>
     </widget>
    </widget>
@@ -3393,7 +3402,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>650</y>
+      <y>640</y>
       <width>1091</width>
       <height>171</height>
      </rect>
@@ -3755,9 +3764,9 @@
    <widget class="QLabel" name="label_42">
     <property name="geometry">
      <rect>
-      <x>800</x>
+      <x>780</x>
       <y>400</y>
-      <width>291</width>
+      <width>331</width>
       <height>31</height>
      </rect>
     </property>
@@ -3769,13 +3778,16 @@
      </font>
     </property>
     <property name="text">
-     <string>6，长度/角度/圆弧半径点位记录模块</string>
+     <string>6.长度/角度/圆弧半径点位记录模块</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="label_21">
     <property name="geometry">
      <rect>
-      <x>420</x>
+      <x>390</x>
       <y>320</y>
       <width>341</width>
       <height>31</height>
@@ -3789,7 +3801,10 @@
      </font>
     </property>
     <property name="text">
-     <string>5，跳动点位记录模块（光幕）</string>
+     <string>5.跳动点位记录模块（光幕）</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="label_29">
@@ -3809,7 +3824,10 @@
      </font>
     </property>
     <property name="text">
-     <string>3，孔径点位记录模块（孔径相机）</string>
+     <string>3.孔径点位记录模块（孔径相机）</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="label_12">
@@ -3823,33 +3841,42 @@
     </property>
     <property name="font">
      <font>
-      <pointsize>15</pointsize>
+      <pointsize>14</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
     </property>
     <property name="text">
-     <string>4，圆柱度点位记录模块（光幕）</string>
+     <string>4.圆柱度点位记录模块（光幕）</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="label_56">
     <property name="geometry">
      <rect>
-      <x>460</x>
-      <y>610</y>
+      <x>470</x>
+      <y>620</y>
       <width>241</width>
       <height>31</height>
      </rect>
     </property>
     <property name="font">
      <font>
-      <pointsize>16</pointsize>
+      <pointsize>14</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
     </property>
     <property name="text">
-     <string>7，测量信息与点位输出</string>
+     <string>7.测量信息与点位输出</string>
+    </property>
+    <property name="textFormat">
+     <enum>Qt::AutoText</enum>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="label_82">
@@ -3892,7 +3919,7 @@
     <property name="geometry">
      <rect>
       <x>150</x>
-      <y>810</y>
+      <y>800</y>
       <width>911</width>
       <height>51</height>
      </rect>
@@ -3911,7 +3938,7 @@
    <widget class="QLabel" name="label_43">
     <property name="geometry">
      <rect>
-      <x>900</x>
+      <x>840</x>
       <y>430</y>
       <width>201</width>
       <height>21</height>
@@ -3927,6 +3954,9 @@
     <property name="text">
      <string>（远心相机）</string>
     </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
    </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
@@ -3935,7 +3965,7 @@
      <x>0</x>
      <y>0</y>
      <width>1142</width>
-     <height>23</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>

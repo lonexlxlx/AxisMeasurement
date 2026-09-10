@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1907</width>
-    <height>1018</height>
+    <width>1768</width>
+    <height>997</height>
    </rect>
   </property>
   <property name="font">
@@ -735,6 +735,10 @@
         </item>
         <item row="1" column="0">
          <widget class="QPushButton" name="apexMoveUp">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -755,6 +759,10 @@
         </item>
         <item row="1" column="1">
          <widget class="QPushButton" name="apexMoveDown">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -907,6 +915,10 @@
         </property>
         <item row="0" column="1">
          <widget class="QPushButton" name="partRotate_clockwise">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -927,6 +939,10 @@
         </item>
         <item row="0" column="0">
          <widget class="QPushButton" name="partRotate_anticlockwise">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -1079,6 +1095,10 @@
         </property>
         <item row="0" column="1">
          <widget class="QPushButton" name="lsMoveDown">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -1099,6 +1119,10 @@
         </item>
         <item row="0" column="0">
          <widget class="QPushButton" name="lsMoveUp">
+               <property name="icon">
+          <iconset resource="AxisMeasurement.qrc">
+           <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
+         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>

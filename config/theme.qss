@@ -99,20 +99,18 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
     background: #F3F4F6; color: #9CA3AF;
 }
-QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::drop-down {
+    border: none;
+    border-left: 1px solid #E5E7EB;
+    width: 24px;
+}
 QComboBox QAbstractItemView {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
     selection-background-color: #DBEAFE;
     selection-color: #1F2937;
 }
-/* 无图片资源时用 CSS 三角形画下拉箭头 */
-QComboBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid #6B7280;
-}
+/* 下拉箭头不做自定义（此前的 CSS 三角渲染过小，看起来像显示不全）；不指定时使用样式表风格内置箭头 */
 
 /* ---------- 表格 ---------- */
 QTableWidget {
@@ -164,6 +162,16 @@ QTabBar::tab:selected {
     background: #FFFFFF;
     border-bottom: 2px solid #2563EB;
 }
+QTabBar::tab:hover:!selected {
+    background: #E5E7EB;
+}
+
+/* ---------- P2：Splitter 分隔条（左右面板拖动收放） ---------- */
+QSplitter::handle { background: #E5E7EB; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical { height: 4px; }
+QSplitter::handle:hover { background: #93C5FD; }
+QSplitter::handle:pressed { background: #2563EB; }
 
 /* ---------- 工具栏与工具按钮（图形化编辑器） ---------- */
 QToolBar {

@@ -1135,11 +1135,12 @@ void program_58::pushback_vectors(vector<double>& fResult, int fType, double fIn
 		item[2]->setText(featureQualityMap[fQualify[2]]);//显示测量判断结果
 		if (fQualify[2])
 		{
-			item[2]->setBackground(QColor(230, 0, 0));
+			item[2]->setForeground(QColor("#DC2626"));
+			item[2]->setBackground(QColor("#FEF2F2"));
 		}
 		else
 		{
-			item[2]->setBackground(QColor(0, 200, 0));
+			item[2]->setForeground(QColor("#16A34A"));
 		};
 		measureTablePtr->setItem(row, 2, item[2]);
 		item[3]->setText(QString::number(minResult, 'f', 4));//显示测量最小值
@@ -1147,16 +1148,18 @@ void program_58::pushback_vectors(vector<double>& fResult, int fType, double fIn
 		{
 			if ((fLowerSize - minResult) / tolerance > 0.1 || (minResult - fUpperSize) / tolerance > 0.1)
 			{
-				item[3]->setBackground(QColor(230, 0, 0));
+				item[3]->setForeground(QColor("#DC2626"));
+				item[3]->setBackground(QColor("#FEF2F2"));
 			}
 			else
 			{
-				item[3]->setBackground(QColor(230, 230, 0));
+				item[3]->setForeground(QColor("#B45309"));
+				item[3]->setBackground(QColor("#FFF7ED"));
 			}
 		}
 		else
 		{
-			item[3]->setBackground(QColor(0, 200, 0));
+			item[3]->setForeground(QColor("#16A34A"));
 		};
 		measureTablePtr->setItem(row, 3, item[3]);
 		item[4]->setText(QString::number(maxResult, 'f', 4));//显示测量最大值
@@ -1164,16 +1167,18 @@ void program_58::pushback_vectors(vector<double>& fResult, int fType, double fIn
 		{
 			if ((fLowerSize - maxResult) / tolerance > 0.1 || (maxResult - fUpperSize) / tolerance > 0.1)
 			{
-				item[4]->setBackground(QColor(230, 0, 0));
+				item[4]->setForeground(QColor("#DC2626"));
+				item[4]->setBackground(QColor("#FEF2F2"));
 			}
 			else
 			{
-				item[4]->setBackground(QColor(230, 230, 0));
+				item[4]->setForeground(QColor("#B45309"));
+				item[4]->setBackground(QColor("#FFF7ED"));
 			};
 		}
 		else
 		{
-			item[4]->setBackground(QColor(0, 200, 0));
+			item[4]->setForeground(QColor("#16A34A"));
 		};
 		measureTablePtr->setItem(row, 4, item[4]);
 		item[5]->setText(QString::number(resultLength));//显示测量次数

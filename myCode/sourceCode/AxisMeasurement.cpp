@@ -1,4 +1,6 @@
 ﻿#include "AxisMeasurement.h"
+#include <QVBoxLayout>//P2：布局重组用
+#include <QWidget>//P2：布局重组用
 /// <summary>
 /// 构造函数/析构函数
 /// </summary>
@@ -12,6 +14,9 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 {
 	ui.setupUi(this);
 	//this->setWindowIcon(QIcon("://AxisMeasurement/config/logo.ico")); 
+
+	//P2-9/10/11：布局重构（分组收纳+QSplitter 自适应+数值仪表盘化），必须在任何控件操作之前执行
+	restructureMainLayout();
 
 	//系统相关
 	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
@@ -51,6 +56,15 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	currentOperatorName = "";
 	currentPartsId = "";
 	resultTablePtr = ui.measureTable;
+
+	//P1-8 状态栏分区：右侧永久显示 设备状态灯 + 最近一条提示信息
+	m_deviceStatusLabel = new QLabel(this);
+	m_statusInfoLabel = new QLabel(this);
+	m_statusInfoLabel->setMinimumWidth(420);
+	updateDeviceStatus(false);
+	m_statusInfoLabel->setText("设备未打开，请先打开设备！");
+	statusBar()->addPermanentWidget(m_statusInfoLabel);
+	statusBar()->addPermanentWidget(m_deviceStatusLabel);
 
 
 	//将UI中充当指示灯设置
@@ -135,7 +149,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	ui.measureTable->horizontalHeader()->setFont(font);
 	ui.measureTable->horizontalHeader()->setStyleSheet("QHeaderView::section{background:#F3F4F6;color:#374151;border:none;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 8px;}"); //表头背景色（与全局主题一致）
 	ui.measureTable->setStyleSheet("selection-background-color:#DBEAFE;selection-color:#111827;alternate-background-color:#F9FAFB;"); //设置选中背景色（与全局主题一致）
-	ui.measureTable->setFont(QFont("Microsoft YaHei UI", 11));//设置表格字体
+	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 12, QFont::Bold));//P2-11：数值等宽字体加粗（中文自动回退雅黑）
 	QStringList header;
 	header << "特征号" << "特征名称" << "测量结果" << "最小值" <<"最大值" <<"次数" << "公称值" << "下限值" << "上限值";
 	ui.measureTable->setHorizontalHeaderLabels(header);//设置表头（横）
@@ -1130,6 +1144,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 		ui.axisControl->setEnabled(true);
 		ui.cameraControl->setEnabled(true);
 		allDeviceOpenFlag = true;
+		updateDeviceStatus(true); //P1-8 状态栏设备灯变绿
 		
 		int axisStatus=moveControlCardPtr->axisCheck();
 		if (axisStatus == 0)//所有轴状态均正常
@@ -1152,6 +1167,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	{
 		cout << cameraPtrList[0]->isOpenCam << cameraPtrList[1]->isOpenCam << cameraPtrList[2]->isOpenCam << moveControlCardPtr->openControllerFlag << lsSensorPtr->lsOpenflag << DbOpenFlag << endl;
 		showDeviceInf("设备未全部打开，请检查设备连接！");
+		updateDeviceStatus(false); //P1-8 状态栏设备灯保持红色
 		ui.programNumber->setEnabled(false);
 		ui.allAxisGoHome->setEnabled(false);
 		ui.autoMoveAdjust->setEnabled(false);
@@ -1192,6 +1208,7 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 	{
 		showDeviceInf("设备未全部关闭，请检查设备连接！");
 	};
+	updateDeviceStatus(false); //P1-8 状态栏设备灯变红
 	ui.openAllDevice->setEnabled(true);
 	ui.autoMoveAdjust->setEnabled(false);
 	ui.programNumber->setEnabled(false);
@@ -1563,6 +1580,7 @@ void AxisMeasurement::on_startAutoMearsurement_clicked()
 void AxisMeasurement::on_urgrentStopMearsure_clicked()
 {
 	//cout << "on_urgrentStopMearsure_clicked" << endl;
+	flashEmergencyBorder();//P2-12：急停触发，全窗口红色边框闪烁警示
 	switch (currentProgram)
 	{
     //需要按照下面格式追加子程序相关内容
@@ -2587,6 +2605,7 @@ void AxisMeasurement::on_smoothStop_clicked()
 void AxisMeasurement::on_urgentStop_clicked()
 {
 	cout << "on_urgentStop_clicked" << endl;
+	flashEmergencyBorder();//P2-12：急停触发，全窗口红色边框闪烁警示
 	moveControlCardPtr->stopMove("urgent", "all");
 };
 void AxisMeasurement::on_trapMode_clicked()
@@ -2916,6 +2935,261 @@ void AxisMeasurement::showTips(QString tipsInf)
 void AxisMeasurement::showDeviceInf(QString deviceInf)//用于显示设备状态栏信息
 {
 	ui.deviceInf->setText(deviceInf);
+	if (m_statusInfoLabel)//P1-8 同步到状态栏提示区
+		m_statusInfoLabel->setText(deviceInf);
+};
+//P1-8 状态栏设备状态灯：绿点=已打开，红点=未打开
+void AxisMeasurement::updateDeviceStatus(bool online)
+{
+	if (!m_deviceStatusLabel)
+		return;
+	if (online)
+	{
+		m_deviceStatusLabel->setText(QStringLiteral("<span style='color:#16A34A;font-size:16px;'>&#9679;</span> 设备已打开"));
+		m_deviceStatusLabel->setStyleSheet("color:#16A34A;font-weight:bold;");
+	}
+	else
+	{
+		m_deviceStatusLabel->setText(QStringLiteral("<span style='color:#DC2626;font-size:16px;'>&#9679;</span> 设备未打开"));
+		m_deviceStatusLabel->setStyleSheet("color:#DC2626;font-weight:bold;");
+	}
+};
+
+//P2-9/10/11 布局重构：把 .ui 的绝对定位布局重组为 QSplitter + QTabWidget，并设置仪表盘字体
+//原理：只把现成控件 reparent 进新容器，控件 objectName 不变，所有 ui.xxx 引用和信号槽连接保持有效
+void AxisMeasurement::restructureMainLayout()
+{
+	//—— P2-10：窗口自适应 ——最小 1440x900，可自由放大缩小（初始尺寸仍由 .ui 的 geometry 决定）
+	setMinimumSize(1440, 900);
+
+	//—— 布局修复（2026-09-10）：.ui 里各分组框内部都是绝对定位，没有尺寸提示，
+	//   直接进布局会被压到只剩标题、内容被裁掉。这里统一处理：
+	//   1) 布局接管前先读取各面板的 .ui 原始设计尺寸，设为最小尺寸 → 内容永不被裁；
+	//   2) 高大/可压缩的面板包进 QScrollArea → 窗口太小时出滚动条，而不是遮挡或裁切。
+	auto wrapScroll = [](QWidget* panel, const QSize& minViewport) -> QScrollArea* {
+		panel->setMinimumSize(panel->geometry().size());//此时 geometry 仍是 .ui 设计值
+		QScrollArea* scrollArea = new QScrollArea();
+		scrollArea->setWidget(panel);
+		scrollArea->setWidgetResizable(true);//空间够时填满；低于最小尺寸时自动出滚动条
+		scrollArea->setFrameShape(QFrame::NoFrame);
+		scrollArea->setMinimumSize(minViewport);
+		return scrollArea;
+	};
+
+	//========== 一、自动测量页（autoMeasureUI）==========
+	//常驻：设备控制 + 程序选择(groupBox) + 光幕实时显示(groupBox_2) + 图像区(frame1)
+	//收纳：顶尖/旋转/光幕位置控制(autoMoveAdjust，内部三段) → 页签
+	ui.pushButton->hide();//"图像绘制"调试按钮：槽函数逻辑已全部注释，不再占用界面位置
+
+	//顶尖/旋转/光幕位置控制收进页签（内部绝对定位，包滚动区防裁切）
+	QTabWidget* adjustTabs = new QTabWidget(ui.autoMeasureUI);
+	adjustTabs->setObjectName(QStringLiteral("autoAdjustTabs"));
+	adjustTabs->addTab(wrapScroll(ui.autoMoveAdjust, QSize(300, 240)), QStringLiteral("顶尖 / 旋转 / 光幕位置"));
+	adjustTabs->setMinimumHeight(280);
+
+	QWidget* autoLeftPanel = new QWidget(ui.autoMeasureUI);
+	autoLeftPanel->setMinimumWidth(ui.groupBox->geometry().width() + 16);//保证程序选择组不被横向压缩
+	QVBoxLayout* autoLeftLayout = new QVBoxLayout(autoLeftPanel);
+	autoLeftLayout->setContentsMargins(4, 0, 4, 0);
+	autoLeftLayout->setSpacing(6);
+	ui.groupBox->setMinimumSize(ui.groupBox->geometry().size());//程序选择 + 测量进程：锁原始尺寸，内容不再被裁
+	autoLeftLayout->addWidget(ui.groupBox);
+	//光幕实时显示：P2-11 仪表盘字体加大后内容变高（原布局区仅 91px 高），
+	//同步加高内部布局区和组框，大字号数值完整显示、不被裁切
+	ui.lsCurrentValue->parentWidget()->setGeometry(10, 40, 301, 110);
+	ui.groupBox_2->setMinimumSize(321, 160);
+	autoLeftLayout->addWidget(ui.groupBox_2);
+	autoLeftLayout->addWidget(adjustTabs, 1);
+
+	ui.frame1->setMinimumSize(380, 280);//图像区最小尺寸，防止被挤没
+
+	QSplitter* autoContentSplitter = new QSplitter(Qt::Horizontal, ui.autoMeasureUI);
+	autoContentSplitter->setObjectName(QStringLiteral("autoContentSplitter"));
+	autoContentSplitter->addWidget(autoLeftPanel);
+	autoContentSplitter->addWidget(ui.frame1);//图像显示区
+	autoContentSplitter->setStretchFactor(1, 1);//图像区优先吃掉多余空间
+	autoContentSplitter->setCollapsible(0, false);
+	autoContentSplitter->setCollapsible(1, false);
+	autoContentSplitter->setSizes({ 360, 800 });
+
+	//设备控制条：锁定原始高度，宽度自适应（内部按钮行是真布局可压缩，状态信息条右侧为空白区）
+	ui.autoDeviceControl->setMinimumHeight(ui.autoDeviceControl->geometry().height() + 8);
+	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+	QVBoxLayout* autoLayout = new QVBoxLayout(ui.autoMeasureUI);
+	autoLayout->setContentsMargins(10, 10, 10, 10);
+	autoLayout->setSpacing(6);
+	autoLayout->addWidget(ui.autoDeviceControl);//设备控制条
+	autoLayout->addWidget(autoContentSplitter, 1);
+	ui.label_51->hide();//游离标题"设备控制"：分组框卡片化后由边框+内容自明
+
+	//========== 二、手动控制页（ManualControlUI）==========
+	//按 .ui 原始设计还原三区并列：运动轴设置(axisControl) | 轴状态显示(axisMonitor) | 相机图像(frame)
+	//底部页签：点位运动 / Jog运动 / 相机采集 / 光幕传感器
+	QTabWidget* manualTabs = new QTabWidget(ui.ManualControlUI);
+	manualTabs->setObjectName(QStringLiteral("manualControlTabs"));
+	manualTabs->addTab(wrapScroll(ui.trapControl, QSize(240, 240)), QStringLiteral("点位运动"));
+	manualTabs->addTab(wrapScroll(ui.jogControl, QSize(240, 240)), QStringLiteral("Jog运动"));
+	manualTabs->addTab(wrapScroll(ui.cameraControl, QSize(240, 240)), QStringLiteral("相机采集"));
+	manualTabs->addTab(wrapScroll(ui.LS9000, QSize(240, 240)), QStringLiteral("光幕传感器"));
+	manualTabs->setMinimumHeight(300);
+
+	//相机图像区保留自己的标题
+	QWidget* cameraPanel = new QWidget(ui.ManualControlUI);
+	QVBoxLayout* cameraLayout = new QVBoxLayout(cameraPanel);
+	cameraLayout->setContentsMargins(0, 0, 0, 0);
+	cameraLayout->setSpacing(2);
+	cameraLayout->addWidget(ui.label_52, 0, Qt::AlignLeft);//"相机图像"标题
+	ui.frame->setMinimumSize(350, 280);//相机图像区最小尺寸
+	cameraLayout->addWidget(ui.frame, 1);
+
+	QSplitter* manualTopSplitter = new QSplitter(Qt::Horizontal, ui.ManualControlUI);
+	manualTopSplitter->setObjectName(QStringLiteral("manualTopSplitter"));
+	manualTopSplitter->addWidget(wrapScroll(ui.axisControl, QSize(180, 300)));//运动轴设置（窄高面板，滚动兜底）
+	manualTopSplitter->addWidget(wrapScroll(ui.axisMonitor, QSize(300, 300)));//轴状态显示（常驻）
+	manualTopSplitter->addWidget(cameraPanel);
+	manualTopSplitter->setStretchFactor(2, 1);//相机图像区优先吃掉多余空间
+	manualTopSplitter->setCollapsible(0, false);
+	manualTopSplitter->setCollapsible(1, false);
+	manualTopSplitter->setCollapsible(2, false);
+	manualTopSplitter->setSizes({ 200, 380, 600 });
+	manualTopSplitter->setMinimumHeight(320);
+
+	QVBoxLayout* manualLayout = new QVBoxLayout(ui.ManualControlUI);
+	manualLayout->setContentsMargins(10, 10, 10, 10);
+	manualLayout->setSpacing(6);
+	manualLayout->addWidget(manualTopSplitter, 1);
+	manualLayout->addWidget(manualTabs);
+
+	//游离段落标题已由页签文字替代，隐藏避免与新布局重叠
+	ui.label_43->hide();//"运动轴设置"
+	ui.label_45->hide();//"点位运动模式"
+	ui.label_46->hide();//"Jog运动模式"
+	ui.label_47->hide();//"轴状态显示"（组框卡片化后自明）
+	ui.label_49->hide();//"相机采集控制"
+	ui.label_50->hide();//"光幕传感器"
+
+	//========== 三、中央区（widget）：左（页面区）| 右（统计+结果），可拖动收放 ==========
+	QWidget* rightPanel = new QWidget(ui.widget);
+	rightPanel->setMinimumWidth(520);//测量统计两列内容的最小可读宽度
+	QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
+	rightLayout->setContentsMargins(0, 0, 0, 0);
+	rightLayout->setSpacing(6);
+	rightLayout->addWidget(ui.systemTime, 0, Qt::AlignRight);//系统时间挪到右栏顶部
+	rightLayout->addWidget(ui.label_60);//"测量统计"标题
+	ui.groupBox_6->setMinimumHeight(ui.groupBox_6->geometry().height());//测量统计：锁原始高度（内部是真布局，宽度自适应）
+	rightLayout->addWidget(ui.groupBox_6);
+	ui.groupBox_7->setMinimumHeight(240);//测量结果表最小高度
+	rightLayout->addWidget(ui.groupBox_7, 1);//测量结果（吃掉剩余高度）
+
+	m_mainSplitter = new QSplitter(Qt::Horizontal, ui.widget);
+	m_mainSplitter->setObjectName(QStringLiteral("mainContentSplitter"));
+	m_mainSplitter->addWidget(ui.uiWidget);//两个功能页
+	m_mainSplitter->addWidget(rightPanel);
+	m_mainSplitter->setStretchFactor(0, 1);
+	m_mainSplitter->setCollapsible(0, false);
+	m_mainSplitter->setCollapsible(1, false);
+	m_mainSplitter->setSizes({ 1080, 640 });//与初始窗口 1768 宽度下的左右比例匹配
+
+	QVBoxLayout* centralLayout = new QVBoxLayout(ui.widget);
+	centralLayout->setContentsMargins(0, 0, 0, 0);
+	centralLayout->addWidget(m_mainSplitter);
+
+	//========== 四、P2-11 关键数值仪表盘化：等宽字体 Consolas + 语义色 ==========
+	//（布局修复：字号适配容器高度，光幕组布局区已同步加高，数值完整显示不裁切）
+	QFont liveValueFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕实时数值
+	ui.lsCurrentValue->setFont(liveValueFont);
+	ui.lsCurrentValue->setAlignment(Qt::AlignCenter);
+	ui.lsCurrentValue->setStyleSheet("color:#16A34A;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:4px;");//实测值：绿
+
+	QFont diameterFont(QStringLiteral("Consolas"), 18, QFont::Bold);//直径
+	ui.lsDiameter->setFont(diameterFont);
+	ui.lsDiameter->setAlignment(Qt::AlignCenter);
+	ui.lsDiameter->setStyleSheet("color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:4px;");//直径：蓝
+
+	QFont channelFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕 4 通道 + 补偿前
+	ui.lsMeasureOut1->setFont(channelFont);
+	ui.lsMeasureOut2->setFont(channelFont);
+	ui.lsMeasureOut3->setFont(channelFont);
+	ui.lsMeasureOut4->setFont(channelFont);
+	ui.lsMeasureOut1->setAlignment(Qt::AlignCenter);
+	ui.lsMeasureOut2->setAlignment(Qt::AlignCenter);
+	ui.lsMeasureOut3->setAlignment(Qt::AlignCenter);
+	ui.lsMeasureOut4->setAlignment(Qt::AlignCenter);
+	ui.lsMeasureOut1->setStyleSheet("color:#16A34A;");//通道值：绿
+	ui.lsMeasureOut2->setStyleSheet("color:#16A34A;");
+	ui.lsMeasureOut3->setStyleSheet("color:#16A34A;");
+	ui.lsMeasureOut4->setStyleSheet("color:#16A34A;");
+	ui.lsCurrentValue_2->setFont(channelFont);
+	ui.lsCurrentValue_2->setAlignment(Qt::AlignCenter);
+	ui.lsCurrentValue_2->resize(ui.lsCurrentValue_2->width(), 36);//绝对定位标签原高仅 26px，加高适配 20pt 字体防裁切
+	ui.lsCurrentValue_2->setStyleSheet("color:#B45309;");//补偿前数值：琥珀（原始值）
+	//测量结果表：数值列等宽字体加粗（表宽受限取 12pt，中文自动回退雅黑）
+	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 12, QFont::Bold));
+};
+
+//P2-12 进度条平滑过渡：OutCubic 缓动，400ms 滑动到目标值（替代生硬跳变）
+void AxisMeasurement::setProgramProgressSmooth(int value)
+{
+	if (value <= 0 || value >= 100)
+	{
+		//0/100 及重置场景直接设置，不做动画
+		if (m_progressAnim && m_progressAnim->state() == QAbstractAnimation::Running)
+			m_progressAnim->stop();
+		ui.programProgressBar->setValue(value);
+		return;
+	}
+	if (!m_progressAnim)
+	{
+		m_progressAnim = new QPropertyAnimation(ui.programProgressBar, "value", this);
+		m_progressAnim->setEasingCurve(QEasingCurve::OutCubic);
+		m_progressAnim->setDuration(400);
+	}
+	int current = ui.programProgressBar->value();
+	if (current == value)
+		return;
+	if (m_progressAnim->state() == QAbstractAnimation::Running)
+		m_progressAnim->stop();
+	m_progressAnim->setStartValue(current);
+	m_progressAnim->setEndValue(value);
+	m_progressAnim->start();
+};
+
+//P2-12 急停视觉警示：全窗口红色边框闪烁 3 次（边缘 QFrame + 透明度动画，鼠标穿透不影响操作）
+void AxisMeasurement::flashEmergencyBorder()
+{
+	if (!m_alertFrame)
+	{
+		m_alertFrame = new QFrame(this);
+		m_alertFrame->setObjectName(QStringLiteral("emergencyAlertFrame"));
+		m_alertFrame->setStyleSheet("QFrame{border:6px solid #DC2626;background:transparent;}");
+		m_alertFrame->setAttribute(Qt::WA_TransparentForMouseEvents);//鼠标穿透，不拦截任何点击
+		m_alertEffect = new QGraphicsOpacityEffect(m_alertFrame);
+		m_alertFrame->setGraphicsEffect(m_alertEffect);
+	}
+	m_alertFrame->setGeometry(rect());//覆盖整个客户区
+	m_alertFrame->raise();
+	m_alertFrame->show();
+	if (m_flashAnim && m_flashAnim->state() == QAbstractAnimation::Running)
+		m_flashAnim->stop();//连按急停时重新开始闪烁
+	if (!m_flashAnim)
+	{
+		m_flashAnim = new QPropertyAnimation(m_alertEffect, "opacity", this);
+		m_flashAnim->setDuration(400);
+		m_flashAnim->setStartValue(1.0);
+		m_flashAnim->setEndValue(0.0);
+		m_flashAnim->setLoopCount(3);//闪 3 次，共 1.2 秒
+		connect(m_flashAnim, &QPropertyAnimation::finished, this, [this]() { m_alertFrame->hide(); });
+	}
+	m_flashAnim->start();
+};
+
+//P2-10 窗口缩放：保持急停警示边框始终覆盖全窗口
+void AxisMeasurement::resizeEvent(QResizeEvent* event)
+{
+	QMainWindow::resizeEvent(event);
+	if (m_alertFrame && m_alertFrame->isVisible())
+		m_alertFrame->setGeometry(rect());
 };
 
 //线程槽函数
@@ -3045,7 +3319,7 @@ void AxisMeasurement::showLsResult(int lsPosition, float result)
 void AxisMeasurement::showProgramProcess(QString processInf, int precentage)
 {
 	ui.programProcess->setText(processInf);
-	ui.programProgressBar->setValue(precentage);
+	setProgramProgressSmooth(precentage);//P2-12：进度条平滑动画替代直接 setValue
 };
 /*
 函数作用：检测程序确认槽函数

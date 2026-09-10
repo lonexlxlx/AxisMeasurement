@@ -13,6 +13,13 @@
 #include <QSqlQuery>
 #include <QSqlRecord>
 #include <QtSql>
+#include <QSplitter>//P2-10：中央区分隔条
+#include <QTabWidget>//P2-9：控制面板收纳页签
+#include <QScrollArea>//布局修复：绝对定位面板的滚动兜底，防止内容被裁切
+#include <QPropertyAnimation>//P2-12：进度条/警示边框动画
+#include <QGraphicsOpacityEffect>//P2-12：警示边框闪烁效果
+#include <QFrame>//P2-12：急停警示边框层
+#include <QResizeEvent>//P2-10：窗口缩放事件
 
 #include <iostream>
 
@@ -114,7 +121,26 @@ private:
     QDateTime dateTime;//系统时间
     QTimer * updateDateTimer;//用于更新系统时间的定时器
 
-    
+    //P1-8 状态栏分区：设备状态灯 + 提示信息（永久部件）
+    QLabel* m_deviceStatusLabel = nullptr;//状态栏设备状态灯（绿点=已打开，红点=未打开）
+    QLabel* m_statusInfoLabel = nullptr;//状态栏提示信息（同步显示 showDeviceInf 内容）
+    void updateDeviceStatus(bool online);//刷新状态栏设备状态灯
+
+    //P2-9/10 布局重构：12 个分组框收纳 + QSplitter 窗口自适应
+    void restructureMainLayout();//把 .ui 的绝对定位布局重组为 Splitter + TabWidget（只动容器，不动控件本身）
+    QSplitter* m_mainSplitter = nullptr;//中央区主分隔条：左侧页面区 | 右侧统计+结果
+
+    //P2-11 关键数值仪表盘化：光幕实时数值/直径等用 20pt+ 等宽字体 + 语义色（在 restructureMainLayout 内设置）
+
+    //P2-12 视觉反馈：进度条平滑动画 + 急停全窗口边框闪红
+    void setProgramProgressSmooth(int value);//进度条平滑过渡（替代直接 setValue）
+    void flashEmergencyBorder();//急停触发时全窗口红色边框闪烁 3 次
+    QPropertyAnimation* m_progressAnim = nullptr;//进度条动画
+    QFrame* m_alertFrame = nullptr;//急停警示边框层（覆盖全窗口，鼠标穿透）
+    QGraphicsOpacityEffect* m_alertEffect = nullptr;//警示边框透明度效果
+    QPropertyAnimation* m_flashAnim = nullptr;//警示边框闪烁动画
+    void resizeEvent(QResizeEvent* event) override;//窗口缩放时保持警示边框覆盖全窗口
+
     //程序全局变量
     int currentProgram;
     int lastAxisIndex;//手动轴类控制上一次选择的轴号

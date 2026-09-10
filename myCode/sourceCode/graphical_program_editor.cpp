@@ -6,8 +6,12 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCloseEvent>
+#include <QIcon>
+#include <QKeySequence>
+#include <QLabel>
 #include <QShortcut>
 #include <QThread>
+#include <QVBoxLayout>
 #include <HalconCpp.h>
 #include <memory>
 #include <cstring>
@@ -258,6 +262,9 @@ void GraphicalProgramEditor::buildInterface()
     QToolBar* toolBar = addToolBar(QStringLiteral("图形工具"));
     toolBar->setObjectName(QStringLiteral("graphicalProgramToolBar"));
     toolBar->setMovable(false);
+    //P1-7 工具栏升级：图标在上、文字在下，按钮加图标与快捷键提示
+    toolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    toolBar->setIconSize(QSize(20, 20));
 
     QAction* openImageAction = toolBar->addAction(QStringLiteral("打开图像"));
     QAction* cameraAction = toolBar->addAction(QStringLiteral("相机图像"));
@@ -273,6 +280,31 @@ void GraphicalProgramEditor::buildInterface()
     QAction* undoAction = toolBar->addAction(QStringLiteral("撤销"));
     QAction* redoAction = toolBar->addAction(QStringLiteral("重做"));
     QAction* deleteAction = toolBar->addAction(QStringLiteral("删除"));
+
+    //图标资源已注册在 AxisMeasurement.qrc（:/AxisMeasurement/config/icons/）
+    const struct { QAction* action; const char* icon; const char* key; const char* tip; } toolbarInfo[] = {
+        { openImageAction, "open", nullptr, "打开本地图像（记录与图形将清空）" },
+        { cameraAction, "camera", nullptr, "从相机采集图像（尚未接入）" },
+        { selectAction, "select", "V", "选择 (V)：选中/移动/调整图形" },
+        { pointAction, "point", "P", "点 (P)：单击标注特征点" },
+        { lineAction, "line", "L", "直线 (L)：拖动画直线" },
+        { rectangleAction, "rect", "R", "矩形 (R)：拖动画矩形，下拉可选绘制模式" },
+        { circleAction, "circle", "C", "圆 (C)：拖动画圆，下拉可选绘制模式" },
+        { arcAction, "arc", "A", "圆弧 (A)：依次点击起点、弧上点、终点" },
+        { fitAction, "fit", "F", "适合窗口 (F)：图像缩放到充满画布" },
+        { undoAction, "undo", nullptr, "撤销（尚未接入）" },
+        { redoAction, "redo", nullptr, "重做（尚未接入）" },
+        { deleteAction, "delete", nullptr, "删除选中图形 (Del)" },
+    };
+    for (const auto& info : toolbarInfo) {
+        info.action->setIcon(QIcon(QStringLiteral(":/AxisMeasurement/config/icons/%1.png").arg(info.icon)));
+        info.action->setToolTip(QString::fromUtf8(info.tip));
+        if (info.key) {
+            info.action->setShortcut(QKeySequence(QString::fromLatin1(info.key)));
+            //只在画布获得焦点时生效，避免与右侧输入框打字冲突
+            info.action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        }
+    }
 
     const QList<QAction*> futureActions = {
         cameraAction, undoAction, redoAction//撤销、重做、删除这几个是占位按钮
@@ -339,6 +371,19 @@ void GraphicalProgramEditor::buildInterface()
 
     m_canvas = new GraphicalCanvas(mainSplitter);//m_canvas为中间的黑色图像区域,主要是canvas.cpp里的代码
     m_canvas->setMinimumSize(640, 420);
+    //P1-7 画布深色背景：图像边界更清晰
+    m_canvas->setBackgroundBrush(QColor(QStringLiteral("#2B2B2B")));
+    //P1-7 空态提示：未打开图像时居中显示，打开图像后隐藏
+    QLabel* emptyHint = new QLabel(
+        QStringLiteral("尚未打开图像\n\n点击工具栏「打开图像」选择本地图片开始编辑"), m_canvas);
+    emptyHint->setObjectName(QStringLiteral("canvasEmptyHint"));
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    emptyHint->setStyleSheet(QStringLiteral("color:#9CA3AF; font-size:14px; background:transparent;"));
+    QVBoxLayout* hintLayout = new QVBoxLayout(m_canvas);
+    hintLayout->addWidget(emptyHint, 0, Qt::AlignCenter);
+    //工具快捷键挂到画布上（WidgetWithChildrenShortcut 上下文需要 action 属于该 widget）
+    m_canvas->addActions({ selectAction, pointAction, lineAction, rectangleAction, circleAction, arcAction, fitAction });
 
     QTabWidget* propertyTabs = new QTabWidget(mainSplitter);//右栏三个属性
     QWidget* featurePropertyPage = new QWidget(propertyTabs);//特征属性页
@@ -1033,6 +1078,10 @@ void GraphicalProgramEditor::openLocalImage()
             QStringLiteral("无法读取所选图像，请检查文件格式或文件是否损坏。"));
         return;
     }
+
+    //打开成功后隐藏空态提示
+    if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint")))
+        hint->hide();
 
     m_records.clear();
     m_nextRecordSequence = 1;
