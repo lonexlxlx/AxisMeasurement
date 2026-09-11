@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    AxisMeasurement 全局界面主题 v1.0（2026-09-09）
    载入方式：main.cpp 中 QApplication::setStyleSheet() 自动读取本文件
    回滚方式：删除本文件即可恢复 Qt 默认样式（程序会静默跳过）
@@ -99,10 +99,27 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
     background: #F3F4F6; color: #9CA3AF;
 }
+QComboBox {
+    padding-right: 28px;
+}
 QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
     border: none;
     border-left: 1px solid #E5E7EB;
     width: 24px;
+    background: #F9FAFB;
+}
+QComboBox::drop-down:hover {
+    background: #EFF6FF;
+}
+QComboBox::down-arrow {
+    image: url(config/combo_arrow.svg);
+    width: 10px;
+    height: 6px;
+}
+QComboBox::down-arrow:disabled {
+    image: url(config/combo_arrow.svg);
 }
 QComboBox QAbstractItemView {
     background: #FFFFFF;
@@ -110,7 +127,7 @@ QComboBox QAbstractItemView {
     selection-background-color: #DBEAFE;
     selection-color: #1F2937;
 }
-/* 下拉箭头不做自定义（此前的 CSS 三角渲染过小，看起来像显示不全）；不指定时使用样式表风格内置箭头 */
+/* 下拉框统一使用 SVG 小三角，避免看起来像普通输入框 */
 
 /* ---------- 表格 ---------- */
 QTableWidget {
@@ -229,3 +246,127 @@ QRadioButton::indicator {
     background: #FFFFFF;
 }
 QRadioButton::indicator:checked { border: 4px solid #2563EB; }
+
+/* ============================================================
+   sdkAssist 点位记录界面：现代卡片式 UI
+   ============================================================ */
+QScrollArea#sdkAssistScrollArea {
+    background: #F3F4F6;
+    border: none;
+}
+QWidget#sdkAssistPage {
+    background: #F3F4F6;
+}
+QLabel#sdkAssistTitle {
+    color: #111827;
+    font-size: 13pt;
+    font-weight: 700;
+    padding: 4px 0 2px 0;
+}
+QLabel#sdkAssistPathHint {
+    color: #6B7280;
+    font-size: 9pt;
+    padding: 2px 8px;
+}
+QGroupBox#sdkAssistCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    margin-top: 0;
+    padding: 0;
+}
+QGroupBox#sdkAssistCard QLabel#sdkAssistCardTitle {
+    color: #2563EB;
+    background: transparent;
+    font-size: 11pt;
+    font-weight: 700;
+    min-height: 34px;
+    max-height: 34px;
+    padding: 0 2px;
+}
+QGroupBox#sdkAssistCard QLabel {
+    color: #374151;
+    font-size: 9pt;
+}
+QLabel#countValueLabel {
+    color: #2563EB;
+    font-weight: 700;
+}
+QGroupBox#sdkAssistCard QLineEdit,
+QGroupBox#sdkAssistCard QComboBox {
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    min-height: 20px;
+    padding: 2px 7px;
+    background: #FFFFFF;
+}
+QGroupBox#sdkAssistCard QLineEdit:focus,
+QGroupBox#sdkAssistCard QComboBox:focus {
+    border: 1px solid #2563EB;
+    background: #F8FBFF;
+}
+QGroupBox#sdkAssistCard QComboBox {
+    padding-right: 26px;
+}
+QGroupBox#sdkAssistCard QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
+    border-left: 1px solid #E5E7EB;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background: #F9FAFB;
+}
+QGroupBox#sdkAssistCard QComboBox::drop-down:hover {
+    background: #EFF6FF;
+}
+QGroupBox#sdkAssistCard QComboBox::down-arrow {
+    image: url(config/combo_arrow.svg);
+    width: 10px;
+    height: 6px;
+}
+QGroupBox#sdkAssistCard QPushButton {
+    min-height: 22px;
+    padding: 3px 12px;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #374151;
+    font-weight: 600;
+}
+QGroupBox#sdkAssistCard QPushButton:hover {
+    border-color: #2563EB;
+    color: #2563EB;
+    background: #EFF6FF;
+}
+QGroupBox#sdkAssistCard QPushButton:pressed {
+    background: #DBEAFE;
+}
+QPushButton[buttonRole="primary"] {
+    background: #2563EB;
+    border-color: #2563EB;
+    color: #FFFFFF;
+}
+QPushButton[buttonRole="primary"]:hover {
+    background: #1D4ED8;
+    border-color: #1D4ED8;
+    color: #FFFFFF;
+}
+QPushButton[buttonRole="primary"]:pressed {
+    background: #1E40AF;
+    border-color: #1E40AF;
+}
+QPushButton[buttonRole="danger"] {
+    background: #DC2626;
+    border-color: #DC2626;
+    color: #FFFFFF;
+}
+QPushButton[buttonRole="danger"]:hover {
+    background: #B91C1C;
+    border-color: #B91C1C;
+    color: #FFFFFF;
+}
+QPushButton[buttonRole="danger"]:pressed {
+    background: #991B1B;
+    border-color: #991B1B;
+}

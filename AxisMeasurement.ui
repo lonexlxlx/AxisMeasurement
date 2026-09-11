@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1768</width>
+    <width>2678</width>
     <height>997</height>
    </rect>
   </property>
@@ -735,10 +735,6 @@
         </item>
         <item row="1" column="0">
          <widget class="QPushButton" name="apexMoveUp">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -755,14 +751,14 @@
           <property name="text">
            <string>顶尖上移</string>
           </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
+          </property>
          </widget>
         </item>
         <item row="1" column="1">
          <widget class="QPushButton" name="apexMoveDown">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -778,6 +774,10 @@
           </property>
           <property name="text">
            <string>顶尖下移</string>
+          </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
           </property>
          </widget>
         </item>
@@ -915,10 +915,6 @@
         </property>
         <item row="0" column="1">
          <widget class="QPushButton" name="partRotate_clockwise">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -935,14 +931,14 @@
           <property name="text">
            <string>转台慢转</string>
           </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw.png</iconset>
+          </property>
          </widget>
         </item>
         <item row="0" column="0">
          <widget class="QPushButton" name="partRotate_anticlockwise">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -958,6 +954,10 @@
           </property>
           <property name="text">
            <string>转台快转</string>
+          </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</normaloff>:/AxisMeasurement/config/icons/rotate_cw_fast.png</iconset>
           </property>
          </widget>
         </item>
@@ -1095,10 +1095,6 @@
         </property>
         <item row="0" column="1">
          <widget class="QPushButton" name="lsMoveDown">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -1115,14 +1111,14 @@
           <property name="text">
            <string>光幕下移</string>
           </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/arrow_down.png</normaloff>:/AxisMeasurement/config/icons/arrow_down.png</iconset>
+          </property>
          </widget>
         </item>
         <item row="0" column="0">
          <widget class="QPushButton" name="lsMoveUp">
-               <property name="icon">
-          <iconset resource="AxisMeasurement.qrc">
-           <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
-         </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -1138,6 +1134,10 @@
           </property>
           <property name="text">
            <string>光幕上移</string>
+          </property>
+          <property name="icon">
+           <iconset resource="AxisMeasurement.qrc">
+            <normaloff>:/AxisMeasurement/config/icons/arrow_up.png</normaloff>:/AxisMeasurement/config/icons/arrow_up.png</iconset>
           </property>
          </widget>
         </item>
@@ -3589,7 +3589,7 @@
       <x>1190</x>
       <y>40</y>
       <width>701</width>
-      <height>111</height>
+      <height>141</height>
      </rect>
     </property>
     <property name="font">
@@ -3604,7 +3604,7 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>10</y>
+       <y>40</y>
        <width>661</width>
        <height>91</height>
       </rect>
@@ -3767,6 +3767,46 @@
        </widget>
       </item>
      </layout>
+    </widget>
+    <widget class="QLabel" name="label_60">
+     <property name="geometry">
+      <rect>
+       <x>30</x>
+       <y>20</y>
+       <width>71</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>13</pointsize>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>测量统计</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="systemTime">
+     <property name="geometry">
+      <rect>
+       <x>500</x>
+       <y>10</y>
+       <width>181</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>13</pointsize>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>系统时间</string>
+     </property>
     </widget>
    </widget>
    <widget class="QGroupBox" name="groupBox_7">
@@ -4116,54 +4156,14 @@
      </property>
     </widget>
    </widget>
-   <widget class="QLabel" name="label_60">
-    <property name="geometry">
-     <rect>
-      <x>1200</x>
-      <y>20</y>
-      <width>71</width>
-      <height>16</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>13</pointsize>
-      <weight>75</weight>
-      <bold>true</bold>
-     </font>
-    </property>
-    <property name="text">
-     <string>测量统计</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="systemTime">
-    <property name="geometry">
-     <rect>
-      <x>1710</x>
-      <y>10</y>
-      <width>181</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>13</pointsize>
-      <weight>75</weight>
-      <bold>true</bold>
-     </font>
-    </property>
-    <property name="text">
-     <string>系统时间</string>
-    </property>
-   </widget>
   </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1907</width>
-     <height>23</height>
+     <width>2678</width>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="measureModeSelect">

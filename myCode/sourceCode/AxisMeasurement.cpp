@@ -1,6 +1,10 @@
-﻿#include "AxisMeasurement.h"
+#include "AxisMeasurement.h"
 #include <QVBoxLayout>//P2：布局重组用
 #include <QWidget>//P2：布局重组用
+#include <QHBoxLayout>
+#include <QScrollArea>
+#include <QHeaderView>
+#include <QAbstractScrollArea>
 /// <summary>
 /// 构造函数/析构函数
 /// </summary>
@@ -149,21 +153,26 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	ui.measureTable->horizontalHeader()->setFont(font);
 	ui.measureTable->horizontalHeader()->setStyleSheet("QHeaderView::section{background:#F3F4F6;color:#374151;border:none;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 8px;}"); //表头背景色（与全局主题一致）
 	ui.measureTable->setStyleSheet("selection-background-color:#DBEAFE;selection-color:#111827;alternate-background-color:#F9FAFB;"); //设置选中背景色（与全局主题一致）
-	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 12, QFont::Bold));//P2-11：数值等宽字体加粗（中文自动回退雅黑）
+	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 10, QFont::Bold));//P2-11：数值等宽字体加粗（中文自动回退雅黑）
 	QStringList header;
 	header << "特征号" << "特征名称" << "测量结果" << "最小值" <<"最大值" <<"次数" << "公称值" << "下限值" << "上限值";
 	ui.measureTable->setHorizontalHeaderLabels(header);//设置表头（横）
 	ui.measureTable->setShowGrid(true); //设置显示格子线
-	ui.measureTable->setColumnWidth(0, 50);
-	ui.measureTable->setColumnWidth(1, 75);
-	ui.measureTable->setColumnWidth(2, 60);
-	ui.measureTable->setColumnWidth(3, 95);
-	ui.measureTable->setColumnWidth(4, 95);
-	ui.measureTable->setColumnWidth(5, 50);
-	ui.measureTable->setColumnWidth(6, 90);
-	ui.measureTable->setColumnWidth(7, 70);
-	ui.measureTable->setColumnWidth(8, 70);
-	//ui.measureTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch); //表列随着表格变化而自适应变化
+	ui.measureTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);//允许用户拖拽调整列宽
+	ui.measureTable->horizontalHeader()->setStretchLastSection(false);//不要强制拉伸最后一列，超宽时交给水平滚动条
+	ui.measureTable->horizontalHeader()->setMinimumSectionSize(56);
+	ui.measureTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	ui.measureTable->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	ui.measureTable->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+	ui.measureTable->setColumnWidth(0, 70);
+	ui.measureTable->setColumnWidth(1, 96);
+	ui.measureTable->setColumnWidth(2, 88);
+	ui.measureTable->setColumnWidth(3, 78);
+	ui.measureTable->setColumnWidth(4, 78);
+	ui.measureTable->setColumnWidth(5, 60);
+	ui.measureTable->setColumnWidth(6, 78);
+	ui.measureTable->setColumnWidth(7, 78);
+	ui.measureTable->setColumnWidth(8, 78);
 	ui.measureTable->show();
 
 
@@ -2985,10 +2994,10 @@ void AxisMeasurement::restructureMainLayout()
 	QTabWidget* adjustTabs = new QTabWidget(ui.autoMeasureUI);
 	adjustTabs->setObjectName(QStringLiteral("autoAdjustTabs"));
 	adjustTabs->addTab(wrapScroll(ui.autoMoveAdjust, QSize(300, 240)), QStringLiteral("顶尖 / 旋转 / 光幕位置"));
-	adjustTabs->setMinimumHeight(280);
+	adjustTabs->setMinimumHeight(260);
 
 	QWidget* autoLeftPanel = new QWidget(ui.autoMeasureUI);
-	autoLeftPanel->setMinimumWidth(ui.groupBox->geometry().width() + 16);//保证程序选择组不被横向压缩
+	autoLeftPanel->setMinimumSize(ui.groupBox->geometry().width() + 16, 660);//左栏内容的最小可读尺寸，低分辨率时交给滚动区
 	QVBoxLayout* autoLeftLayout = new QVBoxLayout(autoLeftPanel);
 	autoLeftLayout->setContentsMargins(4, 0, 4, 0);
 	autoLeftLayout->setSpacing(6);
@@ -2996,16 +3005,27 @@ void AxisMeasurement::restructureMainLayout()
 	autoLeftLayout->addWidget(ui.groupBox);
 	//光幕实时显示：P2-11 仪表盘字体加大后内容变高（原布局区仅 91px 高），
 	//同步加高内部布局区和组框，大字号数值完整显示、不被裁切
-	ui.lsCurrentValue->parentWidget()->setGeometry(10, 40, 301, 110);
+	if (QWidget* lightCurtainPanel = ui.lsCurrentValue->parentWidget()) {
+		lightCurtainPanel->setMinimumHeight(110);
+		lightCurtainPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
 	ui.groupBox_2->setMinimumSize(321, 160);
 	autoLeftLayout->addWidget(ui.groupBox_2);
 	autoLeftLayout->addWidget(adjustTabs, 1);
+	QScrollArea* autoLeftScroll = new QScrollArea(ui.autoMeasureUI);
+	autoLeftScroll->setObjectName(QStringLiteral("autoLeftPanelScroll"));
+	autoLeftScroll->setWidget(autoLeftPanel);
+	autoLeftScroll->setWidgetResizable(true);
+	autoLeftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	autoLeftScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	autoLeftScroll->setFrameShape(QFrame::NoFrame);
+	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 28);
 
 	ui.frame1->setMinimumSize(380, 280);//图像区最小尺寸，防止被挤没
 
 	QSplitter* autoContentSplitter = new QSplitter(Qt::Horizontal, ui.autoMeasureUI);
 	autoContentSplitter->setObjectName(QStringLiteral("autoContentSplitter"));
-	autoContentSplitter->addWidget(autoLeftPanel);
+	autoContentSplitter->addWidget(autoLeftScroll);
 	autoContentSplitter->addWidget(ui.frame1);//图像显示区
 	autoContentSplitter->setStretchFactor(1, 1);//图像区优先吃掉多余空间
 	autoContentSplitter->setCollapsible(0, false);
@@ -3013,13 +3033,33 @@ void AxisMeasurement::restructureMainLayout()
 	autoContentSplitter->setSizes({ 360, 800 });
 
 	//设备控制条：锁定原始高度，宽度自适应（内部按钮行是真布局可压缩，状态信息条右侧为空白区）
-	ui.autoDeviceControl->setMinimumHeight(ui.autoDeviceControl->geometry().height() + 8);
-	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	QPushButton* topButtons[] = {
+		ui.openAllDevice, ui.closeAllDevice, ui.allAxisGoHome, ui.startAutoMearsurement,
+		ui.measureCancel, ui.programConfirm, ui.urgrentStopMearsure
+	};
+	for (QPushButton* button : topButtons) {
+		button->setMinimumWidth(88);
+		button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	}
+	ui.closeAllDevice->setMinimumWidth(112);
+	ui.urgrentStopMearsure->setMinimumWidth(96);
+	ui.programNumber->setMinimumWidth(180);
+	ui.programNumber->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+	ui.autoDeviceControl->setMinimumSize(ui.autoDeviceControl->geometry().width(), ui.autoDeviceControl->geometry().height() + 8);
+	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	QScrollArea* autoDeviceScroll = new QScrollArea(ui.autoMeasureUI);
+	autoDeviceScroll->setObjectName(QStringLiteral("autoDeviceControlScroll"));
+	autoDeviceScroll->setWidget(ui.autoDeviceControl);
+	autoDeviceScroll->setWidgetResizable(false);
+	autoDeviceScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	autoDeviceScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	autoDeviceScroll->setFrameShape(QFrame::NoFrame);
+	autoDeviceScroll->setMinimumHeight(ui.autoDeviceControl->minimumHeight() + 18);
 
 	QVBoxLayout* autoLayout = new QVBoxLayout(ui.autoMeasureUI);
 	autoLayout->setContentsMargins(10, 10, 10, 10);
 	autoLayout->setSpacing(6);
-	autoLayout->addWidget(ui.autoDeviceControl);//设备控制条
+	autoLayout->addWidget(autoDeviceScroll);//设备控制条（水平滚动防遮挡）
 	autoLayout->addWidget(autoContentSplitter, 1);
 	ui.label_51->hide();//游离标题"设备控制"：分组框卡片化后由边框+内容自明
 
@@ -3071,29 +3111,111 @@ void AxisMeasurement::restructureMainLayout()
 
 	//========== 三、中央区（widget）：左（页面区）| 右（统计+结果），可拖动收放 ==========
 	QWidget* rightPanel = new QWidget(ui.widget);
-	rightPanel->setMinimumWidth(520);//测量统计两列内容的最小可读宽度
+	rightPanel->setMinimumWidth(640);//测量统计与结果表的最小可读宽度
+	rightPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+	ui.groupBox_6->setMinimumWidth(620);
+	ui.groupBox_7->setMinimumWidth(620);
+	ui.label_60->setAlignment(Qt::AlignCenter);
+	ui.label_60->setMinimumHeight(24);
+	ui.label_60->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.label_60->setStyleSheet(QStringLiteral("font-size: 10pt; font-weight: 700; color: #111827;"));
+	ui.label_61->setAlignment(Qt::AlignCenter);
+	ui.label_61->setMinimumHeight(24);
+	ui.label_61->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.label_61->setStyleSheet(QStringLiteral("font-size: 10pt; font-weight: 700; color: #111827;"));
+	ui.partsId->setMinimumWidth(160);
+	ui.partsId->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.operatorName->setMinimumWidth(140);
+	ui.operatorName->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	QWidget* statLayoutWidget = ui.groupBox_6->findChild<QWidget*>(QStringLiteral("layoutWidget_5"));
+	QGridLayout* statLayout = statLayoutWidget ? qobject_cast<QGridLayout*>(statLayoutWidget->layout()) : nullptr;
+	if (statLayout) {
+		statLayout->setContentsMargins(8, 8, 8, 8);
+		statLayout->setHorizontalSpacing(12);
+		statLayout->setVerticalSpacing(8);
+		statLayout->setColumnStretch(0, 0);
+		statLayout->setColumnStretch(1, 1);
+		statLayout->setColumnStretch(2, 0);
+		statLayout->setColumnStretch(3, 1);
+	}
+	if (statLayoutWidget) {
+		QVBoxLayout* statBoxLayout = new QVBoxLayout(ui.groupBox_6);
+		statBoxLayout->setContentsMargins(10, 8, 10, 10);
+		statBoxLayout->setSpacing(0);
+		statBoxLayout->addWidget(statLayoutWidget);
+		statLayoutWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
+	QWidget* resultSummaryWidget = ui.groupBox_7->findChild<QWidget*>(QStringLiteral("layoutWidget_6"));
+	QGridLayout* resultSummaryLayout = resultSummaryWidget ? qobject_cast<QGridLayout*>(resultSummaryWidget->layout()) : nullptr;
+	if (resultSummaryLayout) {
+		resultSummaryLayout->setColumnStretch(0, 0);
+		resultSummaryLayout->setColumnStretch(1, 1);
+		resultSummaryLayout->setColumnStretch(2, 0);
+		resultSummaryLayout->setColumnStretch(3, 1);
+	}
+	ui.measureTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	ui.measureTable->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	ui.measureTable->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContentsOnFirstShow);
+	ui.measureTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+	ui.measureTable->horizontalHeader()->setStretchLastSection(false);
+	if (resultSummaryWidget) {
+		QVBoxLayout* resultBoxLayout = new QVBoxLayout(ui.groupBox_7);
+		resultBoxLayout->setContentsMargins(10, 8, 10, 10);
+		resultBoxLayout->setSpacing(6);
+		resultBoxLayout->addWidget(ui.label_61, 0, Qt::AlignTop | Qt::AlignHCenter);
+		resultBoxLayout->addWidget(resultSummaryWidget, 0);
+		resultBoxLayout->addWidget(ui.measureTable, 1);
+		resultSummaryWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		ui.measureTable->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	}
 	QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
 	rightLayout->setContentsMargins(0, 0, 0, 0);
 	rightLayout->setSpacing(6);
-	rightLayout->addWidget(ui.systemTime, 0, Qt::AlignRight);//系统时间挪到右栏顶部
-	rightLayout->addWidget(ui.label_60);//"测量统计"标题
-	ui.groupBox_6->setMinimumHeight(ui.groupBox_6->geometry().height());//测量统计：锁原始高度（内部是真布局，宽度自适应）
+	QWidget* statsTitleBar = new QWidget(rightPanel);
+	QGridLayout* statsTitleLayout = new QGridLayout(statsTitleBar);
+	statsTitleLayout->setContentsMargins(0, 0, 0, 0);
+	statsTitleLayout->setSpacing(0);
+	statsTitleLayout->addWidget(ui.label_60, 0, 0, 1, 3, Qt::AlignTop | Qt::AlignHCenter);
+	statsTitleLayout->addWidget(ui.systemTime, 0, 2, Qt::AlignTop | Qt::AlignRight);
+	statsTitleLayout->setColumnStretch(0, 1);
+	statsTitleLayout->setColumnStretch(1, 1);
+	statsTitleLayout->setColumnStretch(2, 1);
+	rightLayout->addWidget(statsTitleBar);//右栏顶部：标题居中，系统时间靠右
+	ui.groupBox_6->setMinimumHeight(122);//测量统计：用布局接管后保留可读高度，低分辨率由右侧滚动区兜底
 	rightLayout->addWidget(ui.groupBox_6);
 	ui.groupBox_7->setMinimumHeight(240);//测量结果表最小高度
 	rightLayout->addWidget(ui.groupBox_7, 1);//测量结果（吃掉剩余高度）
 
 	m_mainSplitter = new QSplitter(Qt::Horizontal, ui.widget);
 	m_mainSplitter->setObjectName(QStringLiteral("mainContentSplitter"));
+	QScrollArea* rightScrollArea = new QScrollArea(ui.widget);
+	rightScrollArea->setObjectName(QStringLiteral("rightStatisticsScroll"));
+	rightScrollArea->setWidget(rightPanel);
+	rightScrollArea->setWidgetResizable(true);
+	rightScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	rightScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	rightScrollArea->setFrameShape(QFrame::NoFrame);
+	rightScrollArea->setMinimumWidth(420);
 	m_mainSplitter->addWidget(ui.uiWidget);//两个功能页
-	m_mainSplitter->addWidget(rightPanel);
-	m_mainSplitter->setStretchFactor(0, 1);
+	m_mainSplitter->addWidget(rightScrollArea);
+	m_mainSplitter->setStretchFactor(0, 3);
+	m_mainSplitter->setStretchFactor(1, 2);
 	m_mainSplitter->setCollapsible(0, false);
 	m_mainSplitter->setCollapsible(1, false);
-	m_mainSplitter->setSizes({ 1080, 640 });//与初始窗口 1768 宽度下的左右比例匹配
+	m_mainSplitter->setSizes({ 980, 760 });//与初始窗口 1768 宽度下的左右比例匹配
 
 	QVBoxLayout* centralLayout = new QVBoxLayout(ui.widget);
 	centralLayout->setContentsMargins(0, 0, 0, 0);
 	centralLayout->addWidget(m_mainSplitter);
+
+	QLabel* autoMoveTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
+	for (QLabel* title : autoMoveTitles) {
+		title->setFixedWidth(280);
+		title->setAlignment(Qt::AlignCenter);
+		title->setMinimumHeight(24);
+		title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		title->setStyleSheet(QStringLiteral("font-size: 10pt; font-weight: 700; color: #111827;"));
+	}
 
 	//========== 四、P2-11 关键数值仪表盘化：等宽字体 Consolas + 语义色 ==========
 	//（布局修复：字号适配容器高度，光幕组布局区已同步加高，数值完整显示不裁切）
@@ -3122,10 +3244,10 @@ void AxisMeasurement::restructureMainLayout()
 	ui.lsMeasureOut4->setStyleSheet("color:#16A34A;");
 	ui.lsCurrentValue_2->setFont(channelFont);
 	ui.lsCurrentValue_2->setAlignment(Qt::AlignCenter);
-	ui.lsCurrentValue_2->resize(ui.lsCurrentValue_2->width(), 36);//绝对定位标签原高仅 26px，加高适配 20pt 字体防裁切
+	ui.lsCurrentValue_2->setMinimumHeight(36);//加高适配 20pt 字体防裁切
 	ui.lsCurrentValue_2->setStyleSheet("color:#B45309;");//补偿前数值：琥珀（原始值）
 	//测量结果表：数值列等宽字体加粗（表宽受限取 12pt，中文自动回退雅黑）
-	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 12, QFont::Bold));
+	ui.measureTable->setFont(QFont(QStringLiteral("Consolas"), 10, QFont::Bold));
 };
 
 //P2-12 进度条平滑过渡：OutCubic 缓动，400ms 滑动到目标值（替代生硬跳变）

@@ -1,4 +1,4 @@
-﻿#include "sdk_assist.h"
+#include "sdk_assist.h"
 
 #include "graphical_program_editor.h"
 
@@ -9,98 +9,357 @@
 #include <QGuiApplication>
 #include <QLabel>
 #include <QGroupBox>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QFrame>
+#include <QGraphicsDropShadowEffect>
+#include <QSizePolicy>
+#include <QPushButton>
+#include <QColor>
 
 QString runtimePath(const QString& relativePath);
 
+namespace {
+constexpr int kLabelWidth = 104;
+constexpr int kControlMinWidth = 170;
+constexpr int kControlHeight = 25;
+
+void prepareField(QWidget* widget)
+{
+    if (!widget)
+        return;
+    widget->setMinimumWidth(kControlMinWidth);
+    widget->setMinimumHeight(kControlHeight);
+    widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+}
+
+void prepareLabel(QLabel* label)
+{
+    if (!label)
+        return;
+    label->setFixedWidth(kLabelWidth);
+    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+}
+
+void markButton(QPushButton* button, const char* role)
+{
+    if (!button)
+        return;
+    button->setProperty("buttonRole", role);
+    button->setMinimumHeight(27);
+    button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+}
+
+void addRow(QGridLayout* layout, int row, QLabel* label, QWidget* field)
+{
+    prepareLabel(label);
+    prepareField(field);
+    layout->addWidget(label, row, 0);
+    layout->addWidget(field, row, 1);
+}
+
+void addButtonRow(QGridLayout* layout, int row, QPushButton* primary, QPushButton* danger)
+{
+    markButton(primary, "primary");
+    markButton(danger, "danger");
+    layout->addWidget(primary, row, 0);
+    layout->addWidget(danger, row, 1);
+}
+
+QGroupBox* createCard(const QString& title)
+{
+    QGroupBox* card = new QGroupBox();
+    card->setObjectName(QStringLiteral("sdkAssistCard"));
+    card->setProperty("cardTitleText", title);
+    card->setMinimumHeight(330);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto* shadow = new QGraphicsDropShadowEffect(card);
+    shadow->setBlurRadius(10);
+    shadow->setOffset(0, 1);
+    shadow->setColor(QColor(15, 23, 42, 14));
+    card->setGraphicsEffect(shadow);
+    return card;
+}
+
+QGridLayout* createCardLayout(QGroupBox* card)
+{
+    auto* wrapper = new QVBoxLayout(card);
+    wrapper->setContentsMargins(10, 8, 10, 10);
+    wrapper->setSpacing(6);
+    wrapper->setAlignment(Qt::AlignTop);
+
+    auto* title = new QLabel(card->property("cardTitleText").toString(), card);
+    title->setObjectName(QStringLiteral("sdkAssistCardTitle"));
+    title->setStyleSheet(QStringLiteral("color: #2563EB; font-size: 11pt; font-weight: 700; background: transparent;"));
+    title->setAlignment(Qt::AlignCenter);
+    title->setWordWrap(true);
+    title->setFixedHeight(34);
+    title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    wrapper->addWidget(title);
+
+    auto* layout = new QGridLayout();
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setHorizontalSpacing(8);
+    layout->setVerticalSpacing(7);
+    layout->setColumnStretch(0, 0);
+    layout->setColumnStretch(1, 1);
+    wrapper->addLayout(layout);
+    return layout;
+}
+
+QGroupBox* createDiameterModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("1. 直径点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(11);
+    addRow(layout, 0, ui.label_3, ui.diameterSequence);
+    addRow(layout, 1, ui.label_5, ui.diameterFeatureNb);
+    addRow(layout, 2, ui.label_6, ui.diameterNominalValue);
+    addRow(layout, 3, ui.label_7, ui.diameterUpperOffset);
+    addRow(layout, 4, ui.label_8, ui.diameterBottomOffset);
+    addRow(layout, 5, ui.label_9, ui.diameterPostionNote);
+    addButtonRow(layout, 6, ui.diameterPostionRecord, ui.diameterPostionClear);
+    return card;
+}
+
+QGroupBox* createRoughnessModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("2. 粗糙度点位记录模块（粗糙度相机 + 光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(10);
+    addRow(layout, 0, ui.label_14, ui.roughnessSequence);
+    addRow(layout, 1, ui.label_10, ui.roughnessFeatureNb);
+    addRow(layout, 2, ui.label_11, ui.roughnessNominalValue);
+    addRow(layout, 3, ui.label_4, ui.roughnessExposeTime);
+    addRow(layout, 4, ui.label_31, ui.roughnessReferenceD);
+    addRow(layout, 5, ui.label_28, ui.roughnessPostionNote);
+    markButton(ui.roughnessPostionRecord, "primary");
+    markButton(ui.roughnessReferenceDRecord, "primary");
+    markButton(ui.roughnessPostionClear, "danger");
+    layout->addWidget(ui.roughnessPostionRecord, 6, 0);
+    layout->addWidget(ui.roughnessReferenceDRecord, 6, 1);
+    layout->addWidget(ui.roughnessPostionClear, 7, 0, 1, 2);
+    return card;
+}
+
+QGroupBox* createHoleModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("3. 孔径点位记录模块（孔径相机）"));
+    QGridLayout* layout = createCardLayout(card);
+    addRow(layout, 0, ui.label_38, ui.holeSequence);
+    addRow(layout, 1, ui.label_34, ui.holeFeatureNb);
+    addRow(layout, 2, ui.label_35, ui.holeNominalValue);
+    addRow(layout, 3, ui.label_37, ui.holeUpperOffset);
+    addRow(layout, 4, ui.label_39, ui.holeBottomOffset);
+    addRow(layout, 5, ui.label_41, ui.holeNumber);
+    addRow(layout, 6, ui.label_40, ui.holeExposeTime);
+    addRow(layout, 7, ui.label_49, ui.holePostionNote);
+    layout->setRowStretch(8, 1);
+    addButtonRow(layout, 9, ui.holePostionRecord, ui.holePostionClear);
+    return card;
+}
+
+QGroupBox* createCylindricityModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("4. 圆柱度点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(11);
+    addRow(layout, 0, ui.label_13, ui.cylindricitySequence);
+    addRow(layout, 1, ui.label_16, ui.cylindricityFeatureNb);
+    addRow(layout, 2, ui.label_17, ui.cylindricityNominalValue);
+    addRow(layout, 3, ui.label_18, ui.cylindricityUpperRelativeLocation);
+    addRow(layout, 4, ui.label_19, ui.cylindricityBottomRelativeLocation);
+    addRow(layout, 5, ui.label_20, ui.cylindricityPostionNote);
+    addButtonRow(layout, 6, ui.cylindricityPostionRecord, ui.cylindricityPostionClear);
+    return card;
+}
+
+QGroupBox* createRoundoutModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("5. 跳动点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    addRow(layout, 0, ui.label_24, ui.roundoutSequence);
+    addRow(layout, 1, ui.label_25, ui.roundoutFeatureNb);
+    addRow(layout, 2, ui.label_26, ui.roundoutNominalValue);
+    addRow(layout, 3, ui.label_22, ui.roundoutUpperRelativeLocation);
+    addRow(layout, 4, ui.label_23, ui.roundoutBottomRelativeLocation);
+    addRow(layout, 5, ui.label_27, ui.roundoutPostionNote1);
+    addRow(layout, 6, ui.label_33, ui.roundoutPostionNote2);
+    layout->setRowStretch(7, 1);
+    addButtonRow(layout, 8, ui.roundoutPostionRecord, ui.roundoutPostionClear);
+    return card;
+}
+
+QGroupBox* createTelecentricModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("6. 长度/角度/圆弧半径点位记录模块（远心相机）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(14);
+    layout->setContentsMargins(0, 28, 0, 0);
+    addRow(layout, 0, ui.label_30, ui.telecentricSequence);
+    layout->setRowStretch(1, 1);
+    addRow(layout, 2, ui.label_32, ui.telecentricExposeTime);
+    layout->setRowStretch(3, 1);
+    addRow(layout, 4, ui.label_36, ui.telecentricPostionNote);
+    layout->setRowStretch(5, 2);
+    addButtonRow(layout, 6, ui.telecentricPostionRecord, ui.telecentricPostionClear);
+    return card;
+}
+
+QGroupBox* createOutputModule(Ui::sdk_assist& ui)
+{
+    QGroupBox* card = createCard(QStringLiteral("7. 测量信息与点位输出"));
+    card->setMinimumHeight(0);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    QGridLayout* layout = createCardLayout(card);
+    layout->setColumnStretch(1, 1);
+    layout->setColumnStretch(3, 1);
+    layout->setColumnStretch(5, 1);
+
+    prepareLabel(ui.label_76);
+    prepareLabel(ui.label_81);
+    prepareLabel(ui.label_79);
+    prepareLabel(ui.label_72);
+    prepareLabel(ui.label_74);
+    prepareLabel(ui.label_80);
+    ui.recordDiameterNb->setObjectName(QStringLiteral("countValueLabel"));
+    ui.recordCylindricityNb->setObjectName(QStringLiteral("countValueLabel"));
+    ui.recordRoughnessNb->setObjectName(QStringLiteral("countValueLabel"));
+    ui.recordTelecentricNb->setObjectName(QStringLiteral("countValueLabel"));
+    ui.recordHoleNb->setObjectName(QStringLiteral("countValueLabel"));
+    ui.recordRoundoutNb->setObjectName(QStringLiteral("countValueLabel"));
+
+    layout->addWidget(ui.label_76, 0, 0);
+    layout->addWidget(ui.recordDiameterNb, 0, 1);
+    layout->addWidget(ui.label_81, 0, 2);
+    layout->addWidget(ui.recordCylindricityNb, 0, 3);
+    layout->addWidget(ui.label_79, 0, 4);
+    layout->addWidget(ui.recordRoughnessNb, 0, 5);
+    layout->addWidget(ui.label_72, 1, 0);
+    layout->addWidget(ui.recordTelecentricNb, 1, 1);
+    layout->addWidget(ui.label_74, 1, 2);
+    layout->addWidget(ui.recordHoleNb, 1, 3);
+    layout->addWidget(ui.label_80, 1, 4);
+    layout->addWidget(ui.recordRoundoutNb, 1, 5);
+
+    prepareLabel(ui.label_86);
+    prepareLabel(ui.label_85);
+    prepareLabel(ui.label_84);
+    prepareField(ui.recordpartNb);
+    prepareField(ui.recordpartName);
+    prepareField(ui.recordpartProcessingNb);
+    layout->addWidget(ui.label_86, 2, 0);
+    layout->addWidget(ui.recordpartNb, 2, 1);
+    layout->addWidget(ui.label_85, 2, 2);
+    layout->addWidget(ui.recordpartName, 2, 3);
+    layout->addWidget(ui.label_84, 2, 4);
+    layout->addWidget(ui.recordpartProcessingNb, 2, 5);
+
+    prepareLabel(ui.label_87);
+    prepareField(ui.recordpartNote);
+    markButton(ui.PostionRecordOut, "primary");
+    markButton(ui.PostionClearOut, "danger");
+    layout->addWidget(ui.label_87, 3, 0);
+    layout->addWidget(ui.recordpartNote, 3, 1, 1, 3);
+    layout->addWidget(ui.PostionRecordOut, 3, 4);
+    layout->addWidget(ui.PostionClearOut, 3, 5);
+    return card;
+}
+}
 sdk_assist::sdk_assist(QWidget* parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
 	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
 	this->setWindowTitle("sdkAssist");
-	//====== 布局整理（2026-09-10 第二轮）：模块对齐、标题居中、底部信息初始可见 ======
-	//1) 隐藏重复遗留的孤儿标签：label_82(跳动点数)/label_75(孔径点数) 坐标在 y1090/1148
-	//   的真内容之外，与 groupBox_7 内部统计重复，且代码中零引用——它们把内容高度虚撑到 1199。
-	ui.label_82->hide();
-	ui.label_75->hide();
+	    //====== sdkAssist UI 重构：滚动容器 + 卡片式模块 + 布局管理器 ======
+    // 保留 Designer 中的控件实例和 objectName，让 Qt 自动连接槽函数继续生效；只重排父子关系和布局。
+    ui.label_82->hide();
+    ui.label_75->hide();
+    ui.label_2->hide();
+    ui.label_12->hide();
+    ui.label_15->hide();
+    ui.label_21->hide();
+    ui.label_29->hide();
+    ui.label_42->hide();
+    ui.label_43->hide();
+    ui.label_56->hide();
+    ui.label_57->hide();
+    ui.groupBox->hide();
+    ui.groupBox_2->hide();
+    ui.groupBox_3->hide();
+    ui.groupBox_4->hide();
+    ui.groupBox_5->hide();
+    ui.groupBox_6->hide();
+    ui.groupBox_7->hide();
 
-	//2) 垂直重排：压缩行间浪费（原布局行间隙达 300px），底部"测量信息与点位输出/表单生成路径"初始可见。
-	//   行1：标题 y36 / 组 y68；行2：标题 y407 / 组 y439（模块6 双行标题 y407+430、组 y459）；
-	//   模块7：标题 y698 / 组 y730；路径条 y907。内容总高约 950（原 1199）。
-	ui.label->setGeometry(10, 4, 1091, 28);
-	ui.label->setAlignment(Qt::AlignCenter);
-	ui.label_2->move(ui.label_2->x(), 36);
-	ui.label_15->move(ui.label_15->x(), 36);
-	ui.label_29->move(ui.label_29->x(), 36);
-	ui.groupBox->move(10, 68);
-	ui.groupBox_3->move(340, 68);
-	ui.groupBox_5->move(790, 68);
-	ui.label_12->move(ui.label_12->x(), 407);
-	ui.label_21->move(ui.label_21->x(), 407);
-	ui.label_42->move(ui.label_42->x(), 407);
-	ui.label_43->move(ui.label_43->x(), 430);
-	ui.groupBox_4->move(10, 439);
-	ui.groupBox_2->move(340, 439);
-	ui.groupBox_6->move(790, 459);
-	ui.label_56->move(ui.label_56->x(), 698);
-	ui.groupBox_7->move(10, 730);
-	ui.label_57->move(ui.label_57->x(), 907);
-	ui.label_57->resize(ui.label_57->width(), 36);
+    auto* page = new QWidget(this);
+    page->setObjectName(QStringLiteral("sdkAssistPage"));
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(8, 6, 8, 8);
+    pageLayout->setSpacing(8);
+    pageLayout->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
 
-	//3) 各模块小标题统一居中，并与对应组左右对齐（原 label_2/12 靠左、其余居中，宽窄不一）
-	const QPair<QLabel*, QGroupBox*> titleFixes[] = {
-		{ ui.label_2,  ui.groupBox   },  //1 直径
-		{ ui.label_15, ui.groupBox_3 },  //2 粗糙度
-		{ ui.label_29, ui.groupBox_5 },  //3 孔径
-		{ ui.label_12, ui.groupBox_4 },  //4 圆柱度
-		{ ui.label_21, ui.groupBox_2 },  //5 跳动
-		{ ui.label_42, ui.groupBox_6 },  //6 长度/角度/圆弧半径
-		{ ui.label_43, ui.groupBox_6 },  //6 副标题（远心相机）
-	};
-	for (const auto& fix : titleFixes) {
-		fix.first->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-		fix.first->setGeometry(fix.second->x(), fix.first->y(), fix.second->width(), fix.first->height());
-	}
-	ui.label_56->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-	ui.label_56->setGeometry(10, ui.label_56->y(), 1091, ui.label_56->height());
-	ui.label_57->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-	ui.label_57->setGeometry(10, ui.label_57->y(), 1091, ui.label_57->height());
+    ui.label->setParent(page);
+    ui.label->setObjectName(QStringLiteral("sdkAssistTitle"));
+    ui.label->setAlignment(Qt::AlignCenter);
+    ui.label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    pageLayout->addWidget(ui.label);
 
-	//4) 各组内部布局容器右缘内收：原来右缘距卡片边框仅 3~9px，下拉框视觉上顶出背景边界
-	QGroupBox* moduleBoxes[] = { ui.groupBox, ui.groupBox_2, ui.groupBox_3, ui.groupBox_4, ui.groupBox_5, ui.groupBox_6, ui.groupBox_7 };
-	for (QGroupBox* box : moduleBoxes) {
-		const QList<QWidget*> directChildren = box->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
-		for (QWidget* child : directChildren) {
-			if (child->layout() && child->objectName().startsWith(QStringLiteral("layoutWidget"))) {
-				child->setGeometry(12, child->y(), box->width() - 24, child->height());
-			}
-		}
-	}
+    auto* moduleGrid = new QGridLayout();
+    moduleGrid->setContentsMargins(0, 0, 0, 0);
+    moduleGrid->setHorizontalSpacing(10);
+    moduleGrid->setVerticalSpacing(8);
+    moduleGrid->setColumnStretch(0, 1);
+    moduleGrid->setColumnStretch(1, 1);
+    moduleGrid->setColumnStretch(2, 1);
+    moduleGrid->setRowStretch(0, 1);
+    moduleGrid->setRowStretch(1, 1);
+    moduleGrid->addWidget(createDiameterModule(ui), 0, 0);
+    moduleGrid->addWidget(createRoughnessModule(ui), 0, 1);
+    moduleGrid->addWidget(createHoleModule(ui), 0, 2);
+    moduleGrid->addWidget(createCylindricityModule(ui), 1, 0);
+    moduleGrid->addWidget(createRoundoutModule(ui), 1, 1);
+    moduleGrid->addWidget(createTelecentricModule(ui), 1, 2);
+    pageLayout->addLayout(moduleGrid, 1);
+    pageLayout->addWidget(createOutputModule(ui), 0);
 
-	//5) 滚动区承载 + 窗口初始高度适配屏幕：重排后内容高约 950，一屏尽览；小屏滚动兜底
-	ui.centralwidget->setMinimumSize(1142, 950);
-	QScrollArea* centralScrollArea = new QScrollArea(this);
-	centralScrollArea->setWidget(ui.centralwidget);
-	centralScrollArea->setWidgetResizable(true);
-	centralScrollArea->setFrameShape(QFrame::NoFrame);
-	setCentralWidget(centralScrollArea);
-	QScreen* primaryScreen = QGuiApplication::primaryScreen();
-	if (primaryScreen) {
-		const int availableHeight = primaryScreen->availableGeometry().height();
-		resize(1160, qMin(1010, availableHeight - 60));
-	}
-	QToolBar* graphicalToolBar = addToolBar(QStringLiteral("图形化编程"));
-	graphicalToolBar->setObjectName(QStringLiteral("graphicalProgrammingEntryToolBar"));
-	graphicalToolBar->setMovable(false);
-	QAction* graphicalProgrammingAction = graphicalToolBar->addAction(QStringLiteral("打开图形化编程"));
-	connect(graphicalProgrammingAction, &QAction::triggered, this, [this]() {
-		if (!m_graphicalProgramEditor)
-			m_graphicalProgramEditor = new GraphicalProgramEditor(this);
-		m_graphicalProgramEditor->show();
-		m_graphicalProgramEditor->raise();
-		m_graphicalProgramEditor->activateWindow();
-	});
-	/*
+    auto* pathHint = new QLabel(QStringLiteral("表单生成路径：%1").arg(runtimePath("SDKpostion")), page);
+    pathHint->setObjectName(QStringLiteral("sdkAssistPathHint"));
+    pathHint->setWordWrap(true);
+    pageLayout->addWidget(pathHint);
+
+    auto* centralScrollArea = new QScrollArea(this);
+    centralScrollArea->setObjectName(QStringLiteral("sdkAssistScrollArea"));
+    centralScrollArea->setWidget(page);
+    centralScrollArea->setWidgetResizable(true);
+    centralScrollArea->setFrameShape(QFrame::NoFrame);
+    setCentralWidget(centralScrollArea);
+    setMinimumSize(1024, 768);
+
+    QScreen* primaryScreen = QGuiApplication::primaryScreen();
+    if (primaryScreen) {
+        const int availableHeight = primaryScreen->availableGeometry().height();
+        resize(1180, qMin(940, availableHeight - 60));
+    }
+    else {
+        resize(1180, 900);
+    }
+
+    QToolBar* graphicalToolBar = addToolBar(QStringLiteral("图形化编程"));
+    graphicalToolBar->setObjectName(QStringLiteral("graphicalProgrammingEntryToolBar"));
+    graphicalToolBar->setMovable(false);
+    QAction* graphicalProgrammingAction = graphicalToolBar->addAction(QStringLiteral("打开图形化编程"));
+    connect(graphicalProgrammingAction, &QAction::triggered, this, [this]() {
+        if (!m_graphicalProgramEditor)
+            m_graphicalProgramEditor = new GraphicalProgramEditor(this);
+        m_graphicalProgramEditor->show();
+        m_graphicalProgramEditor->raise();
+        m_graphicalProgramEditor->activateWindow();
+    });
+/*
 	for (int i = 0; i < 99; i++)
 	{
 		m_diameterPositionInf[i] = new diameterPositionInf();
@@ -1296,4 +1555,3 @@ void sdk_assist::saveAsExcel()
 		emit tips("点位保存完成");
 	}
 };
-
