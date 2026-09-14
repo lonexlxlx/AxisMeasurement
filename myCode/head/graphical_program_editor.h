@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QVector>
 #include <QPainterPath>
+#include <functional>
 
 class GraphicalCanvas;
 class QLabel;
@@ -19,12 +20,56 @@ class GraphicalProgramEditor : public QMainWindow
 {
 public:
     explicit GraphicalProgramEditor(QWidget* parent = nullptr);
+    struct AxisSnapshot {
+        bool connected = false;
+        bool available = false;
+        bool valid = false;
+        long status = 0;
+        double planned = 0;
+        double encoder = 0;
+        QString message;
+    };
+    enum class AxisCommand { JogNegative, JogPositive, MoveAbsolute, Enable, Disable, Stop, EmergencyStop };
+    struct AxisCommandResult {
+        QString error;
+        bool motionMayHaveStarted;
+        AxisCommandResult(QString message = QString(), bool started = false)
+            : error(std::move(message)), motionMayHaveStarted(started) {}
+    };
+    using AxisReader = std::function<AxisSnapshot(int)>;
+    using AxisCommander = std::function<AxisCommandResult(int, AxisCommand, double, long)>;
+    void setAxisBackend(AxisReader reader, AxisCommander commander);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
     void buildInterface();
+    QWidget* buildAxisPanel();
+    void refreshAxisPanel();
+    void executeAxisCommand(AxisCommand command);
+    bool stopOwnedAxis();
+    AxisReader m_axisReader;
+    AxisCommander m_axisCommander;
+    QComboBox* m_axisSelector = nullptr;
+    QComboBox* m_axisMode = nullptr;
+    QDoubleSpinBox* m_axisSpeed = nullptr;
+    QDoubleSpinBox* m_axisTarget = nullptr;
+    QWidget* m_axisInputs = nullptr;
+    QLabel* m_axisState = nullptr;
+    QLabel* m_axisPosition = nullptr;
+    QLabel* m_axisMessage = nullptr;
+    QPushButton* m_jogNegative = nullptr;
+    QPushButton* m_jogPositive = nullptr;
+    QPushButton* m_moveAbsolute = nullptr;
+    QPushButton* m_axisEnable = nullptr;
+    QPushButton* m_axisDisable = nullptr;
+    QPushButton* m_axisStop = nullptr;
+    QPushButton* m_axisEmergency = nullptr;
+    int m_ownedAxis = -1;
+    bool m_axisStopRequested = false;
+    qint64 m_axisStartedAt = 0;
     void openLocalImage();
     void refreshFeatureList();
     void refreshFeatureProperties(int featureId);

@@ -116,6 +116,7 @@
     <QtMoc Include="myCode\head\sdk_assist.h" />
     <QtMoc Include="myCode\head\graphical_canvas.h" />
     <ClInclude Include="myCode\head\graphical_program_editor.h" />
+    <ClInclude Include="myCode\head\graphical_axis_backend.h" />
     <ClInclude Include="myCode\head\sharedFun.h" />
   </ItemGroup>
   <ItemGroup>
