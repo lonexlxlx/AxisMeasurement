@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <QMainWindow>
+#include <functional>
 #include <QMessageBox>
 #include <QThread>
 #include <iostream>
@@ -23,6 +24,7 @@ class sdk_assist:public QMainWindow
 
 public:
     sdk_assist(QWidget *parent = nullptr);
+    std::function<QString()> graphicalEntryError;
 	~sdk_assist();
 
     //全局变量初始化***************************************************************************************************************************
@@ -207,6 +209,7 @@ private:
     GraphicalProgramEditor* m_graphicalProgramEditor = nullptr;
 
 signals:
+    void graphicalEditorCreated(GraphicalProgramEditor* editor);
    
     void diameterPostionRecord();
     void roughnessPostionRecord();

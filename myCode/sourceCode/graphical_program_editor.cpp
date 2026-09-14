@@ -248,13 +248,197 @@ LineTrialResult runTwoRoiAngleTrial(const QImage& source,
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QTimer>
+#include <QDateTime>
+#include <QScrollArea>
+#include <QEvent>
+
+// Temporary offline layout preview; restore false after the user's feedback.
+namespace { constexpr bool kGraphicalAxisLayoutPreview = false; }
 
 GraphicalProgramEditor::GraphicalProgramEditor(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle(QStringLiteral("图形化二次开发"));
     resize(1500, 900);
+    setWindowModality(Qt::ApplicationModal);
     buildInterface();
+    QTimer* axisTimer = new QTimer(this);
+    connect(axisTimer, &QTimer::timeout, this, &GraphicalProgramEditor::refreshAxisPanel);
+    axisTimer->start(200);
+}
+
+void GraphicalProgramEditor::setAxisBackend(AxisReader reader, AxisCommander commander)
+{
+    m_axisReader = std::move(reader);
+    m_axisCommander = std::move(commander);
+    refreshAxisPanel();
+}
+
+QWidget* GraphicalProgramEditor::buildAxisPanel()
+{
+    QGroupBox* panel = new QGroupBox(QStringLiteral("手动轴控制"));
+    QVBoxLayout* layout = new QVBoxLayout(panel);
+    m_axisState = new QLabel(QStringLiteral("未连接"), panel);
+    m_axisState->setWordWrap(true);
+    layout->addWidget(m_axisState);
+    m_axisPosition = new QLabel(QStringLiteral("规划 / 编码器：未采集"), panel);
+    m_axisPosition->setWordWrap(true);
+    layout->addWidget(m_axisPosition);
+    m_axisInputs = new QWidget(panel);
+    QFormLayout* form = new QFormLayout(m_axisInputs);
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    form->setContentsMargins(0, 0, 0, 0);
+    m_axisSelector = new QComboBox(m_axisInputs);
+    const int axes[] = { 1, 2, 5, 6, 7 };
+    const QStringList names = { QStringLiteral("测粗糙度轴"), QStringLiteral("测孔轴"),
+        QStringLiteral("光幕轴"), QStringLiteral("上顶尖轴"), QStringLiteral("转台轴") };
+    for (int i = 0; i < 5; ++i)
+        m_axisSelector->addItem(QStringLiteral("%1 · %2").arg(axes[i]).arg(names[i]), axes[i]);
+    form->addRow(QStringLiteral("运动轴"), m_axisSelector);
+    m_axisMode = new QComboBox(m_axisInputs);
+    m_axisMode->addItems({ QStringLiteral("Jog（按住移动）"), QStringLiteral("绝对点位") });
+    form->addRow(QStringLiteral("模式"), m_axisMode);
+    m_axisSpeed = new QDoubleSpinBox(m_axisInputs);
+    m_axisSpeed->setDecimals(3);
+    m_axisSpeed->setRange(0.001, 1000);
+    m_axisSpeed->setValue(1);
+    m_axisSpeed->setKeyboardTracking(false);
+    form->addRow(QStringLiteral("速度 pulse/ms"), m_axisSpeed);
+    m_axisTarget = new QDoubleSpinBox(m_axisInputs);
+    m_axisTarget->setDecimals(0);
+    m_axisTarget->setRange(-2147483647.0, 2147483647.0);
+    m_axisTarget->setKeyboardTracking(false);
+    form->addRow(QStringLiteral("目标 pulse"), m_axisTarget);
+    layout->addWidget(m_axisInputs);
+    QHBoxLayout* jogRow = new QHBoxLayout;
+    m_jogNegative = new QPushButton(QStringLiteral("负向 −（按住）"), panel);
+    m_jogPositive = new QPushButton(QStringLiteral("正向 +（按住）"), panel);
+    jogRow->addWidget(m_jogNegative);
+    jogRow->addWidget(m_jogPositive);
+    layout->addLayout(jogRow);
+    m_moveAbsolute = new QPushButton(QStringLiteral("移动至目标位置"), panel);
+    layout->addWidget(m_moveAbsolute);
+    QHBoxLayout* servoRow = new QHBoxLayout;
+    m_axisEnable = new QPushButton(QStringLiteral("轴使能"), panel);
+    m_axisDisable = new QPushButton(QStringLiteral("关闭使能"), panel);
+    servoRow->addWidget(m_axisEnable);
+    servoRow->addWidget(m_axisDisable);
+    layout->addLayout(servoRow);
+    QLabel* hint = new QLabel(QStringLiteral("目标是绝对脉冲位置。加减速沿用原轴参数；速度上限仅为输入范围，不代表设备安全速度。"), panel);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    m_axisMessage = new QLabel(panel);
+    m_axisMessage->setWordWrap(true);
+    layout->addWidget(m_axisMessage);
+    layout->addStretch();
+    connect(m_jogNegative, &QPushButton::pressed, this, [this]() { executeAxisCommand(AxisCommand::JogNegative); });
+    connect(m_jogPositive, &QPushButton::pressed, this, [this]() { executeAxisCommand(AxisCommand::JogPositive); });
+    connect(m_jogNegative, &QPushButton::released, this, [this]() { stopOwnedAxis(); });
+    connect(m_jogPositive, &QPushButton::released, this, [this]() { stopOwnedAxis(); });
+    connect(m_moveAbsolute, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::MoveAbsolute); });
+    connect(m_axisEnable, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::Enable); });
+    connect(m_axisDisable, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::Disable); });
+    connect(m_axisSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        stopOwnedAxis();
+        m_axisPosition->setText(QStringLiteral("规划 / 编码器：未采集"));
+        refreshAxisPanel();
+    });
+    connect(m_axisMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        stopOwnedAxis(); refreshAxisPanel();
+    });
+    return panel;
+}
+
+void GraphicalProgramEditor::refreshAxisPanel()
+{
+    if (!m_axisSelector || !isVisible()) return;
+    const int axis = m_ownedAxis > 0 ? m_ownedAxis : m_axisSelector->currentData().toInt();
+    AxisSnapshot snapshot;
+    snapshot.message = QStringLiteral("控制接口未连接");
+    if (m_axisReader) snapshot = m_axisReader(axis);
+    const bool moving = snapshot.valid && (snapshot.status & 0x400);
+    const bool held = m_jogNegative->isDown() || m_jogPositive->isDown();
+    if (m_ownedAxis > 0 && snapshot.valid && !moving &&
+        (m_axisStopRequested || (!held && QDateTime::currentMSecsSinceEpoch() - m_axisStartedAt > 600))) {
+        m_ownedAxis = -1;
+        m_axisStopRequested = false;
+    }
+    if (m_ownedAxis > 0 && (!snapshot.available || !snapshot.valid || m_trialRunning)) stopOwnedAxis();
+    m_axisState->setText(snapshot.message + (snapshot.valid
+        ? QStringLiteral("\n使能：%1  运动：%2\n正限位：%3  负限位：%4  报警/停止：%5")
+            .arg((snapshot.status & 0x200) ? QStringLiteral("开") : QStringLiteral("关"))
+            .arg(moving ? QStringLiteral("是") : QStringLiteral("否"))
+            .arg((snapshot.status & 0x20) ? QStringLiteral("触发") : QStringLiteral("无"))
+            .arg((snapshot.status & 0x40) ? QStringLiteral("触发") : QStringLiteral("无"))
+            .arg((snapshot.status & 0x192) ? QStringLiteral("有") : QStringLiteral("无")) : QString()));
+    m_axisPosition->setText(snapshot.valid
+        ? QStringLiteral("规划：%1 pulse\n编码器：%2 pulse").arg(snapshot.planned, 0, 'f', 1).arg(snapshot.encoder, 0, 'f', 1)
+        : QStringLiteral("规划 / 编码器：未采集"));
+    const bool idle = snapshot.available && snapshot.valid && !moving && m_ownedAxis < 0 && !m_trialRunning;
+    const bool offlinePreview = kGraphicalAxisLayoutPreview && !snapshot.connected && m_ownedAxis < 0 && !m_trialRunning;
+    m_axisInputs->setEnabled(idle || offlinePreview);
+    if (offlinePreview)
+        m_axisState->setText(QStringLiteral("未连接 · 临时布局预览\n可选轴和切换模式；实际运动禁用。"));
+    const bool jog = m_axisMode->currentIndex() == 0;
+    m_axisTarget->setEnabled(!jog);
+    m_jogNegative->setVisible(jog);
+    m_jogPositive->setVisible(jog);
+    m_moveAbsolute->setVisible(!jog);
+    const bool canMove = idle && (snapshot.status & 0x200) && !(snapshot.status & 0x192);
+    // Keep the pressed Jog button enabled so release is delivered normally.
+    m_jogNegative->setEnabled((canMove && !(snapshot.status & 0x40)) || (held && m_jogNegative->isDown()));
+    m_jogPositive->setEnabled((canMove && !(snapshot.status & 0x20)) || (held && m_jogPositive->isDown()));
+    m_moveAbsolute->setEnabled(canMove);
+    m_axisEnable->setEnabled(idle && !(snapshot.status & 0x200) && !(snapshot.status & 0x192));
+    m_axisDisable->setEnabled(idle && (snapshot.status & 0x200));
+    m_axisStop->setEnabled(snapshot.connected);
+    m_axisEmergency->setEnabled(snapshot.connected);
+}
+
+void GraphicalProgramEditor::executeAxisCommand(AxisCommand command)
+{
+    if (!m_axisCommander) return;
+    const bool stop = command == AxisCommand::Stop || command == AxisCommand::EmergencyStop;
+    if (!stop && (m_trialRunning || m_ownedAxis > 0)) return;
+    const int axis = m_ownedAxis > 0 ? m_ownedAxis : m_axisSelector->currentData().toInt();
+    const auto result = m_axisCommander(axis, command, m_axisSpeed->value(), static_cast<long>(m_axisTarget->value()));
+    const QString error = result.error;
+    if (!error.isEmpty()) {
+        // Update may have reached the card even if its acknowledgement failed.
+        if (result.motionMayHaveStarted) {
+            m_ownedAxis = axis;
+            m_axisStopRequested = false;
+            m_axisStartedAt = QDateTime::currentMSecsSinceEpoch();
+        }
+        m_axisMessage->setText(error);
+        return;
+    }
+    const bool starts = command == AxisCommand::JogNegative || command == AxisCommand::JogPositive || command == AxisCommand::MoveAbsolute;
+    if (starts) {
+        m_ownedAxis = axis;
+        m_axisStopRequested = false;
+        m_axisStartedAt = QDateTime::currentMSecsSinceEpoch();
+    }
+    if (stop && m_ownedAxis > 0) m_axisStopRequested = true;
+    m_axisMessage->setText(stop ? QStringLiteral("停止指令已发送，请观察轴状态。") : QStringLiteral("指令已发送；以设备实际状态为准。"));
+}
+
+bool GraphicalProgramEditor::stopOwnedAxis()
+{
+    if (m_ownedAxis < 0) return true;
+    if (!m_axisCommander) return false;
+    const QString error = m_axisCommander(m_ownedAxis, AxisCommand::Stop, 0, 0).error;
+    m_axisStopRequested = error.isEmpty();
+    m_axisMessage->setText(error.isEmpty() ? QStringLiteral("已请求停止轴 %1。").arg(m_ownedAxis) : error);
+    return error.isEmpty();
+}
+
+bool GraphicalProgramEditor::event(QEvent* event)
+{
+    if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::Hide)
+        stopOwnedAxis();
+    return QMainWindow::event(event);
 }
 /*整个界面在一个函数里面搭出来*/
 void GraphicalProgramEditor::buildInterface()
@@ -265,6 +449,20 @@ void GraphicalProgramEditor::buildInterface()
     //P1-7 工具栏升级：图标在上、文字在下，按钮加图标与快捷键提示
     toolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     toolBar->setIconSize(QSize(20, 20));
+
+    QToolBar* axisSafetyBar = new QToolBar(QStringLiteral("轴停止"), this);
+    axisSafetyBar->setObjectName(QStringLiteral("graphicalAxisSafetyBar"));
+    axisSafetyBar->setMovable(false);
+    addToolBar(Qt::TopToolBarArea, axisSafetyBar);
+    m_axisStop = new QPushButton(QStringLiteral("停止当前轴"), axisSafetyBar);
+    m_axisEmergency = new QPushButton(QStringLiteral("全部轴急停"), axisSafetyBar);
+    m_axisEmergency->setStyleSheet(QStringLiteral("QPushButton { background: #DC2626; color: white; font-weight: bold; padding: 8px; }"));
+    m_axisStop->setEnabled(false);
+    m_axisEmergency->setEnabled(false);
+    axisSafetyBar->addWidget(m_axisStop);
+    axisSafetyBar->addWidget(m_axisEmergency);
+    connect(m_axisStop, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::Stop); });
+    connect(m_axisEmergency, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::EmergencyStop); });
 
     QAction* openImageAction = toolBar->addAction(QStringLiteral("打开图像"));
     QAction* cameraAction = toolBar->addAction(QStringLiteral("相机图像"));
@@ -604,13 +802,25 @@ void GraphicalProgramEditor::buildInterface()
     propertyTabs->addTab(positionPage, QStringLiteral("设备点位"));
     propertyTabs->setMinimumWidth(300);
 
-    mainSplitter->addWidget(featureGroup);
+    QSplitter* leftSplitter = new QSplitter(Qt::Vertical, mainSplitter);
+    leftSplitter->setObjectName(QStringLiteral("graphicalAxisFeatureSplitter"));
+    leftSplitter->setMinimumWidth(300);
+    QScrollArea* axisScroll = new QScrollArea(leftSplitter);
+    axisScroll->setWidgetResizable(true);
+    axisScroll->setWidget(buildAxisPanel());
+    leftSplitter->addWidget(axisScroll);
+    leftSplitter->addWidget(featureGroup);
+    leftSplitter->setChildrenCollapsible(false);
+    featureGroup->setMinimumHeight(100);
+    leftSplitter->setSizes({ 470, 160 });
+    mainSplitter->addWidget(leftSplitter);
     mainSplitter->addWidget(m_canvas);
     mainSplitter->addWidget(propertyTabs);
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
     mainSplitter->setStretchFactor(2, 0);
-    mainSplitter->setSizes(QList<int>() << 210 << 900 << 330);
+    mainSplitter->setChildrenCollapsible(false);
+    mainSplitter->setSizes(QList<int>() << 310 << 800 << 330);
 
     QGroupBox* stepGroup = new QGroupBox(QStringLiteral("测量流程"), verticalSplitter);//底部的“测量流程”表
     QVBoxLayout* stepLayout = new QVBoxLayout(stepGroup);
@@ -940,6 +1150,12 @@ void GraphicalProgramEditor::showRecordDetection(int row)
 
 void GraphicalProgramEditor::trialSelectedRecord()
 {
+    stopOwnedAxis();
+    refreshAxisPanel();
+    if (m_ownedAxis > 0) {
+        statusBar()->showMessage(QStringLiteral("请等待轴停止后再试测。"));
+        return;
+    }
     const int row = m_stepTable->currentRow();
     if (m_trialRunning || m_relinkSequence > 0) return;
     if (row < 0 || row >= m_records.size()) {
@@ -981,7 +1197,8 @@ void GraphicalProgramEditor::trialSelectedRecord()
     refreshMeasurementRecords();
     m_trialRunning = true;
     centralWidget()->setEnabled(false);
-    for (QToolBar* toolbar : findChildren<QToolBar*>()) toolbar->setEnabled(false);
+    for (QToolBar* toolbar : findChildren<QToolBar*>())
+        if (toolbar->objectName() != QStringLiteral("graphicalAxisSafetyBar")) toolbar->setEnabled(false);
     statusBar()->showMessage(angleTrial
         ? QStringLiteral("正在后台分别拟合 ROI 1 和 ROI 2 的目标直线并计算夹角；不作合格判定。")
         : QStringLiteral("正在后台计算圆弧半径；使用列表中已提交的记录，未标定、不作合格判定。"));
@@ -1046,6 +1263,13 @@ void GraphicalProgramEditor::cancelRelink()
 
 void GraphicalProgramEditor::closeEvent(QCloseEvent* event)
 {
+    stopOwnedAxis();
+    refreshAxisPanel();
+    if (m_ownedAxis > 0) {
+        statusBar()->showMessage(QStringLiteral("已请求停止，请确认轴停止后再次关闭；通讯失败时使用设备物理急停。"));
+        event->ignore();
+        return;
+    }
     if (m_trialRunning) {
         statusBar()->showMessage(QStringLiteral("算法计算中，请等待结束后关闭。"));
         event->ignore();

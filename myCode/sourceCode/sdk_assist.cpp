@@ -353,13 +353,20 @@ sdk_assist::sdk_assist(QWidget* parent)
     graphicalToolBar->setMovable(false);
     QAction* graphicalProgrammingAction = graphicalToolBar->addAction(QStringLiteral("打开图形化编程"));
     connect(graphicalProgrammingAction, &QAction::triggered, this, [this]() {
-        if (!m_graphicalProgramEditor)
+        const QString error = graphicalEntryError ? graphicalEntryError() : QString();
+        if (!error.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("暂不能打开图形化编程"), error);
+            return;
+        }
+        if (!m_graphicalProgramEditor) {
             m_graphicalProgramEditor = new GraphicalProgramEditor(this);
+            emit graphicalEditorCreated(m_graphicalProgramEditor);
+        }
         m_graphicalProgramEditor->show();
         m_graphicalProgramEditor->raise();
         m_graphicalProgramEditor->activateWindow();
     });
-/*
+	/*
 	for (int i = 0; i < 99; i++)
 	{
 		m_diameterPositionInf[i] = new diameterPositionInf();

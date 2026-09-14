@@ -1,10 +1,17 @@
 #include "AxisMeasurement.h"
 #include <QVBoxLayout>//P2：布局重组用
 #include <QWidget>//P2：布局重组用
+
 #include <QHBoxLayout>
 #include <QScrollArea>
 #include <QHeaderView>
 #include <QAbstractScrollArea>
+
+#include "graphical_axis_backend.h"
+
+// Temporary UI-only preview requested by the user. Restore false after feedback.
+namespace { constexpr bool kManualLayoutPreview = false; }
+
 /// <summary>
 /// 构造函数/析构函数
 /// </summary>
@@ -32,6 +39,20 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	connect(updateDateTimer, SIGNAL(timeout()), this, SLOT(showTime()));
 	updateDateTimer->start(1000);
 	m_sdk_assist=new(sdk_assist);
+	m_sdk_assist->graphicalEntryError = [this]() -> QString {
+		if (programRunFlag || goHomeThread_Ptr->isRunning())
+			return QStringLiteral("自动测量或回零正在运行，请先结束当前运动。");
+		return QString();
+	};
+	connect(this, &QObject::destroyed, m_sdk_assist, [assist = m_sdk_assist]() {
+		assist->graphicalEntryError = []() { return QStringLiteral("主窗口已关闭，请重新启动软件。"); };
+	});
+	connect(m_sdk_assist, &sdk_assist::graphicalEditorCreated, this, [this](GraphicalProgramEditor* editor) {
+		attachGraphicalAxisBackend(editor, moveControlCardPtr, [this]() {
+			return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
+		});
+		connect(this, &QObject::destroyed, editor, [editor]() { editor->setAxisBackend({}, {}); });
+	});
 	//m_sdk_assist->show();
 	connect(m_sdk_assist, SIGNAL(diameterPostionRecord()), this, SLOT(diameterPostionRecordExecute()));
 	connect(m_sdk_assist, SIGNAL(roughnessPostionRecord()), this, SLOT(roughnessPostionRecordExecute()));
@@ -82,7 +103,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 
 	//自动检测UI控件设置
 
-	ui.ManualControl->setEnabled(false);
+	ui.ManualControl->setEnabled(kManualLayoutPreview);
 	ui.autoMoveAdjust->setEnabled(false);
 	ui.programNumber->setEnabled(false);
 	ui.closeAllDevice->setEnabled(false);
@@ -931,6 +952,24 @@ void AxisMeasurement::on_autoMeasureMode_Triggered()
 void AxisMeasurement::on_ManualControl_Triggered()
 {
 	cout << "on_ManualControl_Triggered()" << endl;
+	if (kManualLayoutPreview) {
+		if (programRunFlag || goHomeThread_Ptr->isRunning()) return;
+		ui.uiWidget->setCurrentIndex(1);
+		ui.axisControl->setEnabled(true);
+		ui.axisNumber->setEnabled(false);
+		// Enable only mode selectors. Do not start monitoring or touch the card.
+		for (QWidget* group : { static_cast<QWidget*>(ui.axisControl), static_cast<QWidget*>(ui.jogControl), static_cast<QWidget*>(ui.trapControl) }) {
+			for (QAbstractButton* button : group->findChildren<QAbstractButton*>())
+				button->setEnabled(button == ui.jogMode || button == ui.trapMode);
+			for (QLineEdit* input : group->findChildren<QLineEdit*>()) input->setReadOnly(true);
+		}
+		ui.cameraControl->setEnabled(false);
+		ui.LS9000->setEnabled(false);
+		ui.jogControl->setEnabled(ui.jogMode->isChecked());
+		ui.trapControl->setEnabled(ui.trapMode->isChecked());
+		statusBar()->showMessage(QStringLiteral("临时界面预览：可切换Jog/点位模式并查看对应页签；硬件动作与参数修改禁用，待反馈后恢复入口限制。"));
+		return;
+	}
 	if (allDeviceOpenFlag && !programRunFlag)
 	{
 		cout << "手动控制模式" << endl;
@@ -1227,7 +1266,7 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 	ui.programConfirm->setEnabled(false);
 	ui.urgrentStopMearsure->setEnabled(false);
 
-	ui.ManualControl->setEnabled(false);
+	ui.ManualControl->setEnabled(kManualLayoutPreview);
 	ui.axisControl->setEnabled(false);
 	ui.cameraControl->setEnabled(false);
 	ui.autoMoveAdjust->setEnabled(false);
@@ -2595,6 +2634,11 @@ void AxisMeasurement::on_clearStatus_clicked()
 void AxisMeasurement::on_jogMode_clicked()
 {
 	cout << "on_jogMode_clicked()" << endl;
+	if (kManualLayoutPreview) {
+		ui.jogControl->setEnabled(true);
+		ui.trapControl->setEnabled(false);
+		return;
+	}
 	moveControlCardPtr->setMoveMode("Jog");
 	ui.jogControl->setEnabled(true);
 	ui.trapControl->setEnabled(false);
@@ -2620,6 +2664,11 @@ void AxisMeasurement::on_urgentStop_clicked()
 void AxisMeasurement::on_trapMode_clicked()
 {
 	cout << "on_trapMode_clicked" << endl;
+	if (kManualLayoutPreview) {
+		ui.jogControl->setEnabled(false);
+		ui.trapControl->setEnabled(true);
+		return;
+	}
 	moveControlCardPtr->setMoveMode("Trap");
 	ui.jogControl->setEnabled(false);
 	ui.trapControl->setEnabled(true);
