@@ -370,3 +370,146 @@ QPushButton[buttonRole="danger"]:pressed {
     background: #991B1B;
     border-color: #991B1B;
 }
+
+/* ---------- 主界面右侧统计/结果卡片：贴近 UI 优化预览 ---------- */
+QWidget#rightDashboardPanel {
+    background: #F3F4F6;
+}
+QWidget#rightStatsTitleBar {
+    background: transparent;
+}
+QLabel#rightCardTitle {
+    color: #2563EB;
+    font-size: 10pt;
+    font-weight: 700;
+    padding: 2px 0 6px 0;
+}
+QGroupBox#rightStatsCard,
+QGroupBox#rightResultCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    margin-top: 0;
+    padding: 0;
+    font-size: 9pt;
+    font-weight: 400;
+}
+QGroupBox#rightStatsCard QLabel,
+QGroupBox#rightResultCard QLabel {
+    color: #1F2937;
+    font-size: 9pt;
+    font-weight: 400;
+}
+QGroupBox#rightStatsCard QLineEdit,
+QGroupBox#rightResultCard QLineEdit {
+    min-height: 22px;
+}
+QGroupBox#rightResultCard QTableWidget {
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    background: #FFFFFF;
+    alternate-background-color: #F9FAFB;
+}
+QGroupBox#rightResultCard QHeaderView::section {
+    background: #F3F4F6;
+    color: #374151;
+    font-weight: 700;
+    padding: 6px 8px;
+}
+
+/* ---------- 主界面左侧程序/光幕卡片：贴近 UI 优化预览 ---------- */
+QWidget#leftDashboardPanel {
+    background: #F3F4F6;
+}
+QGroupBox#leftProcessCard,
+QGroupBox#leftLightCurtainCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    margin-top: 0;
+    padding: 0;
+    font-size: 9pt;
+    font-weight: 400;
+}
+QLabel#leftCardTitle {
+    color: #2563EB;
+    font-size: 10pt;
+    font-weight: 700;
+    padding: 2px 0 6px 0;
+}
+QGroupBox#leftProcessCard QLabel,
+QGroupBox#leftLightCurtainCard QLabel {
+    color: #1F2937;
+    font-size: 9pt;
+    font-weight: 400;
+}
+QGroupBox#leftProcessCard QProgressBar {
+    min-height: 18px;
+    max-height: 18px;
+    border-radius: 9px;
+    background: #E5E7EB;
+    color: #374151;
+    font-weight: 600;
+}
+QGroupBox#leftProcessCard QProgressBar::chunk {
+    background: #2563EB;
+    border-radius: 9px;
+}
+QLabel#lsDiameter,
+QLabel#lsCurrentValue {
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-weight: 700;
+}
+
+/* ---------- 主界面顶部设备控制栏：程序选择与关键动作 ---------- */
+QGroupBox#topDeviceBarCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    margin-top: 0;
+    padding: 0;
+}
+QLabel#topDeviceInfo {
+    color: #374151;
+    font-size: 9pt;
+    font-weight: 600;
+    padding: 2px 8px;
+}
+QComboBox#topProgramCombo {
+    min-height: 28px;
+    padding-left: 10px;
+    padding-right: 30px;
+    border-radius: 5px;
+    font-weight: 600;
+}
+QGroupBox#topDeviceBarCard QPushButton {
+    min-height: 28px;
+    padding: 4px 16px;
+    border-radius: 5px;
+    font-weight: 600;
+}
+QGroupBox#topDeviceBarCard QPushButton#openAllDevice {
+    border-color: #2563EB;
+    color: #2563EB;
+    background: #FFFFFF;
+}
+QGroupBox#topDeviceBarCard QPushButton#openAllDevice:hover {
+    background: #EFF6FF;
+}
+QGroupBox#topDeviceBarCard QPushButton#startAutoMearsurement {
+    background: #2563EB;
+    border-color: #2563EB;
+    color: #FFFFFF;
+}
+QGroupBox#topDeviceBarCard QPushButton#startAutoMearsurement:hover {
+    background: #1D4ED8;
+}
+QGroupBox#topDeviceBarCard QPushButton#urgrentStopMearsure {
+    background: #DC2626;
+    border-color: #DC2626;
+    color: #FFFFFF;
+}
+QGroupBox#topDeviceBarCard QPushButton#urgrentStopMearsure:hover {
+    background: #B91C1C;
+}
