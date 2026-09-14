@@ -326,7 +326,6 @@ sdk_assist::sdk_assist(QWidget* parent)
     pageLayout->addLayout(moduleGrid, 1);
     pageLayout->addWidget(createOutputModule(ui), 0);
 
-<<<<<<< HEAD
     auto* pathHint = new QLabel(QStringLiteral("表单生成路径：%1").arg(runtimePath("SDKpostion")), page);
     pathHint->setObjectName(QStringLiteral("sdkAssistPathHint"));
     pathHint->setWordWrap(true);
@@ -354,46 +353,20 @@ sdk_assist::sdk_assist(QWidget* parent)
     graphicalToolBar->setMovable(false);
     QAction* graphicalProgrammingAction = graphicalToolBar->addAction(QStringLiteral("打开图形化编程"));
     connect(graphicalProgrammingAction, &QAction::triggered, this, [this]() {
-        if (!m_graphicalProgramEditor)
+        const QString error = graphicalEntryError ? graphicalEntryError() : QString();
+        if (!error.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("暂不能打开图形化编程"), error);
+            return;
+        }
+        if (!m_graphicalProgramEditor) {
             m_graphicalProgramEditor = new GraphicalProgramEditor(this);
+            emit graphicalEditorCreated(m_graphicalProgramEditor);
+        }
         m_graphicalProgramEditor->show();
         m_graphicalProgramEditor->raise();
         m_graphicalProgramEditor->activateWindow();
     });
-/*
-=======
-	//5) 滚动区承载 + 窗口初始高度适配屏幕：重排后内容高约 950，一屏尽览；小屏滚动兜底
-	ui.centralwidget->setMinimumSize(1142, 950);
-	QScrollArea* centralScrollArea = new QScrollArea(this);
-	centralScrollArea->setWidget(ui.centralwidget);
-	centralScrollArea->setWidgetResizable(true);
-	centralScrollArea->setFrameShape(QFrame::NoFrame);
-	setCentralWidget(centralScrollArea);
-	QScreen* primaryScreen = QGuiApplication::primaryScreen();
-	if (primaryScreen) {
-		const int availableHeight = primaryScreen->availableGeometry().height();
-		resize(1160, qMin(1010, availableHeight - 60));
-	}
-	QToolBar* graphicalToolBar = addToolBar(QStringLiteral("图形化编程"));
-	graphicalToolBar->setObjectName(QStringLiteral("graphicalProgrammingEntryToolBar"));
-	graphicalToolBar->setMovable(false);
-	QAction* graphicalProgrammingAction = graphicalToolBar->addAction(QStringLiteral("打开图形化编程"));
-	connect(graphicalProgrammingAction, &QAction::triggered, this, [this]() {
-		const QString error = graphicalEntryError ? graphicalEntryError() : QString();
-		if (!error.isEmpty()) {
-			QMessageBox::warning(this, QStringLiteral("暂不能打开图形化编程"), error);
-			return;
-		}
-		if (!m_graphicalProgramEditor) {
-			m_graphicalProgramEditor = new GraphicalProgramEditor(this);
-			emit graphicalEditorCreated(m_graphicalProgramEditor);
-		}
-		m_graphicalProgramEditor->show();
-		m_graphicalProgramEditor->raise();
-		m_graphicalProgramEditor->activateWindow();
-	});
 	/*
->>>>>>> 18f4e14 (增加运动控制部分)
 	for (int i = 0; i < 99; i++)
 	{
 		m_diameterPositionInf[i] = new diameterPositionInf();
