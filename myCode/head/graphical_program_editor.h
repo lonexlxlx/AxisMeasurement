@@ -4,6 +4,35 @@
 #include <QVector>
 #include <QPainterPath>
 #include <functional>
+#include <cmath>
+#include "graphical_corner_geometry.h"
+
+struct GraphicalDetectionParameters {
+    double smoothing = 2;
+    double lowThreshold = 20;
+    double highThreshold = 60;
+    double minLength = 20;
+    double maxLength = 0; // 0 preserves the legacy image-width / 2 limit.
+    double mergeDistance = 90;
+    double cornerMaxDeviation = 2.5;
+    double cornerMaxGap = 20;
+    QString validationError() const {
+        if (!std::isfinite(smoothing) || smoothing < 0.1 || smoothing > 20)
+            return QStringLiteral("Canny平滑参数须在0.1–20之间。");
+        if (!std::isfinite(lowThreshold) || !std::isfinite(highThreshold)
+            || lowThreshold < 0 || highThreshold > 65535 || lowThreshold >= highThreshold)
+            return QStringLiteral("边缘阈值须满足0 ≤ 低阈值 < 高阈值 ≤ 65535。");
+        if (!std::isfinite(minLength) || !std::isfinite(maxLength) || minLength < 1 || minLength > 1000000
+            || maxLength < 0 || maxLength > 1000000 || (maxLength > 0 && minLength > maxLength))
+            return QStringLiteral("轮廓长度须在允许范围内，且最短长度不能大于最长长度；最长为0表示图像宽度的一半。");
+        if (!std::isfinite(mergeDistance) || mergeDistance < 0 || mergeDistance > 1000000)
+            return QStringLiteral("轮廓合并距离须在0–1000000 px之间。");
+        if (!std::isfinite(cornerMaxDeviation) || cornerMaxDeviation < 0.1 || cornerMaxDeviation > 20
+            || !std::isfinite(cornerMaxGap) || cornerMaxGap < 0 || cornerMaxGap > 1000)
+            return QStringLiteral("单ROI角度拟合偏差须为0.1–20 px，角点间隙须为0–1000 px。");
+        return QString();
+    }
+};
 
 class GraphicalCanvas;
 class QLabel;
@@ -79,6 +108,20 @@ private:
     void cancelRelink();
     void trialSelectedRecord();
     void showRecordDetection(int row);
+    GraphicalDetectionParameters detectionInputs() const;
+    void setDetectionInputs(const GraphicalDetectionParameters& parameters);
+    void applyDetectionParameters();
+    void refreshAngleControls();
+    void chooseCornerCandidate(int index);
+    QDoubleSpinBox* m_detectionSmoothing = nullptr;
+    QDoubleSpinBox* m_detectionLow = nullptr;
+    QDoubleSpinBox* m_detectionHigh = nullptr;
+    QDoubleSpinBox* m_detectionMinLength = nullptr;
+    QDoubleSpinBox* m_detectionMaxLength = nullptr;
+    QDoubleSpinBox* m_detectionMergeDistance = nullptr;
+    QDoubleSpinBox* m_cornerDeviation = nullptr;
+    QDoubleSpinBox* m_cornerGap = nullptr;
+    QLabel* m_detectionDiagnostic = nullptr;
     bool m_trialRunning = false;
     int m_relinkSequence = -1;
     int m_relinkSlot = 1;
@@ -96,6 +139,21 @@ private:
         double pixelRadius = -1;//试测结果px
         double trialAngle = -1;//试测结果°
         bool useSupplementaryAngle = false;//是否取补角
+        bool singleRoiAngle = false;
+        GraphicalDetectionParameters detection;
+        QVector<GraphicalCornerEdge> cornerEdges;
+        QVector<GraphicalCornerPair> cornerPairs;
+        int selectedCornerPair = -1;
+        QString cornerDiagnostic;
+        void clearTrial(const QString& reason) {
+            pixelRadius = -1;
+            trialAngle = -1;
+            trialStatus = reason;
+            detectedEdges = QPainterPath();
+            fittedArc = QPainterPath();
+            cornerEdges.clear(); cornerPairs.clear(); selectedCornerPair = -1;
+            cornerDiagnostic.clear();
+        }
         QString trialStatus = QStringLiteral("未执行");//检测边缘+拟合结果（画回画布）
         QPainterPath detectedEdges;
         QPainterPath fittedArc;
@@ -104,6 +162,10 @@ private:
     int m_nextRecordSequence = 1;
     QComboBox* m_measurementType = nullptr;
     QComboBox* m_angleResultMode = nullptr;
+    QComboBox* m_angleInputMode = nullptr;
+    QComboBox* m_cornerCandidate = nullptr;
+    QPushButton* m_selectAngleRoi1 = nullptr;
+    QPushButton* m_selectAngleRoi2 = nullptr;
     QLineEdit* m_featureNumber = nullptr;
     QCheckBox* m_hasTolerance = nullptr;
     QDoubleSpinBox* m_nominal = nullptr;

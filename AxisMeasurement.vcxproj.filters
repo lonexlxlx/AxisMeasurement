@@ -134,6 +134,9 @@
     <ClInclude Include="myCode\head\graphical_program_editor.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </ClInclude>
+    <ClInclude Include="myCode\head\graphical_corner_geometry.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
     <ClInclude Include="myCode\head\graphical_axis_backend.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </ClInclude>
@@ -561,7 +564,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <QtUic Include="AxisMeasurement.ui">
+    <QtUic Include="$(ProjectDir)AxisMeasurement.ui">
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="logIn.ui">
