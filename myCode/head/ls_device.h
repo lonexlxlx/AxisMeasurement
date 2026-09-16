@@ -24,6 +24,7 @@ public:
 	
 	void openLs();
 	void closeLs();
+	bool tryGetLsMeasurementValue(int outNumber, float& value);
 	float getLsMeasurementValue(int outNumber);
 	bool checkReturnCode(int nRc);
 signals:

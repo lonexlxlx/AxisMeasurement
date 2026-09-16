@@ -39,23 +39,24 @@ bool ls_device::checkReturnCode(int nRc)//c++中int是32位与库中的LONG数�
 	};
 	return true;
 };
+bool ls_device::tryGetLsMeasurementValue(int outNumber, float& value)
+{
+	if (outNumber < 1 || outNumber > 4 || !lsOpenflag) return false;
+	LS9IF_MEASURE_DATA measurementData = {};
+	if (!checkReturnCode(LS9IF_GetMeasurementValue(&measurementData))) return false;
+	value = measurementData.stMesureValue[outNumber - 1].fValue;
+	return true;
+}
+
 float ls_device::getLsMeasurementValue(int outNumber)//outNumber1-4表示获取out口对应的结果，为其他值则取出全部的测量结果
 {
-	LS9IF_MEASURE_DATA* pMeasurementData = new LS9IF_MEASURE_DATA;
-	if (!checkReturnCode(LS9IF_GetMeasurementValue(pMeasurementData)))
-	{
-		return 99999;//LS9IF_MEASURE_DATA*获取测量结果的指针，LS9IF_GetMeasurementValue是获取结果的函数，返回长整形数值（错误码）
-	}
-	else if(1<=outNumber && outNumber<=4)
-	{
-		return pMeasurementData->stMesureValue[outNumber - 1].fValue;//将out中的数据传出。
-	}
-	else
-	{
-		for (int i = 0; i < 4; i++)
-		{
-			lsMeasureResult[i]= pMeasurementData->stMesureValue[i].fValue;
-		}
+	float value = 0;
+	if (tryGetLsMeasurementValue(outNumber, value)) return value;
+	if (outNumber < 1 || outNumber > 4) {
+		LS9IF_MEASURE_DATA measurementData = {};
+		if (!lsOpenflag || !checkReturnCode(LS9IF_GetMeasurementValue(&measurementData))) return 99999;
+		for (int i = 0; i < 4; ++i) lsMeasureResult[i] = measurementData.stMesureValue[i].fValue;
 		return 8888;
-	};
+	}
+	return 99999;
 };

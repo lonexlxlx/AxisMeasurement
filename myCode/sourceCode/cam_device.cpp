@@ -10,6 +10,7 @@ cam_device::cam_device()
 	isOpenStream = false;
 	isOffline = false;
 	isTrigger = false;
+	imgExposeTime = -1;
 	exposeTime = 300;
 	m_dGain = 0;
 	m_dGainMax = 24;
