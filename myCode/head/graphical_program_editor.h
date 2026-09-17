@@ -217,12 +217,14 @@ private:
         QString featureNumber;//特征号
         QString type; //测量类型
         int holeUniformCount = 0;//孔径旧表单holeNumber：圆周均布个数，不是H0/H1拍照位置
+        double holeCalibration = 0.00691842;//原软件测孔相机CalikKong，单位mm/px
         bool hasTolerance = false;//公差
         double nominal = 0;
         double lower = 0;
         double upper = 0;
         double pixelRadius = -1;//试测结果px
         double trialAngle = -1;//试测结果°
+        double trialLinearMm = -1;//孔径等已标定线性试测结果mm
         bool useSupplementaryAngle = false;//是否取补角
         bool singleRoiAngle = false;
         GraphicalDetectionParameters detection;
@@ -237,6 +239,7 @@ private:
         void clearTrial(const QString& reason) {
             pixelRadius = -1;
             trialAngle = -1;
+            trialLinearMm = -1;
             trialStatus = reason;
             detectedEdges = QPainterPath();
             fittedArc = QPainterPath();
@@ -256,6 +259,7 @@ private:
     QComboBox* m_angleInputMode = nullptr;
     QComboBox* m_cornerCandidate = nullptr;
     QSpinBox* m_holeUniformCount = nullptr;
+    QDoubleSpinBox* m_holeCalibration = nullptr;
     QPushButton* m_selectAngleRoi1 = nullptr;
     QPushButton* m_selectAngleRoi2 = nullptr;
     QLineEdit* m_featureNumber = nullptr;
