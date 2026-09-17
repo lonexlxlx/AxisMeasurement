@@ -53,118 +53,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		attachGraphicalAxisBackend(editor, moveControlCardPtr, [this]() {
 			return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
 		});
-		editor->setCameraBackend(
-			[this](int cameraIndex) {
-				GraphicalProgramEditor::CameraSnapshot state;
-				if (cameraIndex < 0 || cameraIndex >= 3) {
-					state.message = QStringLiteral("相机编号无效"); return state;
-				}
-				cam_device* camera = cameraPtrList[cameraIndex];
-				camThread* thread = m_camThread_ptrList[cameraIndex];
-				state.connected = camera && camera->isOpenCam && camera->isOpenStream && !camera->isOffline;
-				state.available = state.connected && allDeviceOpenFlag && !programRunFlag
-					&& !goHomeThread_Ptr->isRunning();
-				state.capturing = camCaptureFlag[cameraIndex] || (thread && thread->isRunning());
-				state.exposure = camera ? camera->exposeTime : -1;
-				if (!state.capturing && camera && !camera->capturedImg.empty()) {
-					state.hasFrame = true;
-					state.frameSize = QSize(camera->capturedImg.cols, camera->capturedImg.rows);
-					if (camera->imgExposeTime >= 0) state.exposure = camera->imgExposeTime;
-				}
-				state.message = !state.connected ? QStringLiteral("相机未连接；请在主窗口打开全部设备。")
-					: !state.available ? QStringLiteral("自动测量、回零或设备状态阻止相机操作。")
-					: state.capturing ? QStringLiteral("正在连续采集；停止后才可载入帧。")
-					: state.hasFrame ? QStringLiteral("采集已停止；最后一帧可载入。")
-					: QStringLiteral("相机已连接；尚无本次采集帧。");
-				return state;
-			},
-			[this](int cameraIndex, GraphicalProgramEditor::CameraCommand command, int exposure) {
-				GraphicalProgramEditor::CameraCommandResult result;
-				if (cameraIndex < 0 || cameraIndex >= 3) {
-					result.error = QStringLiteral("相机编号无效"); return result;
-				}
-				cam_device* camera = cameraPtrList[cameraIndex];
-				camThread* thread = m_camThread_ptrList[cameraIndex];
-				if (!camera || !thread) {
-					result.error = QStringLiteral("相机接口不存在"); return result;
-				}
-				const bool capturing = camCaptureFlag[cameraIndex] || thread->isRunning();
-				if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
-					if (capturing && camera->isOpenStream) camera->stopCapture();
-					thread->requestInterruption();
-					if (thread->isRunning() && !thread->wait(1500)) {
-						result.error = QStringLiteral("相机显示线程未在1.5秒内停止；请在主窗口检查相机状态。");
-						return result;
-					}
-					camCaptureFlag[cameraIndex] = false;
-					return result;
-				}
-				if (!allDeviceOpenFlag || programRunFlag || goHomeThread_Ptr->isRunning()
-					|| !camera->isOpenCam || !camera->isOpenStream || camera->isOffline) {
-					result.error = QStringLiteral("相机不可用；请确认设备已打开且自动测量/回零已结束。");
-					return result;
-				}
-				if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
-					if (capturing) { result.error = QStringLiteral("相机已在采集。"); return result; }
-					if (exposure < 0 || exposure > 30000) {
-						result.error = QStringLiteral("曝光须在0–30000 μs之间。"); return result;
-					}
-					camera->capturedImg.release();
-					camera->m_captureMode = "continuous";
-					camera->setExposeTime(exposure);
-					camera->startCapture();
-					thread->start();
-					camCaptureFlag[cameraIndex] = true;
-					return result;
-				}
-				if (capturing) {
-					result.error = QStringLiteral("请先停止相机采集，再载入最后一帧。"); return result;
-				}
-				if (camera->capturedImg.empty()) {
-					result.error = QStringLiteral("本次采集没有有效图像帧；请重新开始采集。"); return result;
-				}
-				cv::Mat frame = camera->capturedImg.clone();
-				if (frame.channels() == 3) {
-					cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-					result.image = QImage(frame.data, frame.cols, frame.rows,
-						static_cast<int>(frame.step), QImage::Format_RGB888).copy();
-				}
-				else if (frame.channels() == 1) {
-					result.image = QImage(frame.data, frame.cols, frame.rows,
-						static_cast<int>(frame.step), QImage::Format_Grayscale8).copy();
-				}
-				else result.error = QStringLiteral("相机图像通道数不受支持：%1").arg(frame.channels());
-				result.exposure = camera->imgExposeTime >= 0 ? camera->imgExposeTime : camera->exposeTime;
-				return result;
-			});
-		editor->setLightCurtainBackend([this]() {
-			GraphicalProgramEditor::LightCurtainSnapshot state;
-			state.connected = lsSensorPtr && lsSensorPtr->lsOpenflag;
-			state.available = state.connected && allDeviceOpenFlag && !programRunFlag
-				&& !goHomeThread_Ptr->isRunning();
-			float rawOut1 = 0;
-			qint64 sampledAtMs = 0;
-			const bool cached = state.connected && m_lsThread
-				&& m_lsThread->latestResult(0, rawOut1, sampledAtMs);
-			const qint64 sampleAgeMs = cached
-				? QDateTime::currentMSecsSinceEpoch() - sampledAtMs : -1;
-			state.hasSample = cached && sampleAgeMs >= 0 && sampleAgeMs <= 3000;
-			if (state.hasSample) {
-				state.rawOut1 = rawOut1;
-				state.compensatedDiameter = diameter_compensation(rawOut1);
-				state.sampledAtMs = sampledAtMs;
-			}
-			state.message = !state.connected ? QStringLiteral("光幕未连接；请在主窗口打开全部设备。")
-				: !state.available ? QStringLiteral("自动测量、回零或设备状态阻止光幕点位记录。")
-				: state.hasSample ? QStringLiteral("光幕OUT1最新样本可用于直径记录。")
-				: QStringLiteral("光幕已连接，正在等待OUT1有效样本。");
-			return state;
-		});
-		connect(this, &QObject::destroyed, editor, [editor]() {
-			editor->setAxisBackend({}, {});
-			editor->setCameraBackend({}, {});
-			editor->setLightCurtainBackend({});
-		});
+		connect(this, &QObject::destroyed, editor, [editor]() { editor->setAxisBackend({}, {}); });
 	});
 	//m_sdk_assist->show();
 	connect(m_sdk_assist, SIGNAL(diameterPostionRecord()), this, SLOT(diameterPostionRecordExecute()));
@@ -186,7 +75,6 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	currentAxisNumber = 1;
 	currentAxisIndex = 0;
 	programRunFlag = false;
-	allDeviceOpenFlag = false;
 	DbOpenFlag = false;
 	m_measurePartsNum_all = 0;//检测的所有零件总数
 	m_okPartsNum_all = 0;//检测的所有零件良品数
@@ -2385,27 +2273,20 @@ void AxisMeasurement::on_lsMoveDown_released()
 void AxisMeasurement::showCurrentLsValue()
 {
 	//cout << "showCurrentLsValue" << endl;
-	float outputs[4] = { 0, 0, 0, 0 };
-	bool valid[4] = { false, false, false, false };
-	for (int i = 0; i < 4; ++i) {
-		qint64 sampledAtMs = 0;
-		valid[i] = m_lsThread->latestResult(i, outputs[i], sampledAtMs);
-	}
-	if (valid[0]) {
-		double diameterConference = outputs[0];
-		double diameterReal = diameter_compensation(diameterConference);
-		QString diameterReal_s = QString::number(diameterReal, 'd', 4);
-		QString diameterConferencel_s = QString::number(diameterConference, 'd', 4);
-		ui.lsCurrentValue_2->setText(diameterConferencel_s);
-		ui.lsCurrentValue->setText(diameterReal_s);
-		ui.lsMeasureOut1->setText(diameterReal_s);
-	}
+	double diameterConference = m_lsThread->currentResult[0];
+	double diameterReal;
+	diameterReal = diameter_compensation(diameterConference);
+	QString diameterReal_s = QString::number(diameterReal, 'd', 4);
+	QString diameterConferencel_s = QString::number(diameterConference, 'd', 4);
+	ui.lsCurrentValue_2->setText(diameterConferencel_s);
+	ui.lsCurrentValue->setText(diameterReal_s);
+	ui.lsMeasureOut1->setText(diameterReal_s);
 	//ui.lsCurrentValue_2->setNum(diameterConference);
 	//ui.lsCurrentValue->setNum(diameterReal);
 	//ui.lsMeasureOut1->setNum(diameterReal);
-	if (valid[1]) ui.lsMeasureOut2->setNum(outputs[1]);
-	if (valid[2]) ui.lsMeasureOut3->setNum(outputs[2]);
-	if (valid[3]) ui.lsMeasureOut4->setNum(outputs[3]);
+	ui.lsMeasureOut2->setNum(m_lsThread->currentResult[1]);
+	ui.lsMeasureOut3->setNum(m_lsThread->currentResult[2]);
+	ui.lsMeasureOut4->setNum(m_lsThread->currentResult[3]);
 };
 void AxisMeasurement::paintEvent(QPaintEvent* event) {
 	Q_UNUSED(event);
@@ -3167,18 +3048,51 @@ void AxisMeasurement::restructureMainLayout()
 	adjustTabs->addTab(autoMoveScroll, QStringLiteral("顶尖 / 旋转 / 光幕位置"));
 	adjustTabs->setMinimumHeight(300);
 
-	// 左下旧面板仍是 .ui 绝对坐标；这里压缩纵向间距，让首次打开时三段控制尽量完整可见。
+	// 左下控制区改用布局管理，拖拽分割条时标题、按钮和白色背景板一起横向伸缩。
 	ui.autoMoveAdjust->setMinimumSize(321, 270);
-	ui.autoMoveAdjust->resize(321, 270);
-	ui.label_44->setGeometry(20, 14, 280, 22);
-	if (QWidget* apexPanel = ui.apexMoveUp->parentWidget())
-		apexPanel->setGeometry(10, 40, 306, 78);
-	ui.label_20->setGeometry(20, 124, 280, 22);
-	if (QWidget* rotatePanel = ui.partRotate_clockwise->parentWidget())
-		rotatePanel->setGeometry(10, 150, 301, 40);
-	ui.label_65->setGeometry(20, 196, 280, 22);
-	if (QWidget* lightPanel = ui.lsMoveUp->parentWidget())
-		lightPanel->setGeometry(10, 222, 301, 40);
+	QWidget* apexPanel = ui.apexMoveUp->parentWidget();
+	QWidget* rotatePanel = ui.partRotate_clockwise->parentWidget();
+	QWidget* lightPanel = ui.lsMoveUp->parentWidget();
+	QVBoxLayout* autoMoveLayout = new QVBoxLayout(ui.autoMoveAdjust);
+	autoMoveLayout->setContentsMargins(10, 4, 10, 8);
+	autoMoveLayout->setSpacing(1);//顶尖/旋转/光幕位置距离后文的位置
+	QLabel* autoMoveSectionTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
+	for (QLabel* title : autoMoveSectionTitles) {
+		title->setAlignment(Qt::AlignCenter);
+		title->setFixedHeight(24);
+		title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
+	if (apexPanel) {
+		apexPanel->setMinimumHeight(72);
+		apexPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		if (QGridLayout* apexGrid = qobject_cast<QGridLayout*>(apexPanel->layout())) {
+			apexGrid->setColumnStretch(0, 1);
+			apexGrid->setColumnStretch(1, 1);
+		}
+	}
+	if (rotatePanel) {
+		rotatePanel->setMinimumHeight(40);
+		rotatePanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		if (QGridLayout* rotateGrid = qobject_cast<QGridLayout*>(rotatePanel->layout())) {
+			rotateGrid->setColumnStretch(0, 1);
+			rotateGrid->setColumnStretch(1, 1);
+		}
+	}
+	if (lightPanel) {
+		lightPanel->setMinimumHeight(40);
+		lightPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		if (QGridLayout* lightMoveGrid = qobject_cast<QGridLayout*>(lightPanel->layout())) {
+			lightMoveGrid->setColumnStretch(0, 1);
+			lightMoveGrid->setColumnStretch(1, 1);
+		}
+	}
+	autoMoveLayout->addWidget(ui.label_44);
+	if (apexPanel) autoMoveLayout->addWidget(apexPanel);
+	autoMoveLayout->addWidget(ui.label_20);
+	if (rotatePanel) autoMoveLayout->addWidget(rotatePanel);
+	autoMoveLayout->addWidget(ui.label_65);
+	if (lightPanel) autoMoveLayout->addWidget(lightPanel);
+	autoMoveLayout->addStretch(1);
 	QPushButton* autoMoveButtons[] = {
 		ui.apexMoveUp, ui.apexMoveDown, ui.partRotate_anticlockwise,
 		ui.partRotate_clockwise, ui.lsMoveUp, ui.lsMoveDown
@@ -3188,12 +3102,11 @@ void AxisMeasurement::restructureMainLayout()
 		button->setMaximumHeight(34);
 		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	}
-
 	QWidget* autoLeftPanel = new QWidget(ui.autoMeasureUI);
 	autoLeftPanel->setMinimumSize(ui.groupBox->geometry().width(), 660);//左栏内容的最小可读尺寸，低分辨率时交给滚动区
 	QVBoxLayout* autoLeftLayout = new QVBoxLayout(autoLeftPanel);
 	autoLeftPanel->setObjectName(QStringLiteral("leftDashboardPanel"));
-	autoLeftLayout->setContentsMargins(0, 0, 0, 6);
+	autoLeftLayout->setContentsMargins(0, 0, 14, 6);
 	autoLeftLayout->setSpacing(6);
 	ui.groupBox->setObjectName(QStringLiteral("leftProcessCard"));
 	ui.groupBox_2->setObjectName(QStringLiteral("leftLightCurtainCard"));
@@ -3203,14 +3116,48 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_32->setStyleSheet(QStringLiteral(""));
 	ui.label_39->setMinimumHeight(24);
 	ui.label_32->setMinimumHeight(24);
-	ui.groupBox->setMinimumSize(ui.groupBox->geometry().size());//程序选择 + 测量进程：锁原始尺寸，内容不再被裁
-	autoLeftLayout->addWidget(ui.groupBox);
-	//光幕实时显示：P2-11 仪表盘字体加大后内容变高（原布局区仅 91px 高），
-	//同步加高内部布局区和组框，大字号数值完整显示、不被裁切
-	if (QWidget* lightCurtainPanel = ui.lsCurrentValue->parentWidget()) {
-		lightCurtainPanel->setMinimumHeight(110);
+	ui.label_39->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.label_32->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+	QGridLayout* processGrid = new QGridLayout();
+	processGrid->setContentsMargins(0, 0, 0, 0);
+	processGrid->setHorizontalSpacing(12);
+	processGrid->setVerticalSpacing(14);
+	processGrid->setColumnStretch(0, 0);
+	processGrid->setColumnStretch(1, 1);
+	ui.label_40->setMinimumWidth(112);
+	ui.label_31->setMinimumWidth(112);
+	ui.label_21->setMinimumWidth(112);
+	ui.partNub->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.programProcess->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.programProgressBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	processGrid->addWidget(ui.label_40, 0, 0);
+	processGrid->addWidget(ui.partNub, 0, 1);
+	processGrid->addWidget(ui.label_31, 1, 0);
+	processGrid->addWidget(ui.programProcess, 1, 1);
+	processGrid->addWidget(ui.label_21, 2, 0, 1, 2);
+	processGrid->addWidget(ui.programProgressBar, 3, 0, 1, 2);
+	QVBoxLayout* processCardLayout = new QVBoxLayout(ui.groupBox);
+	processCardLayout->setContentsMargins(14, 4, 14, 14);
+	processCardLayout->setSpacing(3);//程序测量进程与后文的距离
+	processCardLayout->addWidget(ui.label_39, 0, Qt::AlignTop | Qt::AlignHCenter);
+	processCardLayout->addLayout(processGrid);
+
+	QWidget* lightCurtainPanel = ui.lsCurrentValue->parentWidget();
+	if (lightCurtainPanel) {
+		QVBoxLayout* lightCurtainCardLayout = new QVBoxLayout(ui.groupBox_2);
+		lightCurtainCardLayout->setContentsMargins(14, 4, 14, 14);
+		lightCurtainCardLayout->setSpacing(3);//光幕实时显示与后文的距离
 		lightCurtainPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		if (QGridLayout* lightGrid = qobject_cast<QGridLayout*>(lightCurtainPanel->layout())) {
+			lightGrid->setColumnStretch(0, 0);
+			lightGrid->setColumnStretch(1, 1);
+		}
+		lightCurtainCardLayout->addWidget(ui.label_32, 0, Qt::AlignTop | Qt::AlignHCenter);
+		lightCurtainCardLayout->addWidget(lightCurtainPanel);
 	}
+	ui.groupBox->setMinimumSize(321, ui.groupBox->geometry().height());//程序测量进程：宽度交给布局随分割条伸缩
+	autoLeftLayout->addWidget(ui.groupBox);
 	ui.groupBox_2->setMinimumSize(321, 160);
 	ui.groupBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.groupBox_2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -3223,7 +3170,7 @@ void AxisMeasurement::restructureMainLayout()
 	autoLeftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	autoLeftScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	autoLeftScroll->setFrameShape(QFrame::NoFrame);
-	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 8);
+	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 22);
 
 	ui.frame1->setMinimumSize(380, 280);//图像区最小尺寸，防止被挤没
 
@@ -3234,7 +3181,7 @@ void AxisMeasurement::restructureMainLayout()
 	autoContentSplitter->setStretchFactor(1, 1);//图像区优先吃掉多余空间
 	autoContentSplitter->setCollapsible(0, false);
 	autoContentSplitter->setCollapsible(1, false);
-	autoContentSplitter->setSizes({ 360, 800 });
+	autoContentSplitter->setSizes({ 374, 800 });
 
 	//设备控制条：用布局接管旧的固定坐标行，避免首次打开时按钮被水平裁切
 	ui.autoDeviceControl->setObjectName(QStringLiteral("topDeviceBarCard"));
@@ -3255,10 +3202,20 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_19->setMinimumWidth(44);
 	ui.label_19->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	topDeviceRow->addWidget(ui.label_19);
-	ui.programNumber->setMinimumWidth(168);
+	//topDeviceRow->addSpacing(1);
+
+	/*ui.programNumber->setMinimumWidth(168);
 	ui.programNumber->setMinimumHeight(32);
 	ui.programNumber->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
-	topDeviceRow->addWidget(ui.programNumber, 1);
+	topDeviceRow->addWidget(ui.programNumber, 1);*/
+
+	ui.programNumber->setMinimumWidth(168);
+	ui.programNumber->setMaximumWidth(240);
+	ui.programNumber->setMinimumHeight(32);
+	ui.programNumber->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	topDeviceRow->addWidget(ui.programNumber);
+	topDeviceRow->addSpacing(6);
+
 	for (QPushButton* button : topButtons) {
 		button->setMinimumWidth(76);
 		button->setMinimumHeight(32);
@@ -3374,8 +3331,18 @@ void AxisMeasurement::restructureMainLayout()
 	}
 	if (statLayoutWidget) {
 		QVBoxLayout* statBoxLayout = new QVBoxLayout(ui.groupBox_6);
-		statBoxLayout->setContentsMargins(14, 8, 14, 14);
-		statBoxLayout->setSpacing(0);
+		statBoxLayout->setContentsMargins(14, 4, 14, 14);
+		statBoxLayout->setSpacing(10);
+		QWidget* statTitleRow = new QWidget(ui.groupBox_6);
+		QGridLayout* statTitleLayout = new QGridLayout(statTitleRow);
+		statTitleLayout->setContentsMargins(0, 0, 0, 0);
+		statTitleLayout->setSpacing(8);
+		statTitleLayout->addWidget(ui.label_60, 0, 1, Qt::AlignTop | Qt::AlignHCenter);
+		statTitleLayout->addWidget(ui.systemTime, 0, 2, Qt::AlignTop | Qt::AlignRight);
+		statTitleLayout->setColumnStretch(0, 1);
+		statTitleLayout->setColumnStretch(1, 1);
+		statTitleLayout->setColumnStretch(2, 1);
+		statBoxLayout->addWidget(statTitleRow);
 		statBoxLayout->addWidget(statLayoutWidget);
 		statLayoutWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	}
@@ -3394,7 +3361,7 @@ void AxisMeasurement::restructureMainLayout()
 	ui.measureTable->horizontalHeader()->setStretchLastSection(false);
 	if (resultSummaryWidget) {
 		QVBoxLayout* resultBoxLayout = new QVBoxLayout(ui.groupBox_7);
-		resultBoxLayout->setContentsMargins(14, 10, 14, 14);
+		resultBoxLayout->setContentsMargins(14, 4, 14, 14);
 		resultBoxLayout->setSpacing(10);
 		resultBoxLayout->addWidget(ui.label_61, 0, Qt::AlignTop | Qt::AlignHCenter);
 		resultBoxLayout->addWidget(resultSummaryWidget, 0);
@@ -3405,17 +3372,6 @@ void AxisMeasurement::restructureMainLayout()
 	QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
 	rightLayout->setContentsMargins(10, 10, 10, 10);
 	rightLayout->setSpacing(12);
-	QWidget* statsTitleBar = new QWidget(rightPanel);
-	statsTitleBar->setObjectName(QStringLiteral("rightStatsTitleBar"));
-	QGridLayout* statsTitleLayout = new QGridLayout(statsTitleBar);
-	statsTitleLayout->setContentsMargins(8, 0, 8, 0);
-	statsTitleLayout->setSpacing(8);
-	statsTitleLayout->addWidget(ui.label_60, 0, 0, 1, 3, Qt::AlignTop | Qt::AlignHCenter);
-	statsTitleLayout->addWidget(ui.systemTime, 0, 2, Qt::AlignTop | Qt::AlignRight);
-	statsTitleLayout->setColumnStretch(0, 1);
-	statsTitleLayout->setColumnStretch(1, 1);
-	statsTitleLayout->setColumnStretch(2, 1);
-	rightLayout->addWidget(statsTitleBar);//右栏顶部：标题居中，系统时间靠右
 	ui.groupBox_6->setMinimumHeight(124);//测量统计：卡片化后保留可读高度，低分辨率由右侧滚动区兜底
 	rightLayout->addWidget(ui.groupBox_6);
 	ui.groupBox_7->setMinimumHeight(240);//测量结果表最小高度
@@ -3463,7 +3419,6 @@ void AxisMeasurement::restructureMainLayout()
 	}
 	QLabel* autoMoveTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
 	for (QLabel* title : autoMoveTitles) {
-		title->setFixedWidth(280);
 		title->setAlignment(Qt::AlignCenter);
 		title->setMinimumHeight(24);
 		title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);

@@ -58,86 +58,12 @@ void addRow(QGridLayout* layout, int row, QLabel* label, QWidget* field)
     layout->addWidget(field, row, 1);
 }
 
-struct ModuleCardParts
-{
-    QGroupBox* card = nullptr;
-    QGridLayout* formLayout = nullptr;
-    QHBoxLayout* actionLayout = nullptr;
-};
-
-ModuleCardParts createInputModuleCard(
-    const QString& number,
-    const QString& title,
-    const QString& device)
-{
-    ModuleCardParts parts;
-    parts.card = new QGroupBox();
-    parts.card->setObjectName(QStringLiteral("sdkAssistCard"));
-    parts.card->setProperty("cardRole", "inputModule");
-    parts.card->setMinimumHeight(330);
-    parts.card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-
-    auto* shadow = new QGraphicsDropShadowEffect(parts.card);
-    shadow->setBlurRadius(8);
-    shadow->setOffset(0, 1);
-    shadow->setColor(QColor(15, 23, 42, 10));
-    parts.card->setGraphicsEffect(shadow);
-
-    auto* cardLayout = new QVBoxLayout(parts.card);
-    cardLayout->setContentsMargins(0, 0, 0, 0);
-    cardLayout->setSpacing(0);
-
-    auto* header = new QFrame(parts.card);
-    header->setObjectName(QStringLiteral("sdkAssistCardHeader"));
-    auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(12, 8, 12, 8);
-    headerLayout->setSpacing(8);
-
-    auto* numberLabel = new QLabel(number, header);
-    numberLabel->setObjectName(QStringLiteral("sdkAssistModuleNumber"));
-    auto* titleLabel = new QLabel(title, header);
-    titleLabel->setObjectName(QStringLiteral("sdkAssistCardTitle"));
-    auto* deviceLabel = new QLabel(device, header);
-    deviceLabel->setObjectName(QStringLiteral("sdkAssistDeviceBadge"));
-
-    headerLayout->addWidget(numberLabel);
-    headerLayout->addWidget(titleLabel);
-    headerLayout->addStretch();
-    headerLayout->addWidget(deviceLabel);
-
-    auto* body = new QWidget(parts.card);
-    body->setObjectName(QStringLiteral("sdkAssistCardBody"));
-    parts.formLayout = new QGridLayout(body);
-    parts.formLayout->setContentsMargins(12, 10, 12, 10);
-    parts.formLayout->setHorizontalSpacing(10);
-    parts.formLayout->setVerticalSpacing(8);
-    parts.formLayout->setColumnStretch(0, 0);
-    parts.formLayout->setColumnStretch(1, 1);
-
-    auto* footer = new QFrame(parts.card);
-    footer->setObjectName(QStringLiteral("sdkAssistCardFooter"));
-    parts.actionLayout = new QHBoxLayout(footer);
-    parts.actionLayout->setContentsMargins(12, 8, 12, 10);
-    parts.actionLayout->setSpacing(8);
-
-    cardLayout->addWidget(header);
-    cardLayout->addWidget(body);
-    cardLayout->addStretch();
-    cardLayout->addWidget(footer);
-    return parts;
-}
-
-void addModuleActions(
-    ModuleCardParts& parts,
-    QPushButton* primary,
-    QPushButton* danger)
+void addButtonRow(QGridLayout* layout, int row, QPushButton* primary, QPushButton* danger)
 {
     markButton(primary, "primary");
-    markButton(danger, "dangerOutline");
-    primary->setText(QStringLiteral("记录点位"));
-    danger->setText(QStringLiteral("清除记录"));
-    parts.actionLayout->addWidget(primary, 1);
-    parts.actionLayout->addWidget(danger);
+    markButton(danger, "danger");
+    layout->addWidget(primary, row, 0);
+    layout->addWidget(danger, row, 1);
 }
 
 QGroupBox* createCard(const QString& title)
@@ -183,104 +109,101 @@ QGridLayout* createCardLayout(QGroupBox* card)
 
 QGroupBox* createDiameterModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("01"), QStringLiteral("直径点位记录"), QStringLiteral("光幕"));
-    addRow(parts.formLayout, 0, ui.label_3, ui.diameterSequence);
-    addRow(parts.formLayout, 1, ui.label_5, ui.diameterFeatureNb);
-    addRow(parts.formLayout, 2, ui.label_6, ui.diameterNominalValue);
-    addRow(parts.formLayout, 3, ui.label_7, ui.diameterUpperOffset);
-    addRow(parts.formLayout, 4, ui.label_8, ui.diameterBottomOffset);
-    addRow(parts.formLayout, 5, ui.label_9, ui.diameterPostionNote);
-    addModuleActions(parts, ui.diameterPostionRecord, ui.diameterPostionClear);
-    return parts.card;
+    QGroupBox* card = createCard(QStringLiteral("1. 直径点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(11);
+    addRow(layout, 0, ui.label_3, ui.diameterSequence);
+    addRow(layout, 1, ui.label_5, ui.diameterFeatureNb);
+    addRow(layout, 2, ui.label_6, ui.diameterNominalValue);
+    addRow(layout, 3, ui.label_7, ui.diameterUpperOffset);
+    addRow(layout, 4, ui.label_8, ui.diameterBottomOffset);
+    addRow(layout, 5, ui.label_9, ui.diameterPostionNote);
+    addButtonRow(layout, 6, ui.diameterPostionRecord, ui.diameterPostionClear);
+    return card;
 }
 
 QGroupBox* createRoughnessModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("02"), QStringLiteral("粗糙度点位记录"),
-        QStringLiteral("粗糙度相机 · 光幕"));
-    addRow(parts.formLayout, 0, ui.label_14, ui.roughnessSequence);
-    addRow(parts.formLayout, 1, ui.label_10, ui.roughnessFeatureNb);
-    addRow(parts.formLayout, 2, ui.label_11, ui.roughnessNominalValue);
-    addRow(parts.formLayout, 3, ui.label_4, ui.roughnessExposeTime);
-    addRow(parts.formLayout, 4, ui.label_31, ui.roughnessReferenceD);
-    addRow(parts.formLayout, 5, ui.label_28, ui.roughnessPostionNote);
-
+    QGroupBox* card = createCard(QStringLiteral("2. 粗糙度点位记录模块（粗糙度相机 + 光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(10);
+    addRow(layout, 0, ui.label_14, ui.roughnessSequence);
+    addRow(layout, 1, ui.label_10, ui.roughnessFeatureNb);
+    addRow(layout, 2, ui.label_11, ui.roughnessNominalValue);
+    addRow(layout, 3, ui.label_4, ui.roughnessExposeTime);
+    addRow(layout, 4, ui.label_31, ui.roughnessReferenceD);
+    addRow(layout, 5, ui.label_28, ui.roughnessPostionNote);
     markButton(ui.roughnessPostionRecord, "primary");
-    markButton(ui.roughnessReferenceDRecord, "secondary");
-    markButton(ui.roughnessPostionClear, "dangerOutline");
-    ui.roughnessPostionRecord->setText(QStringLiteral("记录粗糙度"));
-    ui.roughnessReferenceDRecord->setText(QStringLiteral("记录光幕补偿"));
-    ui.roughnessPostionClear->setText(QStringLiteral("清除记录"));
-    parts.actionLayout->addWidget(ui.roughnessPostionRecord, 1);
-    parts.actionLayout->addWidget(ui.roughnessReferenceDRecord, 1);
-    parts.actionLayout->addWidget(ui.roughnessPostionClear);
-    return parts.card;
+    markButton(ui.roughnessReferenceDRecord, "primary");
+    markButton(ui.roughnessPostionClear, "danger");
+    layout->addWidget(ui.roughnessPostionRecord, 6, 0);
+    layout->addWidget(ui.roughnessReferenceDRecord, 6, 1);
+    layout->addWidget(ui.roughnessPostionClear, 7, 0, 1, 2);
+    return card;
 }
 
 QGroupBox* createHoleModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("03"), QStringLiteral("孔径点位记录"), QStringLiteral("孔径相机"));
-    addRow(parts.formLayout, 0, ui.label_38, ui.holeSequence);
-    addRow(parts.formLayout, 1, ui.label_34, ui.holeFeatureNb);
-    addRow(parts.formLayout, 2, ui.label_35, ui.holeNominalValue);
-    addRow(parts.formLayout, 3, ui.label_37, ui.holeUpperOffset);
-    addRow(parts.formLayout, 4, ui.label_39, ui.holeBottomOffset);
-    addRow(parts.formLayout, 5, ui.label_41, ui.holeNumber);
-    addRow(parts.formLayout, 6, ui.label_40, ui.holeExposeTime);
-    addRow(parts.formLayout, 7, ui.label_49, ui.holePostionNote);
-    addModuleActions(parts, ui.holePostionRecord, ui.holePostionClear);
-    return parts.card;
+    QGroupBox* card = createCard(QStringLiteral("3. 孔径点位记录模块（孔径相机）"));
+    QGridLayout* layout = createCardLayout(card);
+    addRow(layout, 0, ui.label_38, ui.holeSequence);
+    addRow(layout, 1, ui.label_34, ui.holeFeatureNb);
+    addRow(layout, 2, ui.label_35, ui.holeNominalValue);
+    addRow(layout, 3, ui.label_37, ui.holeUpperOffset);
+    addRow(layout, 4, ui.label_39, ui.holeBottomOffset);
+    addRow(layout, 5, ui.label_41, ui.holeNumber);
+    addRow(layout, 6, ui.label_40, ui.holeExposeTime);
+    addRow(layout, 7, ui.label_49, ui.holePostionNote);
+    layout->setRowStretch(8, 1);
+    addButtonRow(layout, 9, ui.holePostionRecord, ui.holePostionClear);
+    return card;
 }
 
 QGroupBox* createCylindricityModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("04"), QStringLiteral("圆柱度点位记录"), QStringLiteral("光幕"));
-    addRow(parts.formLayout, 0, ui.label_13, ui.cylindricitySequence);
-    addRow(parts.formLayout, 1, ui.label_16, ui.cylindricityFeatureNb);
-    addRow(parts.formLayout, 2, ui.label_17, ui.cylindricityNominalValue);
-    addRow(parts.formLayout, 3, ui.label_18, ui.cylindricityUpperRelativeLocation);
-    addRow(parts.formLayout, 4, ui.label_19, ui.cylindricityBottomRelativeLocation);
-    addRow(parts.formLayout, 5, ui.label_20, ui.cylindricityPostionNote);
-    addModuleActions(parts, ui.cylindricityPostionRecord, ui.cylindricityPostionClear);
-    return parts.card;
+    QGroupBox* card = createCard(QStringLiteral("4. 圆柱度点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(11);
+    addRow(layout, 0, ui.label_13, ui.cylindricitySequence);
+    addRow(layout, 1, ui.label_16, ui.cylindricityFeatureNb);
+    addRow(layout, 2, ui.label_17, ui.cylindricityNominalValue);
+    addRow(layout, 3, ui.label_18, ui.cylindricityUpperRelativeLocation);
+    addRow(layout, 4, ui.label_19, ui.cylindricityBottomRelativeLocation);
+    addRow(layout, 5, ui.label_20, ui.cylindricityPostionNote);
+    addButtonRow(layout, 6, ui.cylindricityPostionRecord, ui.cylindricityPostionClear);
+    return card;
 }
 
 QGroupBox* createRoundoutModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("05"), QStringLiteral("跳动点位记录"), QStringLiteral("光幕"));
-    addRow(parts.formLayout, 0, ui.label_24, ui.roundoutSequence);
-    addRow(parts.formLayout, 1, ui.label_25, ui.roundoutFeatureNb);
-    addRow(parts.formLayout, 2, ui.label_26, ui.roundoutNominalValue);
-    addRow(parts.formLayout, 3, ui.label_22, ui.roundoutUpperRelativeLocation);
-    addRow(parts.formLayout, 4, ui.label_23, ui.roundoutBottomRelativeLocation);
-    addRow(parts.formLayout, 5, ui.label_27, ui.roundoutPostionNote1);
-    addRow(parts.formLayout, 6, ui.label_33, ui.roundoutPostionNote2);
-    addModuleActions(parts, ui.roundoutPostionRecord, ui.roundoutPostionClear);
-    return parts.card;
+    QGroupBox* card = createCard(QStringLiteral("5. 跳动点位记录模块（光幕）"));
+    QGridLayout* layout = createCardLayout(card);
+    addRow(layout, 0, ui.label_24, ui.roundoutSequence);
+    addRow(layout, 1, ui.label_25, ui.roundoutFeatureNb);
+    addRow(layout, 2, ui.label_26, ui.roundoutNominalValue);
+    addRow(layout, 3, ui.label_22, ui.roundoutUpperRelativeLocation);
+    addRow(layout, 4, ui.label_23, ui.roundoutBottomRelativeLocation);
+    addRow(layout, 5, ui.label_27, ui.roundoutPostionNote1);
+    addRow(layout, 6, ui.label_33, ui.roundoutPostionNote2);
+    layout->setRowStretch(7, 1);
+    addButtonRow(layout, 8, ui.roundoutPostionRecord, ui.roundoutPostionClear);
+    return card;
 }
 
 QGroupBox* createTelecentricModule(Ui::sdk_assist& ui)
 {
-    ModuleCardParts parts = createInputModuleCard(
-        QStringLiteral("06"), QStringLiteral("长度 / 角度 / 圆弧半径"),
-        QStringLiteral("远心相机"));
-    addRow(parts.formLayout, 0, ui.label_30, ui.telecentricSequence);
-    addRow(parts.formLayout, 1, ui.label_32, ui.telecentricExposeTime);
-    addRow(parts.formLayout, 2, ui.label_36, ui.telecentricPostionNote);
-
-    auto* hint = new QLabel(
-        QStringLiteral("用于远心相机的长度、角度和圆弧半径测量点位。"), parts.card);
-    hint->setObjectName(QStringLiteral("sdkAssistModuleHint"));
-    hint->setWordWrap(true);
-    parts.formLayout->addWidget(hint, 3, 0, 1, 2);
-
-    addModuleActions(parts, ui.telecentricPostionRecord, ui.telecentricPostionClear);
-    return parts.card;
+    QGroupBox* card = createCard(QStringLiteral("6. 长度/角度/圆弧半径点位记录模块（远心相机）"));
+    QGridLayout* layout = createCardLayout(card);
+    layout->setVerticalSpacing(14);
+    layout->setContentsMargins(0, 28, 0, 0);
+    addRow(layout, 0, ui.label_30, ui.telecentricSequence);
+    layout->setRowStretch(1, 1);
+    addRow(layout, 2, ui.label_32, ui.telecentricExposeTime);
+    layout->setRowStretch(3, 1);
+    addRow(layout, 4, ui.label_36, ui.telecentricPostionNote);
+    layout->setRowStretch(5, 2);
+    addButtonRow(layout, 6, ui.telecentricPostionRecord, ui.telecentricPostionClear);
+    return card;
 }
 
 QGroupBox* createOutputModule(Ui::sdk_assist& ui)

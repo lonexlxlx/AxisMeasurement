@@ -257,47 +257,11 @@ QScrollArea#sdkAssistScrollArea {
 QWidget#sdkAssistPage {
     background: #F3F4F6;
 }
-QFrame#sdkAssistHeader {
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 6px;
-}
-QLabel#sdkAssistHeaderTitle {
+QLabel#sdkAssistTitle {
     color: #111827;
-    background: transparent;
-    border: none;
-    font-size: 14pt;
+    font-size: 13pt;
     font-weight: 700;
-    padding: 0;
-}
-QLabel#sdkAssistHeaderSubtitle {
-    color: #6B7280;
-    background: transparent;
-    border: none;
-    font-size: 9pt;
-    padding: 0;
-}
-QPushButton#openGraphicalEditorButton {
-    min-height: 30px;
-    padding: 4px 16px;
-    color: #2563EB;
-    background: #FFFFFF;
-    border: 1px solid #2563EB;
-    border-radius: 4px;
-    font-weight: 600;
-}
-QPushButton#openGraphicalEditorButton:hover {
-    color: #1D4ED8;
-    background: #EFF6FF;
-    border-color: #1D4ED8;
-}
-QPushButton#openGraphicalEditorButton:pressed {
-    color: #1E40AF;
-    background: #DBEAFE;
-    border-color: #1E40AF;
-}
-QPushButton#openGraphicalEditorButton:focus {
-    border: 1px solid #2563EB;
+    padding: 4px 0 2px 0;
 }
 QLabel#sdkAssistPathHint {
     color: #6B7280;
@@ -311,55 +275,14 @@ QGroupBox#sdkAssistCard {
     margin-top: 0;
     padding: 0;
 }
-QFrame#sdkAssistCardHeader {
-    background: #FFFFFF;
-    border: none;
-    border-bottom: 1px solid #E5E7EB;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-}
-QWidget#sdkAssistCardBody {
-    background: #FFFFFF;
-    border: none;
-}
-QFrame#sdkAssistCardFooter {
-    background: #FFFFFF;
-    border: none;
-    border-top: 1px solid #F3F4F6;
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
-}
-QGroupBox#sdkAssistCard QLabel#sdkAssistModuleNumber {
+QGroupBox#sdkAssistCard QLabel#sdkAssistCardTitle {
     color: #2563EB;
     background: transparent;
-    border: none;
-    font-size: 10pt;
+    font-size: 11pt;
     font-weight: 700;
-}
-QGroupBox#sdkAssistCard QLabel#sdkAssistCardTitle {
-    color: #111827;
-    background: transparent;
-    border: none;
-    font-size: 10pt;
-    font-weight: 700;
-    padding: 0;
-}
-QGroupBox#sdkAssistCard QLabel#sdkAssistDeviceBadge {
-    color: #6B7280;
-    background: #F3F4F6;
-    border: 1px solid #E5E7EB;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 8pt;
-    font-weight: 400;
-}
-QGroupBox#sdkAssistCard QLabel#sdkAssistModuleHint {
-    color: #6B7280;
-    background: #F9FAFB;
-    border: 1px solid #E5E7EB;
-    border-radius: 4px;
-    padding: 6px 8px;
-    font-size: 8pt;
+    min-height: 34px;
+    max-height: 34px;
+    padding: 0 2px;
 }
 QGroupBox#sdkAssistCard QLabel {
     color: #374151;
@@ -446,36 +369,6 @@ QPushButton[buttonRole="danger"]:hover {
 QPushButton[buttonRole="danger"]:pressed {
     background: #991B1B;
     border-color: #991B1B;
-}
-QPushButton[buttonRole="secondary"] {
-    background: #FFFFFF;
-    border-color: #93C5FD;
-    color: #2563EB;
-}
-QPushButton[buttonRole="secondary"]:hover {
-    background: #EFF6FF;
-    border-color: #2563EB;
-    color: #1D4ED8;
-}
-QPushButton[buttonRole="secondary"]:pressed {
-    background: #DBEAFE;
-    border-color: #1D4ED8;
-    color: #1E40AF;
-}
-QPushButton[buttonRole="dangerOutline"] {
-    background: #FFFFFF;
-    border-color: #FCA5A5;
-    color: #DC2626;
-}
-QPushButton[buttonRole="dangerOutline"]:hover {
-    background: #FEF2F2;
-    border-color: #DC2626;
-    color: #B91C1C;
-}
-QPushButton[buttonRole="dangerOutline"]:pressed {
-    background: #FEE2E2;
-    border-color: #B91C1C;
-    color: #991B1B;
 }
 
 /* ---------- 主界面右侧统计/结果卡片：贴近 UI 优化预览 ---------- */

@@ -205,8 +205,6 @@ private slots:
 
 
 private:
-    void openGraphicalProgramEditor();//阶段1：统一处理顶部“打开图形化编辑”入口
-
     Ui::sdk_assist ui;
     GraphicalProgramEditor* m_graphicalProgramEditor = nullptr;
 

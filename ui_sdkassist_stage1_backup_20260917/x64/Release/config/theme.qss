@@ -1,0 +1,231 @@
+/* ============================================================
+   AxisMeasurement 全局界面主题 v1.0（2026-09-09）
+   载入方式：main.cpp 中 QApplication::setStyleSheet() 自动读取本文件
+   回滚方式：删除本文件即可恢复 Qt 默认样式（程序会静默跳过）
+   配色规范：
+     主色(工业蓝) #2563EB    页面底 #F3F4F6    卡片底 #FFFFFF
+     边框 #E5E7EB    正文 #1F2937    次要文字 #6B7280
+     语义色：成功 #16A34A / 警告 #D97706 / 危险 #DC2626 / 信息 #2563EB
+   ============================================================ */
+
+/* ---------- 基础：统一字体与文字色 ---------- */
+QWidget {
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 9pt;
+    color: #1F2937;
+}
+QMainWindow, QDialog { background: #F3F4F6; }
+
+/* ---------- 分组框：卡片化 ---------- */
+QGroupBox {
+    font-weight: bold;
+    font-size: 10pt;
+    color: #374151;
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 8px 6px 6px 6px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+    color: #2563EB;
+    background: transparent;
+}
+
+/* ---------- 按钮：三态 ---------- */
+QPushButton {
+    background: #FFFFFF;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    padding: 5px 14px;
+    min-height: 20px;
+}
+QPushButton:hover  { border-color: #2563EB; color: #2563EB; background: #EFF6FF; }
+QPushButton:pressed{ background: #DBEAFE; }
+QPushButton:focus  { border-color: #2563EB; }
+QPushButton:disabled { color: #9CA3AF; background: #F3F4F6; border-color: #E5E7EB; }
+
+/* ---------- 语义按钮（按控件实名匹配，无需改代码） ---------- */
+
+/* 主操作：开始测量 */
+QPushButton#startAutoMearsurement { background:#2563EB; border-color:#2563EB; color:#FFFFFF; font-weight:bold; }
+QPushButton#startAutoMearsurement:hover   { background:#1D4ED8; }
+QPushButton#startAutoMearsurement:pressed { background:#1E40AF; }
+QPushButton#startAutoMearsurement:disabled{ background:#93C5FD; border-color:#93C5FD; color:#EFF6FF; }
+
+/* 危险操作：紧急停止（自动测量区 + 轴控制区） */
+QPushButton#urgentStop, QPushButton#urgrentStopMearsure { background:#DC2626; border-color:#DC2626; color:#FFFFFF; font-weight:bold; }
+QPushButton#urgentStop:hover, QPushButton#urgrentStopMearsure:hover   { background:#B91C1C; }
+QPushButton#urgentStop:pressed, QPushButton#urgrentStopMearsure:pressed { background:#991B1B; }
+QPushButton#urgentStop:disabled, QPushButton#urgrentStopMearsure:disabled { background:#FCA5A5; border-color:#FCA5A5; color:#FEF2F2; }
+
+/* 运动控制类按钮（顶尖上/下移、转台慢转/快转、光幕上/下移）：橙色描边警示，替换原荧光底色 */
+QPushButton#apexMoveUp, QPushButton#apexMoveDown,
+QPushButton#partRotate_clockwise, QPushButton#partRotate_anticlockwise,
+QPushButton#lsMoveUp, QPushButton#lsMoveDown {
+    border-color:#D97706;
+    color:#B45309;
+}
+QPushButton#apexMoveUp:hover, QPushButton#apexMoveDown:hover,
+QPushButton#partRotate_clockwise:hover, QPushButton#partRotate_anticlockwise:hover,
+QPushButton#lsMoveUp:hover, QPushButton#lsMoveDown:hover {
+    background:#FFF7ED;
+    border-color:#D97706;
+    color:#B45309;
+}
+
+/* 通用扩展：新代码中 widget->setObjectName("primaryButton"/"dangerButton") 亦可复用 */
+QPushButton#primaryButton { background:#2563EB; border-color:#2563EB; color:#FFFFFF; }
+QPushButton#primaryButton:hover { background:#1D4ED8; }
+QPushButton#dangerButton { background:#DC2626; border-color:#DC2626; color:#FFFFFF; }
+QPushButton#dangerButton:hover { background:#B91C1C; }
+
+/* ---------- 输入控件 ---------- */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background: #FFFFFF;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    padding: 3px 6px;
+    min-height: 20px;
+    selection-background-color: #BFDBFE;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 1px solid #2563EB;
+}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+    background: #F3F4F6; color: #9CA3AF;
+}
+QComboBox::drop-down {
+    border: none;
+    border-left: 1px solid #E5E7EB;
+    width: 24px;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    selection-background-color: #DBEAFE;
+    selection-color: #1F2937;
+}
+/* 下拉箭头不做自定义（此前的 CSS 三角渲染过小，看起来像显示不全）；不指定时使用样式表风格内置箭头 */
+
+/* ---------- 表格 ---------- */
+QTableWidget {
+    background: #FFFFFF;
+    alternate-background-color: #F9FAFB;
+    gridline-color: #E5E7EB;
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    selection-background-color: #DBEAFE;
+    selection-color: #111827;
+}
+QHeaderView::section {
+    background: #F3F4F6;
+    color: #374151;
+    font-weight: bold;
+    border: none;
+    border-right: 1px solid #E5E7EB;
+    border-bottom: 1px solid #E5E7EB;
+    padding: 5px 8px;
+}
+
+/* ---------- 进度条 ---------- */
+QProgressBar {
+    background: #E5E7EB;
+    border: none;
+    border-radius: 6px;
+    text-align: center;
+    height: 14px;
+    color: #374151;
+}
+QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
+
+/* ---------- Tab 页 ---------- */
+QTabWidget::pane {
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    background: #FFFFFF;
+    top: -1px;
+}
+QTabBar::tab {
+    padding: 6px 14px;
+    color: #6B7280;
+    border: 1px solid #E5E7EB;
+    border-bottom: none;
+    background: #F3F4F6;
+}
+QTabBar::tab:selected {
+    color: #2563EB;
+    background: #FFFFFF;
+    border-bottom: 2px solid #2563EB;
+}
+QTabBar::tab:hover:!selected {
+    background: #E5E7EB;
+}
+
+/* ---------- P2：Splitter 分隔条（左右面板拖动收放） ---------- */
+QSplitter::handle { background: #E5E7EB; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical { height: 4px; }
+QSplitter::handle:hover { background: #93C5FD; }
+QSplitter::handle:pressed { background: #2563EB; }
+
+/* ---------- 工具栏与工具按钮（图形化编辑器） ---------- */
+QToolBar {
+    background: #FFFFFF;
+    border: none;
+    border-bottom: 1px solid #E5E7EB;
+    spacing: 3px;
+    padding: 3px;
+}
+QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+QToolButton:hover { background: #EFF6FF; border-color: #BFDBFE; }
+QToolButton:checked {
+    background: #DBEAFE;
+    border-color: #2563EB;
+    color: #2563EB;
+    font-weight: bold;
+}
+
+/* ---------- 菜单栏 / 菜单 / 状态栏 ---------- */
+QMenuBar { background: #FFFFFF; border-bottom: 1px solid #E5E7EB; }
+QMenuBar::item { padding: 4px 10px; }
+QMenuBar::item:selected { background: #EFF6FF; }
+QMenu { background: #FFFFFF; border: 1px solid #E5E7EB; padding: 4px; }
+QMenu::item { padding: 5px 24px; border-radius: 4px; }
+QMenu::item:selected { background: #DBEAFE; }
+QStatusBar { background: #FFFFFF; border-top: 1px solid #E5E7EB; color: #6B7280; }
+
+/* ---------- 滚动条：细窄现代风 ---------- */
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: #D1D5DB; border-radius: 5px; min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: #9CA3AF; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:horizontal { background: #D1D5DB; border-radius: 5px; min-width: 30px; }
+QScrollBar::handle:horizontal:hover { background: #9CA3AF; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* ---------- 复选框 / 单选框 ---------- */
+QCheckBox::indicator {
+    width: 15px; height: 15px;
+    border: 1px solid #D1D5DB;
+    border-radius: 3px;
+    background: #FFFFFF;
+}
+QCheckBox::indicator:checked { background: #2563EB; border-color: #2563EB; }
+QRadioButton::indicator {
+    width: 15px; height: 15px;
+    border: 1px solid #D1D5DB;
+    border-radius: 8px;
+    background: #FFFFFF;
+}
+QRadioButton::indicator:checked { border: 4px solid #2563EB; }
