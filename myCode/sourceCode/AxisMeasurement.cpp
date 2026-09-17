@@ -6,6 +6,8 @@
 #include <QScrollArea>
 #include <QHeaderView>
 #include <QAbstractScrollArea>
+#include <QScreen>
+#include <QApplication>
 
 #include "graphical_axis_backend.h"
 
@@ -3042,15 +3044,38 @@ void AxisMeasurement::restructureMainLayout()
 	//顶尖/旋转/光幕位置控制收进页签（内部绝对定位，包滚动区防裁切）
 	QTabWidget* adjustTabs = new QTabWidget(ui.autoMeasureUI);
 	adjustTabs->setObjectName(QStringLiteral("autoAdjustTabs"));
-	adjustTabs->addTab(wrapScroll(ui.autoMoveAdjust, QSize(300, 240)), QStringLiteral("顶尖 / 旋转 / 光幕位置"));
-	adjustTabs->setMinimumHeight(260);
+	QScrollArea* autoMoveScroll = wrapScroll(ui.autoMoveAdjust, QSize(300, 270));
+	adjustTabs->addTab(autoMoveScroll, QStringLiteral("顶尖 / 旋转 / 光幕位置"));
+	adjustTabs->setMinimumHeight(300);
+
+	// 左下旧面板仍是 .ui 绝对坐标；这里压缩纵向间距，让首次打开时三段控制尽量完整可见。
+	ui.autoMoveAdjust->setMinimumSize(321, 270);
+	ui.autoMoveAdjust->resize(321, 270);
+	ui.label_44->setGeometry(20, 14, 280, 22);
+	if (QWidget* apexPanel = ui.apexMoveUp->parentWidget())
+		apexPanel->setGeometry(10, 40, 306, 78);
+	ui.label_20->setGeometry(20, 124, 280, 22);
+	if (QWidget* rotatePanel = ui.partRotate_clockwise->parentWidget())
+		rotatePanel->setGeometry(10, 150, 301, 40);
+	ui.label_65->setGeometry(20, 196, 280, 22);
+	if (QWidget* lightPanel = ui.lsMoveUp->parentWidget())
+		lightPanel->setGeometry(10, 222, 301, 40);
+	QPushButton* autoMoveButtons[] = {
+		ui.apexMoveUp, ui.apexMoveDown, ui.partRotate_anticlockwise,
+		ui.partRotate_clockwise, ui.lsMoveUp, ui.lsMoveDown
+	};
+	for (QPushButton* button : autoMoveButtons) {
+		button->setMinimumHeight(32);
+		button->setMaximumHeight(34);
+		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
 
 	QWidget* autoLeftPanel = new QWidget(ui.autoMeasureUI);
-	autoLeftPanel->setMinimumSize(ui.groupBox->geometry().width() + 16, 660);//左栏内容的最小可读尺寸，低分辨率时交给滚动区
+	autoLeftPanel->setMinimumSize(ui.groupBox->geometry().width(), 660);//左栏内容的最小可读尺寸，低分辨率时交给滚动区
 	QVBoxLayout* autoLeftLayout = new QVBoxLayout(autoLeftPanel);
 	autoLeftPanel->setObjectName(QStringLiteral("leftDashboardPanel"));
-	autoLeftLayout->setContentsMargins(10, 10, 10, 10);
-	autoLeftLayout->setSpacing(12);
+	autoLeftLayout->setContentsMargins(0, 0, 0, 6);
+	autoLeftLayout->setSpacing(6);
 	ui.groupBox->setObjectName(QStringLiteral("leftProcessCard"));
 	ui.groupBox_2->setObjectName(QStringLiteral("leftLightCurtainCard"));
 	ui.label_39->setObjectName(QStringLiteral("leftCardTitle"));
@@ -3079,7 +3104,7 @@ void AxisMeasurement::restructureMainLayout()
 	autoLeftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	autoLeftScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	autoLeftScroll->setFrameShape(QFrame::NoFrame);
-	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 28);
+	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 8);
 
 	ui.frame1->setMinimumSize(380, 280);//图像区最小尺寸，防止被挤没
 
@@ -3092,34 +3117,52 @@ void AxisMeasurement::restructureMainLayout()
 	autoContentSplitter->setCollapsible(1, false);
 	autoContentSplitter->setSizes({ 360, 800 });
 
-	//设备控制条：锁定原始高度，宽度自适应（内部按钮行是真布局可压缩，状态信息条右侧为空白区）
+	//设备控制条：用布局接管旧的固定坐标行，避免首次打开时按钮被水平裁切
 	ui.autoDeviceControl->setObjectName(QStringLiteral("topDeviceBarCard"));
 	ui.deviceInf->setObjectName(QStringLiteral("topDeviceInfo"));
 	ui.programNumber->setObjectName(QStringLiteral("topProgramCombo"));
+	if (QWidget* legacyTopRow = ui.autoDeviceControl->findChild<QWidget*>(QStringLiteral("layoutWidget"), Qt::FindDirectChildrenOnly))
+		legacyTopRow->hide();
 	QPushButton* topButtons[] = {
 		ui.openAllDevice, ui.closeAllDevice, ui.allAxisGoHome, ui.startAutoMearsurement,
 		ui.measureCancel, ui.programConfirm, ui.urgrentStopMearsure
 	};
+	QVBoxLayout* topDeviceLayout = new QVBoxLayout(ui.autoDeviceControl);
+	topDeviceLayout->setContentsMargins(14, 10, 14, 10);
+	topDeviceLayout->setSpacing(8);
+	QHBoxLayout* topDeviceRow = new QHBoxLayout();
+	topDeviceRow->setContentsMargins(0, 0, 0, 0);
+	topDeviceRow->setSpacing(8);
+	ui.label_19->setMinimumWidth(44);
+	ui.label_19->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	topDeviceRow->addWidget(ui.label_19);
+	ui.programNumber->setMinimumWidth(168);
+	ui.programNumber->setMinimumHeight(32);
+	ui.programNumber->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+	topDeviceRow->addWidget(ui.programNumber, 1);
 	for (QPushButton* button : topButtons) {
-		button->setMinimumWidth(92);
-		button->setMinimumHeight(34);
-		button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+		button->setMinimumWidth(76);
+		button->setMinimumHeight(32);
+		button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+		topDeviceRow->addWidget(button);
 	}
-	ui.closeAllDevice->setMinimumWidth(116);
-	ui.urgrentStopMearsure->setMinimumWidth(104);
-	ui.programNumber->setMinimumWidth(220);
-	ui.programNumber->setMinimumHeight(34);
-	ui.programNumber->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-	ui.autoDeviceControl->setMinimumSize(ui.autoDeviceControl->geometry().width(), ui.autoDeviceControl->geometry().height() + 12);
-	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	ui.closeAllDevice->setMinimumWidth(96);
+	ui.startAutoMearsurement->setMinimumWidth(84);
+	ui.urgrentStopMearsure->setMinimumWidth(88);
+	topDeviceLayout->addLayout(topDeviceRow);
+	ui.deviceInf->setMinimumHeight(24);
+	ui.deviceInf->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	topDeviceLayout->addWidget(ui.deviceInf);
+	ui.autoDeviceControl->setMinimumSize(820, 92);
+	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	QScrollArea* autoDeviceScroll = new QScrollArea(ui.autoMeasureUI);
 	autoDeviceScroll->setObjectName(QStringLiteral("autoDeviceControlScroll"));
 	autoDeviceScroll->setWidget(ui.autoDeviceControl);
-	autoDeviceScroll->setWidgetResizable(false);
+	autoDeviceScroll->setWidgetResizable(true);
 	autoDeviceScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	autoDeviceScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	autoDeviceScroll->setFrameShape(QFrame::NoFrame);
-	autoDeviceScroll->setMinimumHeight(ui.autoDeviceControl->minimumHeight() + 18);
+	autoDeviceScroll->setMinimumHeight(ui.autoDeviceControl->minimumHeight() + 10);
 
 	QVBoxLayout* autoLayout = new QVBoxLayout(ui.autoMeasureUI);
 	autoLayout->setContentsMargins(10, 10, 10, 10);
@@ -3177,12 +3220,12 @@ void AxisMeasurement::restructureMainLayout()
 	//========== 三、中央区（widget）：左（页面区）| 右（统计+结果），可拖动收放 ==========
 	QWidget* rightPanel = new QWidget(ui.widget);
 	rightPanel->setObjectName(QStringLiteral("rightDashboardPanel"));
-	rightPanel->setMinimumWidth(640);//测量统计与结果表的最小可读宽度
+	rightPanel->setMinimumWidth(500);//测量统计与结果表的最小可读宽度，避免首次打开时右栏把窗口撑出屏幕
 	rightPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 	ui.groupBox_6->setObjectName(QStringLiteral("rightStatsCard"));
 	ui.groupBox_7->setObjectName(QStringLiteral("rightResultCard"));
-	ui.groupBox_6->setMinimumWidth(620);
-	ui.groupBox_7->setMinimumWidth(620);
+	ui.groupBox_6->setMinimumWidth(480);
+	ui.groupBox_7->setMinimumWidth(480);
 	ui.groupBox_6->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.groupBox_7->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	ui.label_60->setAlignment(Qt::AlignCenter);
@@ -3195,15 +3238,15 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_61->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.label_61->setObjectName(QStringLiteral("rightCardTitle"));
 	ui.label_61->setStyleSheet(QStringLiteral(""));
-	ui.partsId->setMinimumWidth(160);
+	ui.partsId->setMinimumWidth(80);
 	ui.partsId->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-	ui.operatorName->setMinimumWidth(140);
+	ui.operatorName->setMinimumWidth(80);
 	ui.operatorName->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	QWidget* statLayoutWidget = ui.groupBox_6->findChild<QWidget*>(QStringLiteral("layoutWidget_5"));
 	QGridLayout* statLayout = statLayoutWidget ? qobject_cast<QGridLayout*>(statLayoutWidget->layout()) : nullptr;
 	if (statLayout) {
 		statLayout->setContentsMargins(4, 2, 4, 4);
-		statLayout->setHorizontalSpacing(16);
+		statLayout->setHorizontalSpacing(8);
 		statLayout->setVerticalSpacing(10);
 		statLayout->setColumnStretch(0, 0);
 		statLayout->setColumnStretch(1, 1);
@@ -3227,7 +3270,7 @@ void AxisMeasurement::restructureMainLayout()
 	}
 	ui.measureTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	ui.measureTable->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-	ui.measureTable->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContentsOnFirstShow);
+	ui.measureTable->setSizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored);
 	ui.measureTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 	ui.measureTable->horizontalHeader()->setStretchLastSection(false);
 	if (resultSummaryWidget) {
@@ -3268,19 +3311,37 @@ void AxisMeasurement::restructureMainLayout()
 	rightScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	rightScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	rightScrollArea->setFrameShape(QFrame::NoFrame);
-	rightScrollArea->setMinimumWidth(420);
+	rightScrollArea->setMinimumWidth(320);
 	m_mainSplitter->addWidget(ui.uiWidget);//两个功能页
 	m_mainSplitter->addWidget(rightScrollArea);
-	m_mainSplitter->setStretchFactor(0, 3);
-	m_mainSplitter->setStretchFactor(1, 2);
+	m_mainSplitter->setStretchFactor(0, 2);
+	m_mainSplitter->setStretchFactor(1, 1);
 	m_mainSplitter->setCollapsible(0, false);
 	m_mainSplitter->setCollapsible(1, false);
-	m_mainSplitter->setSizes({ 980, 760 });//与初始窗口 1768 宽度下的左右比例匹配
+	m_mainSplitter->setSizes({ 920, 480 });//首次打开时优先保证所有顶部按钮和右侧卡片可见
 
 	QVBoxLayout* centralLayout = new QVBoxLayout(ui.widget);
 	centralLayout->setContentsMargins(0, 0, 0, 0);
 	centralLayout->addWidget(m_mainSplitter);
 
+
+	QScreen* currentScreen = screen() ? screen() : QApplication::primaryScreen();
+	if (currentScreen) {
+		const QRect available = currentScreen->availableGeometry();
+		const int availableWidth = qMax(640, available.width() - 80);
+		const int availableHeight = qMax(520, available.height() - 80);
+		const int initialWidth = qMin(1440, availableWidth);
+		const int initialHeight = qMin(900, availableHeight);
+		setMinimumSize(qMin(1180, initialWidth), qMin(760, initialHeight));
+		resize(initialWidth, initialHeight);
+		move(available.center() - rect().center());
+		rightLayout->activate();
+		const int rightMinimum = qMax(500, rightPanel->minimumSizeHint().width()) + 20;
+		rightScrollArea->setMinimumWidth(rightMinimum);
+		const int usableWidth = initialWidth - m_mainSplitter->handleWidth();
+		const int rightWidth = qMax(rightMinimum, usableWidth * 38 / 100);
+		m_mainSplitter->setSizes({ qMax(1, usableWidth - rightWidth), rightWidth });
+	}
 	QLabel* autoMoveTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
 	for (QLabel* title : autoMoveTitles) {
 		title->setFixedWidth(280);
