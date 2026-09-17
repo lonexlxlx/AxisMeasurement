@@ -116,6 +116,7 @@
     <QtMoc Include="myCode\head\sdk_assist.h" />
     <QtMoc Include="myCode\head\graphical_canvas.h" />
     <ClInclude Include="myCode\head\graphical_program_editor.h" />
+    <ClInclude Include="myCode\head\graphical_corner_geometry.h" />
     <ClInclude Include="myCode\head\graphical_axis_backend.h" />
     <ClInclude Include="myCode\head\sharedFun.h" />
   </ItemGroup>
@@ -250,7 +251,7 @@
     <ResourceCompile Include="AxisMeasurement.rc" />
   </ItemGroup>
   <ItemGroup>
-    <QtUic Include="AxisMeasurement.ui" />
+    <QtUic Include="$(ProjectDir)AxisMeasurement.ui" />
     <QtUic Include="logIn.ui" />
     <QtUic Include="sdk_assist.ui" />
   </ItemGroup>

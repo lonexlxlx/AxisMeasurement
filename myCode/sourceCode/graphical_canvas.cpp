@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QMap>
+#include <QSet>
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
@@ -25,6 +26,7 @@
 #include <QWheelEvent>
 #include <QtMath>
 #include <QTransform>
+#include <climits>
 /*中央画布（黑色图像区：显示图像、画图形、拖拽/旋转/缩放手柄）/绘图引擎*/
 namespace {
 bool arcCircle(const QPointF& a, const QPointF& b, const QPointF& c,
@@ -698,6 +700,158 @@ QList<QPair<int, QString>> GraphicalCanvas::featureEntries() const
     return entries;
 }
 
+QVector<GraphicalCanvas::FeatureSnapshot> GraphicalCanvas::featureSnapshots() const
+{
+    QVector<FeatureSnapshot> result;
+    if (!m_imageItem) return result;
+    const auto imagePoint = [this](QGraphicsItem* item, const QPointF& local) {
+        return m_imageItem->mapFromScene(item->mapToScene(local));
+    };
+    for (const auto& entry : featureEntries()) {
+        QGraphicsItem* item = featureItemById(entry.first);
+        if (!item) continue;
+        FeatureSnapshot snapshot;
+        snapshot.id = entry.first;
+        snapshot.type = item->data(1).toString();
+        snapshot.rotation = featureRotationAngle(entry.first);
+        if (snapshot.type == QStringLiteral("点")) snapshot.points << imagePoint(item, QPointF());
+        else if (snapshot.type == QStringLiteral("直线")) {
+            const QLineF line = static_cast<QGraphicsLineItem*>(item)->line();
+            snapshot.points << imagePoint(item, line.p1()) << imagePoint(item, line.p2());
+        }
+        else if (snapshot.type == QStringLiteral("矩形") || snapshot.type == QStringLiteral("圆")) {
+            const QRectF rect = snapshot.type == QStringLiteral("矩形")
+                ? static_cast<QGraphicsRectItem*>(item)->rect()
+                : static_cast<QGraphicsEllipseItem*>(item)->rect();
+            snapshot.points << imagePoint(item, rect.center());
+            snapshot.size = rect.size();
+        }
+        else if (snapshot.type == QStringLiteral("圆弧")) {
+            snapshot.points << imagePoint(item, item->data(3).toPointF())
+                << imagePoint(item, item->data(4).toPointF())
+                << imagePoint(item, item->data(5).toPointF());
+        }
+        result.append(snapshot);
+    }
+    return result;
+}
+
+bool GraphicalCanvas::validateFeatureSnapshots(const QVector<FeatureSnapshot>& snapshots,
+    const QSize& imageSize, QString& error) const
+{
+    error.clear();
+    if (!imageSize.isValid() || imageSize.isEmpty()) { error = QStringLiteral("工程图像尺寸无效。"); return false; }
+    QSet<int> ids;
+    const QRectF imageBounds(QPointF(0, 0), imageSize);
+    for (const FeatureSnapshot& snapshot : snapshots) {
+        const int requiredPoints = snapshot.type == QStringLiteral("点") ? 1
+            : snapshot.type == QStringLiteral("直线") ? 2
+            : snapshot.type == QStringLiteral("矩形") || snapshot.type == QStringLiteral("圆") ? 1
+            : snapshot.type == QStringLiteral("圆弧") ? 3 : -1;
+        if (snapshot.id <= 0 || snapshot.id == INT_MAX || ids.contains(snapshot.id) || requiredPoints < 0
+            || snapshot.points.size() != requiredPoints || !qIsFinite(snapshot.rotation)) {
+            error = QStringLiteral("工程包含无效或重复的图形定义。"); return false;
+        }
+        ids.insert(snapshot.id);
+        for (const QPointF& point : snapshot.points)
+            if (!qIsFinite(point.x()) || !qIsFinite(point.y()) || !imageBounds.contains(point)) {
+                error = QStringLiteral("图形%1超出图像范围。").arg(snapshot.id); return false;
+            }
+        if ((snapshot.type == QStringLiteral("矩形") || snapshot.type == QStringLiteral("圆"))
+            && (!snapshot.size.isValid() || snapshot.size.width() <= 0 || snapshot.size.height() <= 0)) {
+            error = QStringLiteral("图形%1尺寸无效。").arg(snapshot.id); return false;
+        }
+        if (snapshot.type == QStringLiteral("圆")
+            && qAbs(snapshot.size.width() - snapshot.size.height()) > 1e-6) {
+            error = QStringLiteral("图形%1不是有效正圆。").arg(snapshot.id); return false;
+        }
+        if (snapshot.type == QStringLiteral("直线")
+            && QLineF(snapshot.points[0], snapshot.points[1]).length() <= 1e-6) {
+            error = QStringLiteral("图形%1是零长度直线。").arg(snapshot.id); return false;
+        }
+        if (snapshot.type == QStringLiteral("圆")) {
+            const QRectF circleBounds(snapshot.points[0]
+                - QPointF(snapshot.size.width() / 2.0, snapshot.size.height() / 2.0), snapshot.size);
+            if (!imageBounds.contains(circleBounds)) {
+                error = QStringLiteral("图形%1超出图像范围。").arg(snapshot.id); return false;
+            }
+        }
+        if (snapshot.type == QStringLiteral("矩形")) {
+            const QRectF localBounds(-snapshot.size.width() / 2.0, -snapshot.size.height() / 2.0,
+                snapshot.size.width(), snapshot.size.height());
+            QTransform transform;
+            transform.translate(snapshot.points[0].x(), snapshot.points[0].y());
+            transform.rotate(snapshot.rotation);
+            const QPolygonF corners = transform.map(QPolygonF(localBounds));
+            for (const QPointF& corner : corners)
+                if (!imageBounds.contains(corner)) {
+                    error = QStringLiteral("图形%1超出图像范围。").arg(snapshot.id); return false;
+                }
+        }
+        if (snapshot.type == QStringLiteral("圆弧")) {
+            QPainterPath path;
+            if (!buildArcPath(snapshot.points[0], snapshot.points[1], snapshot.points[2], path)) {
+                error = QStringLiteral("图形%1的圆弧三点无效。").arg(snapshot.id); return false;
+            }
+            if (!imageBounds.contains(path.boundingRect())) {
+                error = QStringLiteral("图形%1的圆弧超出图像范围。").arg(snapshot.id); return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool GraphicalCanvas::restoreFeatures(const QVector<FeatureSnapshot>& snapshots, QString& error)
+{
+    if (!m_imageItem) { error = QStringLiteral("工程图像尚未载入。"); return false; }
+    if (!validateFeatureSnapshots(snapshots, m_sourceImage.size(), error)) return false;
+
+    const QList<QGraphicsItem*> existing = m_scene->items();
+    clearCircleRadiusGuide();
+    m_resizeFeatureId = -1; m_rotateFeatureId = -1; m_draggedFeatureItem = nullptr;
+    for (QGraphicsItem* item : existing)
+        if (item != m_imageItem && item->data(0).toInt() > 0) { m_scene->removeItem(item); delete item; }
+    m_nextFeatureId = 1;
+    for (const FeatureSnapshot& snapshot : snapshots) {
+        QGraphicsItem* item = nullptr;
+        if (snapshot.type == QStringLiteral("点")) {
+            auto* point = new QGraphicsEllipseItem(QRectF(-4, -4, 8, 8));
+            point->setBrush(QColor(255, 80, 200)); point->setPen(makeCanvasPen(QColor(255, 80, 200)));
+            point->setPos(snapshot.points[0]); item = point;
+            point->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
+        }
+        else if (snapshot.type == QStringLiteral("直线")) {
+            auto* line = new QGraphicsLineItem(QLineF(snapshot.points[0], snapshot.points[1]));
+            line->setPen(makeCanvasPen(QColor(255, 100, 80))); item = line;
+        }
+        else if (snapshot.type == QStringLiteral("矩形") || snapshot.type == QStringLiteral("圆")) {
+            const QRectF rect(QPointF(-snapshot.size.width() / 2, -snapshot.size.height() / 2), snapshot.size);
+            if (snapshot.type == QStringLiteral("矩形")) {
+                auto* rectangle = new QGraphicsRectItem(rect);
+                rectangle->setPen(makeCanvasPen(QColor(0, 210, 255))); item = rectangle;
+                rectangle->setRotation(snapshot.rotation);
+            }
+            else {
+                auto* circle = new QGraphicsEllipseItem(rect);
+                circle->setPen(makeCanvasPen(QColor(0, 255, 120))); item = circle;
+            }
+            item->setPos(snapshot.points[0]);
+        }
+        else {
+            QPainterPath path;
+            buildArcPath(snapshot.points[0], snapshot.points[1], snapshot.points[2], path);
+            auto* arc = new QGraphicsPathItem(path);
+            arc->setPen(makeCanvasPen(QColor(255, 170, 0)));
+            arc->setData(3, snapshot.points[0]); arc->setData(4, snapshot.points[1]); arc->setData(5, snapshot.points[2]);
+            item = arc;
+        }
+        m_scene->addItem(item);
+        registerFeature(item, snapshot.type, snapshot.id, false);
+    }
+    emit featuresChanged();
+    return true;
+}
+
 void GraphicalCanvas::selectFeatureById(int featureId, bool centerOnFeature)
 {
     m_scene->clearSelection();
@@ -882,12 +1036,14 @@ void GraphicalCanvas::finishPreview(const QPointF& imagePoint, const QPoint& vie
     }
 }
 
-void GraphicalCanvas::registerFeature(QGraphicsItem* item, const QString& typeName)//每个图形创建后都需要registerFeature:分配自增 ID（存在 item 的 data(0)）、类型名存 data(1)、发 featureAdded 信号。​图形 ID 就是 Editor 里 geometryId 的来源——这是两个模块之间的纽带。
+void GraphicalCanvas::registerFeature(QGraphicsItem* item, const QString& typeName,
+    int restoredId, bool notify)//每个图形创建后都需要registerFeature:分配自增 ID（存在 item 的 data(0)）、类型名存 data(1)、发 featureAdded 信号。​图形 ID 就是 Editor 里 geometryId 的来源——这是两个模块之间的纽带。
 {
     if (!item)
         return;
 
-    const int featureId = m_nextFeatureId++;
+    const int featureId = restoredId > 0 ? restoredId : m_nextFeatureId++;
+    m_nextFeatureId = qMax(m_nextFeatureId, featureId + 1);
     const QString featureName = QStringLiteral("%1_%2").arg(typeName).arg(featureId);
     item->setData(0, featureId);
     item->setData(1, typeName);
@@ -895,8 +1051,10 @@ void GraphicalCanvas::registerFeature(QGraphicsItem* item, const QString& typeNa
     item->setFlag(QGraphicsItem::ItemIsSelectable, true);
     item->setFlag(QGraphicsItem::ItemIsMovable, true);
     item->setZValue(10.0);
-    emit featureAdded(featureId, featureName, typeName);
-    emit featuresChanged();
+    if (notify) {
+        emit featureAdded(featureId, featureName, typeName);
+        emit featuresChanged();
+    }
 }
 
 QGraphicsItem* GraphicalCanvas::featureItemById(int featureId) const

@@ -53,7 +53,118 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		attachGraphicalAxisBackend(editor, moveControlCardPtr, [this]() {
 			return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
 		});
-		connect(this, &QObject::destroyed, editor, [editor]() { editor->setAxisBackend({}, {}); });
+		editor->setCameraBackend(
+			[this](int cameraIndex) {
+				GraphicalProgramEditor::CameraSnapshot state;
+				if (cameraIndex < 0 || cameraIndex >= 3) {
+					state.message = QStringLiteral("相机编号无效"); return state;
+				}
+				cam_device* camera = cameraPtrList[cameraIndex];
+				camThread* thread = m_camThread_ptrList[cameraIndex];
+				state.connected = camera && camera->isOpenCam && camera->isOpenStream && !camera->isOffline;
+				state.available = state.connected && allDeviceOpenFlag && !programRunFlag
+					&& !goHomeThread_Ptr->isRunning();
+				state.capturing = camCaptureFlag[cameraIndex] || (thread && thread->isRunning());
+				state.exposure = camera ? camera->exposeTime : -1;
+				if (!state.capturing && camera && !camera->capturedImg.empty()) {
+					state.hasFrame = true;
+					state.frameSize = QSize(camera->capturedImg.cols, camera->capturedImg.rows);
+					if (camera->imgExposeTime >= 0) state.exposure = camera->imgExposeTime;
+				}
+				state.message = !state.connected ? QStringLiteral("相机未连接；请在主窗口打开全部设备。")
+					: !state.available ? QStringLiteral("自动测量、回零或设备状态阻止相机操作。")
+					: state.capturing ? QStringLiteral("正在连续采集；停止后才可载入帧。")
+					: state.hasFrame ? QStringLiteral("采集已停止；最后一帧可载入。")
+					: QStringLiteral("相机已连接；尚无本次采集帧。");
+				return state;
+			},
+			[this](int cameraIndex, GraphicalProgramEditor::CameraCommand command, int exposure) {
+				GraphicalProgramEditor::CameraCommandResult result;
+				if (cameraIndex < 0 || cameraIndex >= 3) {
+					result.error = QStringLiteral("相机编号无效"); return result;
+				}
+				cam_device* camera = cameraPtrList[cameraIndex];
+				camThread* thread = m_camThread_ptrList[cameraIndex];
+				if (!camera || !thread) {
+					result.error = QStringLiteral("相机接口不存在"); return result;
+				}
+				const bool capturing = camCaptureFlag[cameraIndex] || thread->isRunning();
+				if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
+					if (capturing && camera->isOpenStream) camera->stopCapture();
+					thread->requestInterruption();
+					if (thread->isRunning() && !thread->wait(1500)) {
+						result.error = QStringLiteral("相机显示线程未在1.5秒内停止；请在主窗口检查相机状态。");
+						return result;
+					}
+					camCaptureFlag[cameraIndex] = false;
+					return result;
+				}
+				if (!allDeviceOpenFlag || programRunFlag || goHomeThread_Ptr->isRunning()
+					|| !camera->isOpenCam || !camera->isOpenStream || camera->isOffline) {
+					result.error = QStringLiteral("相机不可用；请确认设备已打开且自动测量/回零已结束。");
+					return result;
+				}
+				if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
+					if (capturing) { result.error = QStringLiteral("相机已在采集。"); return result; }
+					if (exposure < 0 || exposure > 30000) {
+						result.error = QStringLiteral("曝光须在0–30000 μs之间。"); return result;
+					}
+					camera->capturedImg.release();
+					camera->m_captureMode = "continuous";
+					camera->setExposeTime(exposure);
+					camera->startCapture();
+					thread->start();
+					camCaptureFlag[cameraIndex] = true;
+					return result;
+				}
+				if (capturing) {
+					result.error = QStringLiteral("请先停止相机采集，再载入最后一帧。"); return result;
+				}
+				if (camera->capturedImg.empty()) {
+					result.error = QStringLiteral("本次采集没有有效图像帧；请重新开始采集。"); return result;
+				}
+				cv::Mat frame = camera->capturedImg.clone();
+				if (frame.channels() == 3) {
+					cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+					result.image = QImage(frame.data, frame.cols, frame.rows,
+						static_cast<int>(frame.step), QImage::Format_RGB888).copy();
+				}
+				else if (frame.channels() == 1) {
+					result.image = QImage(frame.data, frame.cols, frame.rows,
+						static_cast<int>(frame.step), QImage::Format_Grayscale8).copy();
+				}
+				else result.error = QStringLiteral("相机图像通道数不受支持：%1").arg(frame.channels());
+				result.exposure = camera->imgExposeTime >= 0 ? camera->imgExposeTime : camera->exposeTime;
+				return result;
+			});
+		editor->setLightCurtainBackend([this]() {
+			GraphicalProgramEditor::LightCurtainSnapshot state;
+			state.connected = lsSensorPtr && lsSensorPtr->lsOpenflag;
+			state.available = state.connected && allDeviceOpenFlag && !programRunFlag
+				&& !goHomeThread_Ptr->isRunning();
+			float rawOut1 = 0;
+			qint64 sampledAtMs = 0;
+			const bool cached = state.connected && m_lsThread
+				&& m_lsThread->latestResult(0, rawOut1, sampledAtMs);
+			const qint64 sampleAgeMs = cached
+				? QDateTime::currentMSecsSinceEpoch() - sampledAtMs : -1;
+			state.hasSample = cached && sampleAgeMs >= 0 && sampleAgeMs <= 3000;
+			if (state.hasSample) {
+				state.rawOut1 = rawOut1;
+				state.compensatedDiameter = diameter_compensation(rawOut1);
+				state.sampledAtMs = sampledAtMs;
+			}
+			state.message = !state.connected ? QStringLiteral("光幕未连接；请在主窗口打开全部设备。")
+				: !state.available ? QStringLiteral("自动测量、回零或设备状态阻止光幕点位记录。")
+				: state.hasSample ? QStringLiteral("光幕OUT1最新样本可用于直径记录。")
+				: QStringLiteral("光幕已连接，正在等待OUT1有效样本。");
+			return state;
+		});
+		connect(this, &QObject::destroyed, editor, [editor]() {
+			editor->setAxisBackend({}, {});
+			editor->setCameraBackend({}, {});
+			editor->setLightCurtainBackend({});
+		});
 	});
 	//m_sdk_assist->show();
 	connect(m_sdk_assist, SIGNAL(diameterPostionRecord()), this, SLOT(diameterPostionRecordExecute()));
@@ -75,6 +186,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	currentAxisNumber = 1;
 	currentAxisIndex = 0;
 	programRunFlag = false;
+	allDeviceOpenFlag = false;
 	DbOpenFlag = false;
 	m_measurePartsNum_all = 0;//检测的所有零件总数
 	m_okPartsNum_all = 0;//检测的所有零件良品数
@@ -2273,20 +2385,27 @@ void AxisMeasurement::on_lsMoveDown_released()
 void AxisMeasurement::showCurrentLsValue()
 {
 	//cout << "showCurrentLsValue" << endl;
-	double diameterConference = m_lsThread->currentResult[0];
-	double diameterReal;
-	diameterReal = diameter_compensation(diameterConference);
-	QString diameterReal_s = QString::number(diameterReal, 'd', 4);
-	QString diameterConferencel_s = QString::number(diameterConference, 'd', 4);
-	ui.lsCurrentValue_2->setText(diameterConferencel_s);
-	ui.lsCurrentValue->setText(diameterReal_s);
-	ui.lsMeasureOut1->setText(diameterReal_s);
+	float outputs[4] = { 0, 0, 0, 0 };
+	bool valid[4] = { false, false, false, false };
+	for (int i = 0; i < 4; ++i) {
+		qint64 sampledAtMs = 0;
+		valid[i] = m_lsThread->latestResult(i, outputs[i], sampledAtMs);
+	}
+	if (valid[0]) {
+		double diameterConference = outputs[0];
+		double diameterReal = diameter_compensation(diameterConference);
+		QString diameterReal_s = QString::number(diameterReal, 'd', 4);
+		QString diameterConferencel_s = QString::number(diameterConference, 'd', 4);
+		ui.lsCurrentValue_2->setText(diameterConferencel_s);
+		ui.lsCurrentValue->setText(diameterReal_s);
+		ui.lsMeasureOut1->setText(diameterReal_s);
+	}
 	//ui.lsCurrentValue_2->setNum(diameterConference);
 	//ui.lsCurrentValue->setNum(diameterReal);
 	//ui.lsMeasureOut1->setNum(diameterReal);
-	ui.lsMeasureOut2->setNum(m_lsThread->currentResult[1]);
-	ui.lsMeasureOut3->setNum(m_lsThread->currentResult[2]);
-	ui.lsMeasureOut4->setNum(m_lsThread->currentResult[3]);
+	if (valid[1]) ui.lsMeasureOut2->setNum(outputs[1]);
+	if (valid[2]) ui.lsMeasureOut3->setNum(outputs[2]);
+	if (valid[3]) ui.lsMeasureOut4->setNum(outputs[3]);
 };
 void AxisMeasurement::paintEvent(QPaintEvent* event) {
 	Q_UNUSED(event);

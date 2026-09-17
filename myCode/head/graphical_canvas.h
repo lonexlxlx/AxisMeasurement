@@ -61,6 +61,17 @@ public:
     bool rotateFeature(int featureId, qreal angle, QString& error);
     void setResizeRatioLocked(bool locked);
     QList<QPair<int, QString>> featureEntries() const;
+    struct FeatureSnapshot {
+        int id = 0;
+        QString type;
+        QVector<QPointF> points;
+        QSizeF size;
+        qreal rotation = 0;
+    };
+    QVector<FeatureSnapshot> featureSnapshots() const;
+    bool validateFeatureSnapshots(const QVector<FeatureSnapshot>& snapshots,
+        const QSize& imageSize, QString& error) const;
+    bool restoreFeatures(const QVector<FeatureSnapshot>& snapshots, QString& error);
     void selectFeatureById(int featureId, bool centerOnFeature = true);
     void deleteFeatureById(int featureId);
     void deleteSelectedFeatures();
@@ -105,7 +116,8 @@ private:
     void showCircleRadiusGuide(QGraphicsItem* circleItem, const QRectF& circleRect);
     void clearCircleRadiusGuide();
     void refreshCircleRadiusGuide();
-    void registerFeature(QGraphicsItem* item, const QString& typeName);
+    void registerFeature(QGraphicsItem* item, const QString& typeName,
+        int restoredId = 0, bool notify = true);
     QGraphicsItem* featureItemById(int featureId) const;
     QGraphicsItem* featureAtViewportPosition(const QPoint& position) const;
     void constrainSelectedFeaturesToImage();
