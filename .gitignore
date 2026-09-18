@@ -50,3 +50,7 @@ program_integration_backup_*/
 
 # Visual Studio conversion logs
 UpgradeLog*.htm
+
+# 屏蔽所有带 backup 的文件夹
+*_backup_*/
+*backup*/

@@ -3,6 +3,8 @@
 #include "graphical_program_editor.h"
 
 #include <QScrollArea>
+#include <QResizeEvent>
+#include <QTimer>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QLabel>
@@ -15,6 +17,19 @@
 #include <QSizePolicy>
 #include <QPushButton>
 #include <QColor>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QDir>
+#include <QStyle>
+#include <QIntValidator>
+#include <QDoubleValidator>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QList>
+#include <QMessageBox>
+#include <QValidator>
+#include <initializer_list>
+#include <algorithm>
 
 QString runtimePath(const QString& relativePath);
 
@@ -48,6 +63,71 @@ void markButton(QPushButton* button, const char* role)
     button->setProperty("buttonRole", role);
     button->setMinimumHeight(27);
     button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+}
+
+void setNumericValidator(QLineEdit* field, bool integerOnly, int minimum = -1000000, int maximum = 1000000)
+{
+    if (!field)
+        return;
+
+    field->setProperty("inputState", "normal");
+    field->setClearButtonEnabled(true);
+    if (integerOnly) {
+        field->setValidator(new QIntValidator(minimum, maximum, field));
+    }
+    else {
+        field->setValidator(new QDoubleValidator(-1000000.0, 1000000.0, 4, field));
+    }
+}
+
+void setOptionalPlaceholder(QLineEdit* field, const QString& placeholder)
+{
+    if (!field)
+        return;
+    field->setPlaceholderText(placeholder);
+}
+
+bool containsOrder(const vector<int>& orders, int order)
+{
+    return std::find(orders.begin(), orders.end(), order) != orders.end();
+}
+
+void updateRecordButtonState(QPushButton* button, bool recorded)
+{
+    if (!button)
+        return;
+    button->setProperty("recordState", recorded ? "recorded" : "ready");
+    button->style()->unpolish(button);
+    button->style()->polish(button);
+}
+
+bool hasInvalidRequiredField(std::initializer_list<QLineEdit*> fields)
+{
+    for (QLineEdit* field : fields) {
+        if (!field)
+            continue;
+        const bool empty = field->text().trimmed().isEmpty();
+        const bool invalid = field->validator() && !field->hasAcceptableInput();
+        if (empty || invalid) {
+            field->setProperty("inputState", "error");
+            field->style()->unpolish(field);
+            field->style()->polish(field);
+            field->setFocus();
+            return true;
+        }
+    }
+    return false;
+}
+
+void clearInputErrorState(std::initializer_list<QLineEdit*> fields)
+{
+    for (QLineEdit* field : fields) {
+        if (!field)
+            continue;
+        field->setProperty("inputState", "normal");
+        field->style()->unpolish(field);
+        field->style()->polish(field);
+    }
 }
 
 void addRow(QGridLayout* layout, int row, QLabel* label, QWidget* field)
@@ -138,47 +218,6 @@ void addModuleActions(
     danger->setText(QStringLiteral("清除记录"));
     parts.actionLayout->addWidget(primary, 1);
     parts.actionLayout->addWidget(danger);
-}
-
-QGroupBox* createCard(const QString& title)
-{
-    QGroupBox* card = new QGroupBox();
-    card->setObjectName(QStringLiteral("sdkAssistCard"));
-    card->setProperty("cardTitleText", title);
-    card->setMinimumHeight(330);
-    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto* shadow = new QGraphicsDropShadowEffect(card);
-    shadow->setBlurRadius(10);
-    shadow->setOffset(0, 1);
-    shadow->setColor(QColor(15, 23, 42, 14));
-    card->setGraphicsEffect(shadow);
-    return card;
-}
-
-QGridLayout* createCardLayout(QGroupBox* card)
-{
-    auto* wrapper = new QVBoxLayout(card);
-    wrapper->setContentsMargins(10, 8, 10, 10);
-    wrapper->setSpacing(6);
-    wrapper->setAlignment(Qt::AlignTop);
-
-    auto* title = new QLabel(card->property("cardTitleText").toString(), card);
-    title->setObjectName(QStringLiteral("sdkAssistCardTitle"));
-    title->setStyleSheet(QStringLiteral("color: #2563EB; font-size: 11pt; font-weight: 700; background: transparent;"));
-    title->setAlignment(Qt::AlignCenter);
-    title->setWordWrap(true);
-    title->setFixedHeight(34);
-    title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    wrapper->addWidget(title);
-
-    auto* layout = new QGridLayout();
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setHorizontalSpacing(8);
-    layout->setVerticalSpacing(7);
-    layout->setColumnStretch(0, 0);
-    layout->setColumnStretch(1, 1);
-    wrapper->addLayout(layout);
-    return layout;
 }
 
 QGroupBox* createDiameterModule(Ui::sdk_assist& ui)
@@ -283,63 +322,159 @@ QGroupBox* createTelecentricModule(Ui::sdk_assist& ui)
     return parts.card;
 }
 
-QGroupBox* createOutputModule(Ui::sdk_assist& ui)
+QFrame* createCountItem(QLabel* nameLabel, QLabel* valueLabel, QWidget* parent)
 {
-    QGroupBox* card = createCard(QStringLiteral("7. 测量信息与点位输出"));
-    card->setMinimumHeight(0);
+    auto* item = new QFrame(parent);
+    item->setObjectName(QStringLiteral("sdkAssistCountItem"));
+    auto* layout = new QHBoxLayout(item);
+    layout->setContentsMargins(10, 6, 10, 6);
+    layout->setSpacing(8);
+
+    nameLabel->setParent(item);
+    nameLabel->setObjectName(QStringLiteral("sdkAssistCountName"));
+    nameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    nameLabel->setFixedWidth(0);
+    nameLabel->setMinimumWidth(0);
+    nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    valueLabel->setParent(item);
+    valueLabel->setObjectName(QStringLiteral("sdkAssistCountValue"));
+    valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    layout->addWidget(nameLabel);
+    layout->addStretch();
+    layout->addWidget(valueLabel);
+    return item;
+}
+
+QGroupBox* createOutputModule(
+    Ui::sdk_assist& ui,
+    const std::function<void()>& openOutputDirectory,
+    QLabel*& outputStatusLabel)
+{
+    auto* card = new QGroupBox();
+    card->setObjectName(QStringLiteral("sdkAssistOutputCard"));
     card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QGridLayout* layout = createCardLayout(card);
-    layout->setColumnStretch(1, 1);
-    layout->setColumnStretch(3, 1);
-    layout->setColumnStretch(5, 1);
 
-    prepareLabel(ui.label_76);
-    prepareLabel(ui.label_81);
-    prepareLabel(ui.label_79);
-    prepareLabel(ui.label_72);
-    prepareLabel(ui.label_74);
-    prepareLabel(ui.label_80);
-    ui.recordDiameterNb->setObjectName(QStringLiteral("countValueLabel"));
-    ui.recordCylindricityNb->setObjectName(QStringLiteral("countValueLabel"));
-    ui.recordRoughnessNb->setObjectName(QStringLiteral("countValueLabel"));
-    ui.recordTelecentricNb->setObjectName(QStringLiteral("countValueLabel"));
-    ui.recordHoleNb->setObjectName(QStringLiteral("countValueLabel"));
-    ui.recordRoundoutNb->setObjectName(QStringLiteral("countValueLabel"));
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(0, 0, 0, 0);
+    cardLayout->setSpacing(0);
 
-    layout->addWidget(ui.label_76, 0, 0);
-    layout->addWidget(ui.recordDiameterNb, 0, 1);
-    layout->addWidget(ui.label_81, 0, 2);
-    layout->addWidget(ui.recordCylindricityNb, 0, 3);
-    layout->addWidget(ui.label_79, 0, 4);
-    layout->addWidget(ui.recordRoughnessNb, 0, 5);
-    layout->addWidget(ui.label_72, 1, 0);
-    layout->addWidget(ui.recordTelecentricNb, 1, 1);
-    layout->addWidget(ui.label_74, 1, 2);
-    layout->addWidget(ui.recordHoleNb, 1, 3);
-    layout->addWidget(ui.label_80, 1, 4);
-    layout->addWidget(ui.recordRoundoutNb, 1, 5);
+    auto* header = new QFrame(card);
+    header->setObjectName(QStringLiteral("sdkAssistOutputHeader"));
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(14, 9, 14, 9);
+    headerLayout->setSpacing(8);
+
+    auto* numberLabel = new QLabel(QStringLiteral("07"), header);
+    numberLabel->setObjectName(QStringLiteral("sdkAssistModuleNumber"));
+    auto* titleLabel = new QLabel(QStringLiteral("测量信息与点位输出"), header);
+    titleLabel->setObjectName(QStringLiteral("sdkAssistOutputTitle"));
+    auto* descriptionLabel = new QLabel(QStringLiteral("汇总点位、填写零件信息并生成 Excel 文件"), header);
+    descriptionLabel->setObjectName(QStringLiteral("sdkAssistOutputDescription"));
+
+    headerLayout->addWidget(numberLabel);
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addSpacing(6);
+    headerLayout->addWidget(descriptionLabel);
+    headerLayout->addStretch();
+
+    auto* body = new QWidget(card);
+    body->setObjectName(QStringLiteral("sdkAssistOutputBody"));
+    auto* bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(14, 12, 14, 12);
+    bodyLayout->setSpacing(10);
+
+    auto* countTitle = new QLabel(QStringLiteral("已记录点位"), body);
+    countTitle->setObjectName(QStringLiteral("sdkAssistSectionTitle"));
+    auto* countGrid = new QGridLayout();
+    countGrid->setContentsMargins(0, 0, 0, 0);
+    countGrid->setHorizontalSpacing(8);
+    countGrid->setVerticalSpacing(8);
+    countGrid->addWidget(createCountItem(ui.label_76, ui.recordDiameterNb, body), 0, 0);
+    countGrid->addWidget(createCountItem(ui.label_79, ui.recordRoughnessNb, body), 0, 1);
+    countGrid->addWidget(createCountItem(ui.label_74, ui.recordHoleNb, body), 0, 2);
+    countGrid->addWidget(createCountItem(ui.label_81, ui.recordCylindricityNb, body), 1, 0);
+    countGrid->addWidget(createCountItem(ui.label_80, ui.recordRoundoutNb, body), 1, 1);
+    countGrid->addWidget(createCountItem(ui.label_72, ui.recordTelecentricNb, body), 1, 2);
+    countGrid->setColumnStretch(0, 1);
+    countGrid->setColumnStretch(1, 1);
+    countGrid->setColumnStretch(2, 1);
+
+    auto* infoTitle = new QLabel(QStringLiteral("零件信息"), body);
+    infoTitle->setObjectName(QStringLiteral("sdkAssistSectionTitle"));
+    auto* infoGrid = new QGridLayout();
+    infoGrid->setContentsMargins(0, 0, 0, 0);
+    infoGrid->setHorizontalSpacing(10);
+    infoGrid->setVerticalSpacing(8);
 
     prepareLabel(ui.label_86);
     prepareLabel(ui.label_85);
     prepareLabel(ui.label_84);
+    prepareLabel(ui.label_87);
     prepareField(ui.recordpartNb);
     prepareField(ui.recordpartName);
     prepareField(ui.recordpartProcessingNb);
-    layout->addWidget(ui.label_86, 2, 0);
-    layout->addWidget(ui.recordpartNb, 2, 1);
-    layout->addWidget(ui.label_85, 2, 2);
-    layout->addWidget(ui.recordpartName, 2, 3);
-    layout->addWidget(ui.label_84, 2, 4);
-    layout->addWidget(ui.recordpartProcessingNb, 2, 5);
-
-    prepareLabel(ui.label_87);
     prepareField(ui.recordpartNote);
+
+    infoGrid->addWidget(ui.label_86, 0, 0);
+    infoGrid->addWidget(ui.recordpartNb, 0, 1);
+    infoGrid->addWidget(ui.label_85, 0, 2);
+    infoGrid->addWidget(ui.recordpartName, 0, 3);
+    infoGrid->addWidget(ui.label_84, 0, 4);
+    infoGrid->addWidget(ui.recordpartProcessingNb, 0, 5);
+    infoGrid->addWidget(ui.label_87, 1, 0);
+    infoGrid->addWidget(ui.recordpartNote, 1, 1, 1, 5);
+    infoGrid->setColumnStretch(1, 1);
+    infoGrid->setColumnStretch(3, 1);
+    infoGrid->setColumnStretch(5, 1);
+
+    auto* outputTitle = new QLabel(QStringLiteral("文件输出"), body);
+    outputTitle->setObjectName(QStringLiteral("sdkAssistSectionTitle"));
+    auto* outputRow = new QHBoxLayout();
+    outputRow->setContentsMargins(0, 0, 0, 0);
+    outputRow->setSpacing(8);
+
+    auto* pathLabel = new QLabel(QStringLiteral("输出目录"), body);
+    pathLabel->setObjectName(QStringLiteral("sdkAssistOutputPathLabel"));
+    auto* pathEdit = new QLineEdit(runtimePath("SDKpostion"), body);
+    pathEdit->setObjectName(QStringLiteral("sdkAssistOutputPath"));
+    pathEdit->setReadOnly(true);
+    pathEdit->setCursorPosition(0);
+
+    auto* openDirectoryButton = new QPushButton(QStringLiteral("打开目录"), body);
+    openDirectoryButton->setObjectName(QStringLiteral("sdkAssistOpenDirectoryButton"));
+    markButton(openDirectoryButton, "secondary");
+    QObject::connect(openDirectoryButton, &QPushButton::clicked,
+        card, [openOutputDirectory]() { openOutputDirectory(); });
+
     markButton(ui.PostionRecordOut, "primary");
-    markButton(ui.PostionClearOut, "danger");
-    layout->addWidget(ui.label_87, 3, 0);
-    layout->addWidget(ui.recordpartNote, 3, 1, 1, 3);
-    layout->addWidget(ui.PostionRecordOut, 3, 4);
-    layout->addWidget(ui.PostionClearOut, 3, 5);
+    markButton(ui.PostionClearOut, "dangerOutline");
+    ui.PostionRecordOut->setText(QStringLiteral("生成点位文件"));
+    ui.PostionClearOut->setText(QStringLiteral("清空全部"));
+
+    outputRow->addWidget(pathLabel);
+    outputRow->addWidget(pathEdit, 1);
+    outputRow->addWidget(openDirectoryButton);
+    outputRow->addSpacing(8);
+    outputRow->addWidget(ui.PostionClearOut);
+    outputRow->addWidget(ui.PostionRecordOut);
+
+    outputStatusLabel = new QLabel(QStringLiteral("尚未生成点位文件"), body);
+    outputStatusLabel->setObjectName(QStringLiteral("sdkAssistOutputStatus"));
+    outputStatusLabel->setProperty("status", "idle");
+    outputStatusLabel->setWordWrap(true);
+
+    bodyLayout->addWidget(countTitle);
+    bodyLayout->addLayout(countGrid);
+    bodyLayout->addWidget(infoTitle);
+    bodyLayout->addLayout(infoGrid);
+    bodyLayout->addWidget(outputTitle);
+    bodyLayout->addLayout(outputRow);
+    bodyLayout->addWidget(outputStatusLabel);
+
+    cardLayout->addWidget(header);
+    cardLayout->addWidget(body);
     return card;
 }
 }
@@ -370,8 +505,11 @@ sdk_assist::sdk_assist(QWidget* parent)
     ui.groupBox_6->hide();
     ui.groupBox_7->hide();
 
-    auto* page = new QWidget(this);
-    page->setObjectName(QStringLiteral("sdkAssistPage"));
+    m_responsivePage = new QWidget(this);
+    m_responsivePage->setObjectName(QStringLiteral("sdkAssistPage"));
+    m_responsivePage->setMinimumWidth(0);
+    m_responsivePage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto* page = m_responsivePage;
     auto* pageLayout = new QVBoxLayout(page);
     pageLayout->setContentsMargins(8, 6, 8, 8);
     pageLayout->setSpacing(8);
@@ -414,36 +552,93 @@ sdk_assist::sdk_assist(QWidget* parent)
     pageHeaderLayout->addWidget(openGraphicalEditorButton, 0, Qt::AlignVCenter);
     pageLayout->addWidget(pageHeader);
 
-    auto* moduleGrid = new QGridLayout();
-    moduleGrid->setContentsMargins(0, 0, 0, 0);
-    moduleGrid->setHorizontalSpacing(10);
-    moduleGrid->setVerticalSpacing(8);
-    moduleGrid->setColumnStretch(0, 1);
-    moduleGrid->setColumnStretch(1, 1);
-    moduleGrid->setColumnStretch(2, 1);
-    moduleGrid->setRowStretch(0, 1);
-    moduleGrid->setRowStretch(1, 1);
-    moduleGrid->addWidget(createDiameterModule(ui), 0, 0);
-    moduleGrid->addWidget(createRoughnessModule(ui), 0, 1);
-    moduleGrid->addWidget(createHoleModule(ui), 0, 2);
-    moduleGrid->addWidget(createCylindricityModule(ui), 1, 0);
-    moduleGrid->addWidget(createRoundoutModule(ui), 1, 1);
-    moduleGrid->addWidget(createTelecentricModule(ui), 1, 2);
-    pageLayout->addLayout(moduleGrid, 1);
-    pageLayout->addWidget(createOutputModule(ui), 0);
+    m_moduleGrid = new QGridLayout();
+    m_moduleGrid->setContentsMargins(0, 0, 0, 0);
+    m_moduleGrid->setHorizontalSpacing(10);
+    m_moduleGrid->setVerticalSpacing(8);
 
-    auto* pathHint = new QLabel(QStringLiteral("表单生成路径：%1").arg(runtimePath("SDKpostion")), page);
-    pathHint->setObjectName(QStringLiteral("sdkAssistPathHint"));
-    pathHint->setWordWrap(true);
-    pageLayout->addWidget(pathHint);
+    m_moduleCards = {
+        createDiameterModule(ui),
+        createRoughnessModule(ui),
+        createHoleModule(ui),
+        createCylindricityModule(ui),
+        createRoundoutModule(ui),
+        createTelecentricModule(ui)
+    };
+    pageLayout->addLayout(m_moduleGrid);
+    pageLayout->addWidget(createOutputModule(
+        ui,
+        [this]() { openOutputDirectory(); },
+        m_outputStatusLabel), 0);
 
-    auto* centralScrollArea = new QScrollArea(this);
-    centralScrollArea->setObjectName(QStringLiteral("sdkAssistScrollArea"));
-    centralScrollArea->setWidget(page);
-    centralScrollArea->setWidgetResizable(true);
-    centralScrollArea->setFrameShape(QFrame::NoFrame);
-    setCentralWidget(centralScrollArea);
-    setMinimumSize(1024, 768);
+    m_centralScrollArea = new QScrollArea(this);
+    m_centralScrollArea->setObjectName(QStringLiteral("sdkAssistScrollArea"));
+    m_centralScrollArea->setWidget(page);
+    m_centralScrollArea->setWidgetResizable(true);
+    m_centralScrollArea->setFrameShape(QFrame::NoFrame);
+    m_centralScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_centralScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_centralScrollArea->viewport()->setMinimumWidth(0);
+    setCentralWidget(m_centralScrollArea);
+    setMinimumSize(720, 640);
+
+    // 阶段4：统一数值输入约束，避免空值、字母和超范围数据进入测量结构。
+    setNumericValidator(ui.diameterFeatureNb, true, 0, 999999);
+    setNumericValidator(ui.diameterNominalValue, false);
+    setNumericValidator(ui.diameterUpperOffset, false);
+    setNumericValidator(ui.diameterBottomOffset, false);
+    setNumericValidator(ui.roughnessFeatureNb, true, 0, 999999);
+    setNumericValidator(ui.roughnessNominalValue, false);
+    setNumericValidator(ui.roughnessExposeTime, true, 1, 100000);
+    setNumericValidator(ui.roughnessReferenceD, false);
+    setNumericValidator(ui.holeFeatureNb, true, 0, 999999);
+    setNumericValidator(ui.holeNominalValue, false);
+    setNumericValidator(ui.holeUpperOffset, false);
+    setNumericValidator(ui.holeBottomOffset, false);
+    setNumericValidator(ui.holeNumber, true, 1, 999999);
+    setNumericValidator(ui.holeExposeTime, true, 1, 100000);
+    setNumericValidator(ui.cylindricityFeatureNb, true, 0, 999999);
+    setNumericValidator(ui.cylindricityNominalValue, false);
+    setNumericValidator(ui.cylindricityUpperRelativeLocation, true, 0, 100000000);
+    setNumericValidator(ui.cylindricityBottomRelativeLocation, true, 0, 100000000);
+    setNumericValidator(ui.roundoutFeatureNb, true, 0, 999999);
+    setNumericValidator(ui.roundoutNominalValue, false);
+    setNumericValidator(ui.roundoutUpperRelativeLocation, true, 0, 100000000);
+    setNumericValidator(ui.roundoutBottomRelativeLocation, true, 0, 100000000);
+    setNumericValidator(ui.telecentricExposeTime, true, 1, 100000);
+
+    setOptionalPlaceholder(ui.diameterPostionNote, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.roughnessPostionNote, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.cylindricityPostionNote, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.roundoutPostionNote1, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.roundoutPostionNote2, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.holePostionNote, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.telecentricPostionNote, QStringLiteral("可选：输入备注信息"));
+    setOptionalPlaceholder(ui.recordpartNb, QStringLiteral("请输入零件图号"));
+    setOptionalPlaceholder(ui.recordpartName, QStringLiteral("请输入零件名称"));
+    setOptionalPlaceholder(ui.recordpartProcessingNb, QStringLiteral("请输入工序号"));
+    setOptionalPlaceholder(ui.recordpartNote, QStringLiteral("可选：输入装夹方式或备注"));
+
+    const QList<QLineEdit*> validatedFields = {
+        ui.diameterFeatureNb, ui.diameterNominalValue, ui.diameterUpperOffset,
+        ui.diameterBottomOffset, ui.roughnessFeatureNb, ui.roughnessNominalValue,
+        ui.roughnessExposeTime, ui.roughnessReferenceD, ui.holeFeatureNb,
+        ui.holeNominalValue, ui.holeUpperOffset, ui.holeBottomOffset,
+        ui.holeNumber, ui.holeExposeTime, ui.cylindricityFeatureNb,
+        ui.cylindricityNominalValue, ui.cylindricityUpperRelativeLocation,
+        ui.cylindricityBottomRelativeLocation, ui.roundoutFeatureNb,
+        ui.roundoutNominalValue, ui.roundoutUpperRelativeLocation,
+        ui.roundoutBottomRelativeLocation, ui.telecentricExposeTime
+    };
+    for (QLineEdit* field : validatedFields) {
+        connect(field, &QLineEdit::textEdited, this, [field]() {
+            if (field->property("inputState").toString() == QStringLiteral("error")) {
+                field->setProperty("inputState", "normal");
+                field->style()->unpolish(field);
+                field->style()->polish(field);
+            }
+        });
+    }
 
     QScreen* primaryScreen = QGuiApplication::primaryScreen();
     if (primaryScreen) {
@@ -453,6 +648,11 @@ sdk_assist::sdk_assist(QWidget* parent)
     else {
         resize(1180, 900);
     }
+
+    QTimer::singleShot(0, this, [this]() {
+        if (m_centralScrollArea)
+            reflowModuleGrid(m_centralScrollArea->viewport()->width());
+    });
 
 	/*
 	for (int i = 0; i < 99; i++)
@@ -466,6 +666,54 @@ sdk_assist::sdk_assist(QWidget* parent)
 sdk_assist::~sdk_assist()
 {
 };
+
+void sdk_assist::reflowModuleGrid(int availableWidth)
+{
+    if (!m_moduleGrid || m_moduleCards.isEmpty())
+        return;
+
+    int columnCount = 3;
+    if (availableWidth < 760)
+        columnCount = 1;
+    else if (availableWidth < 1100)
+        columnCount = 2;
+
+    if (columnCount == m_currentColumnCount)
+        return;
+
+    while (QLayoutItem* item = m_moduleGrid->takeAt(0))
+        delete item;
+
+    for (int column = 0; column < 3; ++column)
+        m_moduleGrid->setColumnStretch(column, column < columnCount ? 1 : 0);
+
+    for (int index = 0; index < m_moduleCards.size(); ++index) {
+        QWidget* card = m_moduleCards.at(index);
+        card->setMinimumWidth(columnCount == 1 ? 0 : 320);
+        card->setMaximumWidth(QWIDGETSIZE_MAX);
+        const int row = index / columnCount;
+        const int column = index % columnCount;
+        m_moduleGrid->addWidget(card, row, column);
+    }
+
+    m_currentColumnCount = columnCount;
+    m_moduleGrid->invalidate();
+    if (m_responsivePage)
+        m_responsivePage->updateGeometry();
+}
+
+void sdk_assist::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    if (!m_centralScrollArea)
+        return;
+
+    reflowModuleGrid(m_centralScrollArea->viewport()->width());
+    QTimer::singleShot(0, this, [this]() {
+        if (m_centralScrollArea)
+            reflowModuleGrid(m_centralScrollArea->viewport()->width());
+    });
+}
 
 void sdk_assist::openGraphicalProgramEditor()
 {
@@ -485,14 +733,43 @@ void sdk_assist::openGraphicalProgramEditor()
     m_graphicalProgramEditor->activateWindow();
 }
 
+void sdk_assist::openOutputDirectory()
+{
+    const QString outputDirectory = runtimePath("SDKpostion");
+    QDir().mkpath(outputDirectory);
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(outputDirectory))) {
+        setOutputStatus(QStringLiteral("无法打开输出目录：%1").arg(outputDirectory), "error");
+    }
+}
+
+void sdk_assist::setOutputStatus(const QString& text, const char* status)
+{
+    if (!m_outputStatusLabel)
+        return;
+
+    m_outputStatusLabel->setText(text);
+    m_outputStatusLabel->setProperty("status", status);
+    m_outputStatusLabel->style()->unpolish(m_outputStatusLabel);
+    m_outputStatusLabel->style()->polish(m_outputStatusLabel);
+}
+
 //直径槽函数*******************************************************************************************************************************************************************************************
 void sdk_assist::on_diameterSequence_currentIndexChanged(int nIndex)
 {
 	currentDiameterOrder = nIndex;
 	updateDiameterPostionInf(currentDiameterOrder);
+    updateRecordButtonState(ui.diameterPostionRecord,
+                            containsOrder(recordDiameterList, currentDiameterOrder));
 };
 void sdk_assist::on_diameterPostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.diameterFeatureNb, ui.diameterNominalValue,
+                               ui.diameterUpperOffset, ui.diameterBottomOffset})) {
+        emit tips(QStringLiteral("直径模块存在未填写的必填数值，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.diameterFeatureNb, ui.diameterNominalValue,
+                          ui.diameterUpperOffset, ui.diameterBottomOffset});
 	emit diameterPostionRecord();
 	_sleep(150);
 	m_diameterPositionInf[currentDiameterOrder].diameterFeatureNb = ui.diameterFeatureNb->text().toInt();
@@ -500,21 +777,23 @@ void sdk_assist::on_diameterPostionRecord_clicked()
 	m_diameterPositionInf[currentDiameterOrder].diameterUpperOffset = ui.diameterUpperOffset->text().toFloat();
 	m_diameterPositionInf[currentDiameterOrder].diameterBottomOffset = ui.diameterBottomOffset->text().toFloat();;
 	m_diameterPositionInf[currentDiameterOrder].diameterPostionNote = ui.diameterPostionNote->text();
-	recordDiameterNb_all++;
-	recordDiameterList.push_back(currentDiameterOrder);
+	if (!containsOrder(recordDiameterList, currentDiameterOrder)) {
+		recordDiameterList.push_back(currentDiameterOrder);
+	}
+	recordDiameterNb_all = static_cast<int>(recordDiameterList.size());
+	updateRecordButtonState(ui.diameterPostionRecord, true);
 	updatePostionInfOut();
 
 
 };
 void sdk_assist::on_diameterPostionClear_clicked()
 {
-	if (recordDiameterNb_all == 0)
+	if (!containsOrder(recordDiameterList, currentDiameterOrder))
 	{
-		emit tips("未记录任何直径点位，请检查！");
+		emit tips("当前顺序号尚未记录直径点位，请检查！");
 		return;
 	}
 	clearSingleDiameter(currentDiameterOrder);
-	recordDiameterNb_all--;
 	for (vector<int>::iterator iter = recordDiameterList.begin(); iter != recordDiameterList.end();)
 	{
 		if (*iter == currentDiameterOrder)
@@ -523,7 +802,9 @@ void sdk_assist::on_diameterPostionClear_clicked()
 			break;
 		}
 	}
+    recordDiameterNb_all = static_cast<int>(recordDiameterList.size());
 	updateDiameterPostionInf(currentDiameterOrder);
+    updateRecordButtonState(ui.diameterPostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_diameterPostionClear_clickes()" << endl;
 };
@@ -551,31 +832,42 @@ void sdk_assist::on_roughnessSequence_currentIndexChanged(int nIndex)
 {
 	currentRoughnessOrder = nIndex;
 	updateRoughnessPostionInf(currentRoughnessOrder);
+    updateRecordButtonState(ui.roughnessPostionRecord,
+                            containsOrder(recordRoughnessList, currentRoughnessOrder));
 	std::cout << "on_roughnessSequence_currentIndexChanged(int nIndex)" << endl;
 };
 void sdk_assist::on_roughnessPostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.roughnessFeatureNb, ui.roughnessNominalValue,
+                               ui.roughnessExposeTime})) {
+        emit tips(QStringLiteral("粗糙度模块存在未填写的必填数值，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.roughnessFeatureNb, ui.roughnessNominalValue,
+                          ui.roughnessExposeTime});
 	emit roughnessPostionRecord();
 	_sleep(150);
 	m_roughnessPositionInf[currentRoughnessOrder].roughnessFeatureNb = ui.roughnessFeatureNb->text().toInt();
 	m_roughnessPositionInf[currentRoughnessOrder].roughnessNominalValue = ui.roughnessNominalValue->text().toFloat();
     //m_roughnessPositionInf[currentRoughnessOrder].roughnessReferenceD = ui.roughnessReferenceD->text().toFloat();改动
 	m_roughnessPositionInf[currentRoughnessOrder].roughnessPostionNote = ui.roughnessPostionNote->text();
-	recordRoughnessNb_all++;
-	recordRoughnessList.push_back(currentRoughnessOrder);
+    if (!containsOrder(recordRoughnessList, currentRoughnessOrder)) {
+        recordRoughnessList.push_back(currentRoughnessOrder);
+    }
+    recordRoughnessNb_all = static_cast<int>(recordRoughnessList.size());
+    updateRecordButtonState(ui.roughnessPostionRecord, true);
 	updateRoughnessPostionInf(currentRoughnessOrder);
 	updatePostionInfOut();
 	std::cout << "on_roughnessPostionRecord_clicked()" << endl;
 };
 void sdk_assist::on_roughnessPostionClear_clicked()
 {
-	if (recordRoughnessNb_all == 0)
+	if (!containsOrder(recordRoughnessList, currentRoughnessOrder))
 	{
-		emit tips("未记录任何粗糙度点位，请检查！");
+		emit tips("当前顺序号尚未记录粗糙度点位，请检查！");
 		return;
 	}
 	clearSingleRoughness(currentRoughnessOrder);
-	recordRoughnessNb_all--;
 	for (vector<int>::iterator iter = recordRoughnessList.begin(); iter != recordRoughnessList.end();)
 	{
 		if (*iter == currentRoughnessOrder)
@@ -584,7 +876,9 @@ void sdk_assist::on_roughnessPostionClear_clicked()
 			break;
 		}
 	}
+    recordRoughnessNb_all = static_cast<int>(recordRoughnessList.size());
 	updateRoughnessPostionInf(currentRoughnessOrder);
+    updateRecordButtonState(ui.roughnessPostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_roughnessPostionClear_clickes()" << endl;
 };
@@ -623,10 +917,21 @@ void sdk_assist::on_cylindricitySequence_currentIndexChanged(int nIndex)
 {
 	currentCylindricityOrder = nIndex;
 	updateCylindricityPostionInf(currentCylindricityOrder);
+    updateRecordButtonState(ui.cylindricityPostionRecord,
+                            containsOrder(recordCylindricityList, currentCylindricityOrder));
 	std::cout << "on_cylindricitySequence_currentIndexChanged(int nIndex)" << endl;
 };
 void sdk_assist::on_cylindricityPostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.cylindricityFeatureNb, ui.cylindricityNominalValue,
+                               ui.cylindricityUpperRelativeLocation,
+                               ui.cylindricityBottomRelativeLocation})) {
+        emit tips(QStringLiteral("圆柱度模块存在未填写的必填数值，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.cylindricityFeatureNb, ui.cylindricityNominalValue,
+                          ui.cylindricityUpperRelativeLocation,
+                          ui.cylindricityBottomRelativeLocation});
 	cylindricityBottomRelativeLocation_current=ui.cylindricityBottomRelativeLocation->text().toInt();
 	cylindricityUpperRelativeLocation_current = ui.cylindricityUpperRelativeLocation->text().toInt();
 	if (cylindricityUpperRelativeLocation_current >= 0 && cylindricityBottomRelativeLocation_current >= 0) {
@@ -636,8 +941,11 @@ void sdk_assist::on_cylindricityPostionRecord_clicked()
 		m_cylindricityPositionInf[currentCylindricityOrder].cylindricityNominalValue = ui.cylindricityNominalValue->text().toFloat();
 		m_cylindricityPositionInf[currentCylindricityOrder].cylindricityPostionNote = ui.cylindricityPostionNote->text();
 		m_cylindricityPositionInf[currentCylindricityOrder].cylindricityPostionNote = ui.cylindricityPostionNote->text();
-		recordCylindricityNb_all++;
-		recordCylindricityList.push_back(currentCylindricityOrder);
+        if (!containsOrder(recordCylindricityList, currentCylindricityOrder)) {
+            recordCylindricityList.push_back(currentCylindricityOrder);
+        }
+        recordCylindricityNb_all = static_cast<int>(recordCylindricityList.size());
+        updateRecordButtonState(ui.cylindricityPostionRecord, true);
 		updateCylindricityPostionInf(currentCylindricityOrder);
 		updatePostionInfOut();
 	}
@@ -649,13 +957,12 @@ void sdk_assist::on_cylindricityPostionRecord_clicked()
 };
 void sdk_assist::on_cylindricityPostionClear_clicked()
 {
-	if (recordCylindricityNb_all == 0)
+	if (!containsOrder(recordCylindricityList, currentCylindricityOrder))
 	{
-		emit tips("未记录任何圆柱度点位，请检查！");
+		emit tips("当前顺序号尚未记录圆柱度点位，请检查！");
 		return;
 	}
 	clearSingleCylindricity(currentCylindricityOrder);
-	recordCylindricityNb_all--;
 	for (vector<int>::iterator iter = recordCylindricityList.begin(); iter != recordCylindricityList.end();)
 	{
 		if (*iter == currentCylindricityOrder)
@@ -664,7 +971,9 @@ void sdk_assist::on_cylindricityPostionClear_clicked()
 			break;
 		}
 	}
+    recordCylindricityNb_all = static_cast<int>(recordCylindricityList.size());
 	updateCylindricityPostionInf(currentCylindricityOrder);
+    updateRecordButtonState(ui.cylindricityPostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_cylindricityPostionClear_clickes()" << endl;
 };
@@ -697,10 +1006,21 @@ void sdk_assist::on_roundoutSequence_currentIndexChanged(int nIndex)
 {
 	currentRoundoutOrder = nIndex;
 	updateRoundoutPostionInf(currentRoundoutOrder);
+    updateRecordButtonState(ui.roundoutPostionRecord,
+                            containsOrder(recordRoundoutList, currentRoundoutOrder));
 	std::cout << "on_roundoutSequence_currentIndexChanged(int nIndex)" << endl;
 };
 void sdk_assist::on_roundoutPostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.roundoutFeatureNb, ui.roundoutNominalValue,
+                               ui.roundoutUpperRelativeLocation,
+                               ui.roundoutBottomRelativeLocation})) {
+        emit tips(QStringLiteral("跳动模块存在未填写的必填数值，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.roundoutFeatureNb, ui.roundoutNominalValue,
+                          ui.roundoutUpperRelativeLocation,
+                          ui.roundoutBottomRelativeLocation});
 	roundoutBottomRelativeLocation_current = ui.roundoutUpperRelativeLocation->text().toInt();
 	roundoutUpperRelativeLocation_current = ui.roundoutBottomRelativeLocation->text().toInt();
 	if (roundoutBottomRelativeLocation_current >= 0 && roundoutUpperRelativeLocation_current >= 0) {
@@ -710,8 +1030,11 @@ void sdk_assist::on_roundoutPostionRecord_clicked()
 		m_roundoutPositionInf[currentRoundoutOrder].roundoutNominalValue = ui.roundoutNominalValue->text().toFloat();
 		m_roundoutPositionInf[currentRoundoutOrder].roundoutPostionNote1 = ui.roundoutPostionNote1->text();//改动
 		m_roundoutPositionInf[currentRoundoutOrder].roundoutPostionNote2 = ui.roundoutPostionNote2->text();//改动
-		recordRoundoutNb_all++;
-		recordRoundoutList.push_back(currentRoundoutOrder);
+        if (!containsOrder(recordRoundoutList, currentRoundoutOrder)) {
+            recordRoundoutList.push_back(currentRoundoutOrder);
+        }
+        recordRoundoutNb_all = static_cast<int>(recordRoundoutList.size());
+        updateRecordButtonState(ui.roundoutPostionRecord, true);
 		updateRoundoutPostionInf(currentRoundoutOrder);
 		updatePostionInfOut();
 	}
@@ -723,13 +1046,12 @@ void sdk_assist::on_roundoutPostionRecord_clicked()
 };
 void sdk_assist::on_roundoutPostionClear_clicked()
 {
-	if (recordRoundoutNb_all == 0)
+	if (!containsOrder(recordRoundoutList, currentRoundoutOrder))
 	{
-		emit tips("未记录任何跳动点位，请检查！");
+		emit tips("当前顺序号尚未记录跳动点位，请检查！");
 		return;
 	}
 	clearSingleRoundout(currentRoundoutOrder);
-	recordRoundoutNb_all--;
 	for (vector<int>::iterator iter = recordRoundoutList.begin(); iter != recordRoundoutList.end();)
 	{
 		if (*iter == currentRoundoutOrder)
@@ -738,7 +1060,9 @@ void sdk_assist::on_roundoutPostionClear_clicked()
 			break;
 		}
 	}
+    recordRoundoutNb_all = static_cast<int>(recordRoundoutList.size());
 	updateRoundoutPostionInf(currentRoundoutOrder);
+    updateRecordButtonState(ui.roundoutPostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_roundoutPostionClear_clickes()" << endl;
 };
@@ -773,10 +1097,21 @@ void sdk_assist::on_holeSequence_currentIndexChanged(int nIndex)
 {
 	currentHoleOrder = nIndex;
 	updateHolePostionInf(currentHoleOrder);
+    updateRecordButtonState(ui.holePostionRecord,
+                            containsOrder(recordHoleList, currentHoleOrder));
 	std::cout << "on_holeSequence_currentIndexChanged(int nIndex)" << endl;
 };
 void sdk_assist::on_holePostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.holeFeatureNb, ui.holeNominalValue,
+                               ui.holeUpperOffset, ui.holeBottomOffset,
+                               ui.holeNumber, ui.holeExposeTime})) {
+        emit tips(QStringLiteral("孔径模块存在未填写的必填数值，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.holeFeatureNb, ui.holeNominalValue,
+                          ui.holeUpperOffset, ui.holeBottomOffset,
+                          ui.holeNumber, ui.holeExposeTime});
 	emit holePostionRecord();
 	_sleep(150);
 	m_holePositionInf[currentHoleOrder].holeFeatureNb = ui.holeFeatureNb->text().toInt();
@@ -785,21 +1120,23 @@ void sdk_assist::on_holePostionRecord_clicked()
 	m_holePositionInf[currentHoleOrder].holeBottomOffset = ui.holeBottomOffset->text().toFloat();
 	m_holePositionInf[currentHoleOrder].holeNumber = ui.holeNumber->text().toInt();
 	m_holePositionInf[currentHoleOrder].holePostionNote = ui.holePostionNote->text();
-	recordHoleNb_all++;
-	recordHoleList.push_back(currentHoleOrder);
+    if (!containsOrder(recordHoleList, currentHoleOrder)) {
+        recordHoleList.push_back(currentHoleOrder);
+    }
+    recordHoleNb_all = static_cast<int>(recordHoleList.size());
+    updateRecordButtonState(ui.holePostionRecord, true);
 	updateHolePostionInf(currentHoleOrder);
 	updatePostionInfOut();
 	std::cout << "on_holePostionRecord_clicked()" << endl;
 };
 void sdk_assist::on_holePostionClear_clicked()
 {
-	if (recordHoleNb_all == 0)
+	if (!containsOrder(recordHoleList, currentHoleOrder))
 	{
-		emit tips("未记录任何孔径点位，请检查！");
+		emit tips("当前顺序号尚未记录孔径点位，请检查！");
 		return;
 	}
 	clearSingleHole(currentHoleOrder);
-	recordHoleNb_all--;
 	for (vector<int>::iterator iter = recordHoleList.begin(); iter != recordHoleList.end();)
 	{
 		if (*iter == currentHoleOrder)
@@ -808,7 +1145,9 @@ void sdk_assist::on_holePostionClear_clicked()
 			break;
 		}
 	}
+    recordHoleNb_all = static_cast<int>(recordHoleList.size());
 	updateHolePostionInf(currentHoleOrder);
+    updateRecordButtonState(ui.holePostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_holePostionClear_clickes()" << endl;
 };
@@ -819,7 +1158,7 @@ void sdk_assist::clearSingleHole(int index)
 	m_holePositionInf[index].holeUpperOffset = 0;
 	m_holePositionInf[index].holeBottomOffset = 0;
 	m_holePositionInf[index].holeNumber = 0;
-	m_holePositionInf[index].holeExposeTime = 0;
+	m_holePositionInf[index].holeExposeTime = 550;
 	m_holePositionInf[index].holePostionNote = "-";
 	m_holePositionInf[index].axisGuangMuEncodePostion = 0;
 	m_holePositionInf[index].axisGuangMuRealPostion = 0;
@@ -843,23 +1182,36 @@ void sdk_assist::on_telecentricSequence_currentIndexChanged(int nIndex)
 {
 	currentTelecentricOrder = nIndex;
 	updateTelecentricPostionInf(currentTelecentricOrder);
+    updateRecordButtonState(ui.telecentricPostionRecord,
+                            containsOrder(recordTelecentricList, currentTelecentricOrder));
 	std::cout << "on_telecentricSequence_currentIndexChanged(int nIndex)" << endl;
 };
 void sdk_assist::on_telecentricPostionRecord_clicked()
 {
+    if (hasInvalidRequiredField({ui.telecentricExposeTime})) {
+        emit tips(QStringLiteral("远心模块的曝光值不能为空，请补充后再记录。"));
+        return;
+    }
+    clearInputErrorState({ui.telecentricExposeTime});
 	emit telecentricPostionRecord();
 	_sleep(150);
 	m_telecentricPositionInf[currentTelecentricOrder].telecentricPostionNote = ui.telecentricPostionNote->text();
-	recordTelecentricNb_all++;
-	recordTelecentricList.push_back(currentTelecentricOrder);
+    if (!containsOrder(recordTelecentricList, currentTelecentricOrder)) {
+        recordTelecentricList.push_back(currentTelecentricOrder);
+    }
+    recordTelecentricNb_all = static_cast<int>(recordTelecentricList.size());
+    updateRecordButtonState(ui.telecentricPostionRecord, true);
 	updateTelecentricPostionInf(currentTelecentricOrder);
 	updatePostionInfOut();
 	std::cout << "on_telecentricPostionRecord_clicked()" << endl;
 };
 void sdk_assist::on_telecentricPostionClear_clicked()
 {
+    if (!containsOrder(recordTelecentricList, currentTelecentricOrder)) {
+        emit tips(QStringLiteral("当前顺序号尚未记录远心点位，请检查！"));
+        return;
+    }
 	clearSingleTelecentric(currentTelecentricOrder);
-	recordTelecentricNb_all--;
 	for (vector<int>::iterator iter = recordTelecentricList.begin(); iter != recordTelecentricList.end();)
 	{
 		if (*iter == currentTelecentricOrder)
@@ -868,13 +1220,15 @@ void sdk_assist::on_telecentricPostionClear_clicked()
 			break;
 		}
 	}
+    recordTelecentricNb_all = static_cast<int>(recordTelecentricList.size());
 	updateTelecentricPostionInf(currentTelecentricOrder);
+    updateRecordButtonState(ui.telecentricPostionRecord, false);
 	updatePostionInfOut();
 	std::cout << "on_telecentricPostionClear_clickes()" << endl;
 };
 void sdk_assist::clearSingleTelecentric(int index)
 {
-	m_telecentricPositionInf[index].telecentricExposeTime = 14;
+	m_telecentricPositionInf[index].telecentricExposeTime = 550;
 	m_telecentricPositionInf[index].telecentricPostionNote = "-";
 	m_telecentricPositionInf[index].axisGuangMuEncodePostion = 0;
 	m_telecentricPositionInf[index].axisGuangMuRealPostion = 0;
@@ -901,18 +1255,35 @@ void sdk_assist::updatePostionInfOut()
 };
 void sdk_assist::on_PostionRecordOut_clicked()
 {
-	if ( recordTelecentricNb_all ==0 && recordCylindricityNb_all == 0 && recordTelecentricNb_all == 0 && recordRoughnessNb_all ==0&& recordRoundoutNb_all == 0&&recordHoleNb_all == 0&& recordDiameterNb_all == 0)
-	{
-		return;
-	}
-	else 
-	{
-		saveAsExcel();
-	}
-	
+    const bool hasNoRecordedPosition =
+        recordDiameterNb_all == 0 &&
+        recordRoughnessNb_all == 0 &&
+        recordCylindricityNb_all == 0 &&
+        recordRoundoutNb_all == 0 &&
+        recordHoleNb_all == 0 &&
+        recordTelecentricNb_all == 0;
+
+    if (hasNoRecordedPosition) {
+        const QString message = QStringLiteral("当前没有已记录点位，无法生成点位文件。");
+        setOutputStatus(message, "error");
+        emit tips(message);
+        return;
+    }
+
+    setOutputStatus(QStringLiteral("正在生成点位文件，请稍候……"), "working");
+    saveAsExcel();
 };
 void sdk_assist::on_PostionClearOut_clicked()
 {
+    const auto confirmation = QMessageBox::question(
+        this,
+        QStringLiteral("确认清空全部点位"),
+        QStringLiteral("确定要清空全部已记录点位和零件信息吗？此操作无法撤销。"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (confirmation != QMessageBox::Yes)
+        return;
+
 	recordDiameterNb_all = 0;
 	recordTelecentricNb_all = 0;
 	recordCylindricityNb_all = 0;
@@ -956,7 +1327,14 @@ void sdk_assist::on_PostionClearOut_clicked()
 	recordHoleList.shrink_to_fit();
 	recordTelecentricList.clear();
 	recordTelecentricList.shrink_to_fit();
-	updatePostionInfOut();
+    updatePostionInfOut();
+    updateRecordButtonState(ui.diameterPostionRecord, false);
+    updateRecordButtonState(ui.roughnessPostionRecord, false);
+    updateRecordButtonState(ui.cylindricityPostionRecord, false);
+    updateRecordButtonState(ui.roundoutPostionRecord, false);
+    updateRecordButtonState(ui.holePostionRecord, false);
+    updateRecordButtonState(ui.telecentricPostionRecord, false);
+    setOutputStatus(QStringLiteral("点位信息已清空，尚未生成新文件。"), "idle");
 	emit tips("已清空所有点位信息！");
 };
 void sdk_assist::on_recordpartNb_editingFinished()
@@ -1666,6 +2044,7 @@ void sdk_assist::saveAsExcel()
 		worksheet = NULL;
 		const QString generatorWorkbook = runtimePath("SDKprogram/program0107.xlsm");
 		ShellExecuteW(nullptr,L"open",reinterpret_cast<LPCWSTR>(generatorWorkbook.utf16()),nullptr,nullptr,SW_SHOW);
+        setOutputStatus(QStringLiteral("已生成：%1").arg(QDir::toNativeSeparators(excelPath)), "success");
 		emit tips("点位保存完成");
 	}
 };

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <QMainWindow>
+#include <QVector>
 #include <functional>
 #include <QMessageBox>
 #include <QThread>
@@ -18,6 +19,11 @@
 
 using namespace std;
 class GraphicalProgramEditor;
+class QLabel;
+class QGridLayout;
+class QScrollArea;
+class QResizeEvent;
+class QWidget;
 class sdk_assist:public QMainWindow
 {
     Q_OBJECT
@@ -206,9 +212,19 @@ private slots:
 
 private:
     void openGraphicalProgramEditor();//阶段1：统一处理顶部“打开图形化编辑”入口
+    void openOutputDirectory();//阶段3：打开点位文件输出目录
+    void setOutputStatus(const QString& text, const char* status);//阶段3：更新输出工作区状态
+    void reflowModuleGrid(int availableWidth);//响应式布局：按可用宽度切换1/2/3列
+    void resizeEvent(QResizeEvent* event) override;
 
     Ui::sdk_assist ui;
     GraphicalProgramEditor* m_graphicalProgramEditor = nullptr;
+    QLabel* m_outputStatusLabel = nullptr;
+    QGridLayout* m_moduleGrid = nullptr;
+    QScrollArea* m_centralScrollArea = nullptr;
+    QWidget* m_responsivePage = nullptr;
+    QVector<QWidget*> m_moduleCards;
+    int m_currentColumnCount = 0;
 
 signals:
     void graphicalEditorCreated(GraphicalProgramEditor* editor);

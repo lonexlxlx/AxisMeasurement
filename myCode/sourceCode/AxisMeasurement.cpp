@@ -8,6 +8,7 @@
 #include <QAbstractScrollArea>
 #include <QScreen>
 #include <QApplication>
+#include <QStyle>
 
 #include "graphical_axis_backend.h"
 
@@ -1457,7 +1458,22 @@ void AxisMeasurement::on_startAutoMearsurement_clicked()
 		ui.allAxisGoHome->setEnabled(false);
 		ui.ManualControl->setEnabled(false);
 		ui.programNumber->setEnabled(false);
-		ui.orginaImg->setText("光幕传感器数据采集中");
+		ui.measureResultFlag->setStyleSheet(QStringLiteral(""));
+		ui.measureResultFlag->setText(QStringLiteral("测量中"));
+		ui.measureResultFlag->setProperty("resultState", "measuring");
+		ui.measureResultFlag->style()->unpolish(ui.measureResultFlag);
+		ui.measureResultFlag->style()->polish(ui.measureResultFlag);
+		ui.measureResultFlag->update();
+		ui.orginaImg->clear();
+		ui.orginaImg->setText(QStringLiteral("数据采集中\n图像将在采集后显示"));
+		ui.frame1->setProperty("imageState", "capturing");
+		ui.orginaImg->setProperty("imageState", "capturing");
+		ui.frame1->style()->unpolish(ui.frame1);
+		ui.frame1->style()->polish(ui.frame1);
+		ui.orginaImg->style()->unpolish(ui.orginaImg);
+		ui.orginaImg->style()->polish(ui.orginaImg);
+		ui.frame1->update();
+		ui.orginaImg->update();
 		programRunFlag = true;
 		switch (currentProgram)
 		{
@@ -2280,6 +2296,13 @@ void AxisMeasurement::showCurrentLsValue()
 	QString diameterConferencel_s = QString::number(diameterConference, 'd', 4);
 	ui.lsCurrentValue_2->setText(diameterConferencel_s);
 	ui.lsCurrentValue->setText(diameterReal_s);
+	if (ui.lsCurrentValue->property("displayState").toByteArray() != "active")
+	{
+		ui.lsCurrentValue->setProperty("displayState", "active");
+		ui.lsCurrentValue->style()->unpolish(ui.lsCurrentValue);
+		ui.lsCurrentValue->style()->polish(ui.lsCurrentValue);
+		ui.lsCurrentValue->update();
+	}
 	ui.lsMeasureOut1->setText(diameterReal_s);
 	//ui.lsCurrentValue_2->setNum(diameterConference);
 	//ui.lsCurrentValue->setNum(diameterReal);
@@ -2499,6 +2522,15 @@ void AxisMeasurement::on_clearMeasureResult_clicked()
 	default:
 		break;
 	};
+	ui.measureResultFlag->setStyleSheet(QStringLiteral(""));
+	ui.measureResultFlag->setText(QStringLiteral("--"));
+	ui.measureResultFlag->setProperty("resultState", "idle");
+	ui.measureResultFlag->style()->unpolish(ui.measureResultFlag);
+	ui.measureResultFlag->style()->polish(ui.measureResultFlag);
+	ui.measureResultFlag->update();
+	ui.ngFeatureNum->setText(QStringLiteral("--"));
+	ui.programMeasureNum->setText(QStringLiteral("--"));
+	ui.programYield->setText(QStringLiteral("--"));
 	ui.saveMeasureResult->setEnabled(false);
 	ui.clearMeasureResult->setEnabled(false);
 };
@@ -2601,18 +2633,19 @@ void AxisMeasurement::closeDatabase()
 };
 void AxisMeasurement::show_programStatistics(QString result, int ngFeatureNum, int measureNum, float currentYield)
 {
+	ui.measureResultFlag->setStyleSheet(QStringLiteral(""));
 	ui.measureResultFlag->setText(result);
-	if (result == "OK")
-	{
-		changeLedColor(ui.measureResultFlag, false);
-	}
-	else if (result == "NG")
-	{
-		changeLedColor(ui.measureResultFlag, true);
-	};
+	const char* resultState = result == QStringLiteral("OK") ? "ok"
+		: result == QStringLiteral("NG") ? "ng"
+		: result.contains(QStringLiteral("测量")) ? "measuring"
+		: "idle";
+	ui.measureResultFlag->setProperty("resultState", resultState);
+	ui.measureResultFlag->style()->unpolish(ui.measureResultFlag);
+	ui.measureResultFlag->style()->polish(ui.measureResultFlag);
+	ui.measureResultFlag->update();
 	ui.ngFeatureNum->setNum(ngFeatureNum);
 	ui.programMeasureNum->setNum(measureNum);
-	ui.programYield->setText(QString("%1 %").arg(currentYield));
+	ui.programYield->setText(QString("%1 %").arg(currentYield, 0, 'f', 1));
 	ui.saveMeasureResult->setEnabled(true);
 	ui.clearMeasureResult->setEnabled(true);
 };
@@ -2621,8 +2654,16 @@ void AxisMeasurement::show_Statistics()
 	ui.measurePartsNum->setNum(m_measurePartsNum_all);
 	ui.okPartsNum_All->setNum(m_okPartsNum_all);
 	ui.ngPartsNum_All->setNum(m_ngPartsNum_all);
-	m_yield_all = (m_okPartsNum_all / m_measurePartsNum_all) * 100;
-	ui.programYield->setText(QString("%1 %").arg(m_yield_all));
+	if (m_measurePartsNum_all > 0)
+	{
+		m_yield_all = (static_cast<double>(m_okPartsNum_all) / m_measurePartsNum_all) * 100.0;
+		ui.yield_All->setText(QString("%1 %").arg(m_yield_all, 0, 'f', 1));
+	}
+	else
+	{
+		m_yield_all = 0;
+		ui.yield_All->setText(QStringLiteral("--"));
+	}
 };
 
 ///轴控制控件槽函数
@@ -2986,6 +3027,21 @@ void AxisMeasurement::showTime()
 };
 void AxisMeasurement::showDeviceErrorInf(QString errorInf)
 {
+	if (errorInf.contains(QStringLiteral("相机"))
+		|| errorInf.contains(QStringLiteral("图像"))
+		|| errorInf.contains(QStringLiteral("采集")))
+	{
+		ui.orginaImg->clear();
+		ui.orginaImg->setText(QStringLiteral("图像采集异常\n请检查相机连接与采集状态"));
+		ui.frame1->setProperty("imageState", "error");
+		ui.orginaImg->setProperty("imageState", "error");
+		ui.frame1->style()->unpolish(ui.frame1);
+		ui.frame1->style()->polish(ui.frame1);
+		ui.orginaImg->style()->unpolish(ui.orginaImg);
+		ui.orginaImg->style()->polish(ui.orginaImg);
+		ui.frame1->update();
+		ui.orginaImg->update();
+	}
 	QMessageBox::warning(NULL, "warning!", errorInf, QMessageBox::Ok, QMessageBox::Ok);
 };
 void AxisMeasurement::showTips(QString tipsInf)
@@ -2995,6 +3051,33 @@ void AxisMeasurement::showTips(QString tipsInf)
 void AxisMeasurement::showDeviceInf(QString deviceInf)//用于显示设备状态栏信息
 {
 	ui.deviceInf->setText(deviceInf);
+
+	const QString normalizedInfo = deviceInf.trimmed();
+	const bool isError = normalizedInfo.contains(QStringLiteral("异常"))
+		|| normalizedInfo.contains(QStringLiteral("失败"))
+		|| normalizedInfo.contains(QStringLiteral("未全部"));
+	const bool isWorking = normalizedInfo.contains(QStringLiteral("正在"))
+		|| normalizedInfo.contains(QStringLiteral("运行中"))
+		|| normalizedInfo.contains(QStringLiteral("测量中"));
+	const bool isSuccess = normalizedInfo.contains(QStringLiteral("成功"))
+		|| normalizedInfo.contains(QStringLiteral("已打开"))
+		|| normalizedInfo.contains(QStringLiteral("已经打开"));
+	const bool isWarning = normalizedInfo.contains(QStringLiteral("请"))
+		|| normalizedInfo.contains(QStringLiteral("取消"))
+		|| normalizedInfo.contains(QStringLiteral("停止"));
+	const char* statusType = isError ? "error"
+		: isWorking ? "working"
+		: isSuccess ? "success"
+		: isWarning ? "warning"
+		: "idle";
+	if (ui.deviceInf->property("statusType").toByteArray() != statusType)
+	{
+		ui.deviceInf->setProperty("statusType", statusType);
+		ui.deviceInf->style()->unpolish(ui.deviceInf);
+		ui.deviceInf->style()->polish(ui.deviceInf);
+		ui.deviceInf->update();
+	}
+
 	if (m_statusInfoLabel)//P1-8 同步到状态栏提示区
 		m_statusInfoLabel->setText(deviceInf);
 };
@@ -3098,6 +3181,7 @@ void AxisMeasurement::restructureMainLayout()
 		ui.partRotate_clockwise, ui.lsMoveUp, ui.lsMoveDown
 	};
 	for (QPushButton* button : autoMoveButtons) {
+		button->setProperty("controlRole", "motion");
 		button->setMinimumHeight(32);
 		button->setMaximumHeight(34);
 		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -3112,6 +3196,12 @@ void AxisMeasurement::restructureMainLayout()
 	ui.groupBox_2->setObjectName(QStringLiteral("leftLightCurtainCard"));
 	ui.label_39->setObjectName(QStringLiteral("leftCardTitle"));
 	ui.label_32->setObjectName(QStringLiteral("leftCardTitle"));
+	ui.programProcess->setProperty("processState", "idle");
+	ui.programProgressBar->setProperty("progressState", "idle");
+	ui.lsDiameter->setProperty("displayRole", "measurement");
+	ui.lsCurrentValue->setProperty("displayRole", "realtime");
+	ui.lsCurrentValue->setProperty("displayState", "idle");
+	ui.lsCurrentValue->setText(QStringLiteral("等待数据"));
 	ui.label_39->setStyleSheet(QStringLiteral(""));
 	ui.label_32->setStyleSheet(QStringLiteral(""));
 	ui.label_39->setMinimumHeight(24);
@@ -3173,6 +3263,11 @@ void AxisMeasurement::restructureMainLayout()
 	autoLeftScroll->setMinimumWidth(ui.groupBox->geometry().width() + 22);
 
 	ui.frame1->setMinimumSize(380, 280);//图像区最小尺寸，防止被挤没
+	ui.frame1->setProperty("imageState", "idle");
+	ui.orginaImg->setProperty("imageState", "idle");
+	ui.orginaImg->setText(QStringLiteral("等待图像\n打开设备并开始测量后显示"));
+	ui.orginaImg->setAlignment(Qt::AlignCenter);
+	ui.orginaImg->setWordWrap(true);
 
 	QSplitter* autoContentSplitter = new QSplitter(Qt::Horizontal, ui.autoMeasureUI);
 	autoContentSplitter->setObjectName(QStringLiteral("autoContentSplitter"));
@@ -3186,7 +3281,15 @@ void AxisMeasurement::restructureMainLayout()
 	//设备控制条：用布局接管旧的固定坐标行，避免首次打开时按钮被水平裁切
 	ui.autoDeviceControl->setObjectName(QStringLiteral("topDeviceBarCard"));
 	ui.deviceInf->setObjectName(QStringLiteral("topDeviceInfo"));
+	ui.deviceInf->setProperty("statusType", "idle");
 	ui.programNumber->setObjectName(QStringLiteral("topProgramCombo"));
+	ui.openAllDevice->setProperty("buttonRole", "outline");
+	ui.closeAllDevice->setProperty("buttonRole", "secondary");
+	ui.allAxisGoHome->setProperty("buttonRole", "secondary");
+	ui.startAutoMearsurement->setProperty("buttonRole", "primary");
+	ui.measureCancel->setProperty("buttonRole", "secondary");
+	ui.programConfirm->setProperty("buttonRole", "secondary");
+	ui.urgrentStopMearsure->setProperty("buttonRole", "danger");
 	if (QWidget* legacyTopRow = ui.autoDeviceControl->findChild<QWidget*>(QStringLiteral("layoutWidget"), Qt::FindDirectChildrenOnly))
 		legacyTopRow->hide();
 	QPushButton* topButtons[] = {
@@ -3202,7 +3305,7 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_19->setMinimumWidth(44);
 	ui.label_19->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	topDeviceRow->addWidget(ui.label_19);
-	//topDeviceRow->addSpacing(1);
+	//topDeviceRow->addSpacing(1);//程序模块下拉框和程序文本框之间的距离处理  距离设置有问题
 
 	/*ui.programNumber->setMinimumWidth(168);
 	ui.programNumber->setMinimumHeight(32);
@@ -3318,6 +3421,27 @@ void AxisMeasurement::restructureMainLayout()
 	ui.partsId->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.operatorName->setMinimumWidth(80);
 	ui.operatorName->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.systemTime->setProperty("textRole", "secondary");
+	ui.measurePartsNum->setProperty("metricRole", "total");
+	ui.okPartsNum_All->setProperty("metricRole", "ok");
+	ui.ngPartsNum_All->setProperty("metricRole", "ng");
+	ui.yield_All->setProperty("metricRole", "yield");
+	ui.programMeasureNum->setProperty("metricRole", "total");
+	ui.ngFeatureNum->setProperty("metricRole", "ng");
+	ui.programYield->setProperty("metricRole", "yield");
+	ui.measurePartsNum->setText(QStringLiteral("--"));
+	ui.okPartsNum_All->setText(QStringLiteral("--"));
+	ui.ngPartsNum_All->setText(QStringLiteral("--"));
+	ui.yield_All->setText(QStringLiteral("--"));
+	ui.programMeasureNum->setText(QStringLiteral("--"));
+	ui.ngFeatureNum->setText(QStringLiteral("--"));
+	ui.programYield->setText(QStringLiteral("--"));
+	ui.measureResultFlag->setProperty("resultState", "idle");
+	ui.measureResultFlag->setText(QStringLiteral("--"));
+	ui.saveMeasureResult->setProperty("buttonRole", "primary");
+	ui.clearMeasureResult->setProperty("buttonRole", "secondary");
+	ui.zeroMeasureNum->setProperty("buttonRole", "dangerOutline");
+	ui.creatDatabase->setProperty("buttonRole", "outline");
 	QWidget* statLayoutWidget = ui.groupBox_6->findChild<QWidget*>(QStringLiteral("layoutWidget_5"));
 	QGridLayout* statLayout = statLayoutWidget ? qobject_cast<QGridLayout*>(statLayoutWidget->layout()) : nullptr;
 	if (statLayout) {
@@ -3419,10 +3543,11 @@ void AxisMeasurement::restructureMainLayout()
 	}
 	QLabel* autoMoveTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
 	for (QLabel* title : autoMoveTitles) {
+		title->setProperty("textRole", "sectionTitle");
 		title->setAlignment(Qt::AlignCenter);
 		title->setMinimumHeight(24);
 		title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-		title->setStyleSheet(QStringLiteral("font-size: 10pt; font-weight: 700; color: #111827;"));
+		title->setStyleSheet(QStringLiteral(""));
 	}
 
 	//========== 四、P2-11 关键数值仪表盘化：等宽字体 Consolas + 语义色 ==========
@@ -3430,12 +3555,12 @@ void AxisMeasurement::restructureMainLayout()
 	QFont liveValueFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕实时数值
 	ui.lsCurrentValue->setFont(liveValueFont);
 	ui.lsCurrentValue->setAlignment(Qt::AlignCenter);
-	ui.lsCurrentValue->setStyleSheet("color:#16A34A;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:4px;");//实测值：绿
+	ui.lsCurrentValue->setStyleSheet(QStringLiteral(""));
 
 	QFont diameterFont(QStringLiteral("Consolas"), 18, QFont::Bold);//直径
 	ui.lsDiameter->setFont(diameterFont);
 	ui.lsDiameter->setAlignment(Qt::AlignCenter);
-	ui.lsDiameter->setStyleSheet("color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:4px;");//直径：蓝
+	ui.lsDiameter->setStyleSheet(QStringLiteral(""));
 
 	QFont channelFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕 4 通道 + 补偿前
 	ui.lsMeasureOut1->setFont(channelFont);
@@ -3629,6 +3754,17 @@ void AxisMeasurement::displayImg(const Mat* imgPrt, QString source, int drawMode
 		//painter.drawEllipse(QPoint(centerX, centerY), 100, 100);
 		imgForDisplay = imgForDisplay.scaled(ui.orginaImg->size(), Qt::KeepAspectRatio);//此函数还有一个参数是图像的转换格式（缺省）//此函数还有一个参数是图像的转换格式（缺省）
 		ui.orginaImg->setPixmap(QPixmap::fromImage(imgForDisplay));
+		if (ui.frame1->property("imageState").toByteArray() != "capturing")
+		{
+			ui.frame1->setProperty("imageState", "capturing");
+			ui.orginaImg->setProperty("imageState", "capturing");
+			ui.frame1->style()->unpolish(ui.frame1);
+			ui.frame1->style()->polish(ui.frame1);
+			ui.orginaImg->style()->unpolish(ui.orginaImg);
+			ui.orginaImg->style()->polish(ui.orginaImg);
+			ui.frame1->update();
+			ui.orginaImg->update();
+		}
 	}
 	else if (source == "cam0" || source == "cam1" || source == "cam2")
 	{
@@ -3649,6 +3785,34 @@ void AxisMeasurement::showLsResult(int lsPosition, float result)
 void AxisMeasurement::showProgramProcess(QString processInf, int precentage)
 {
 	ui.programProcess->setText(processInf);
+
+	const QString normalizedProcess = processInf.trimmed();
+	const bool isError = normalizedProcess.contains(QStringLiteral("异常"))
+		|| normalizedProcess.contains(QStringLiteral("失败"))
+		|| normalizedProcess.contains(QStringLiteral("错误"));
+	const bool isComplete = precentage >= 100
+		|| normalizedProcess.contains(QStringLiteral("完成"))
+		|| normalizedProcess.contains(QStringLiteral("结束"));
+	const bool isRunning = precentage > 0
+		|| normalizedProcess.contains(QStringLiteral("正在"))
+		|| normalizedProcess.contains(QStringLiteral("测量中"));
+	const char* processState = isError ? "error"
+		: isComplete ? "complete"
+		: isRunning ? "running"
+		: "idle";
+	if (ui.programProcess->property("processState").toByteArray() != processState)
+	{
+		ui.programProcess->setProperty("processState", processState);
+		ui.programProgressBar->setProperty("progressState", processState);
+		QWidget* stateWidgets[] = { ui.programProcess, ui.programProgressBar };
+		for (QWidget* widget : stateWidgets)
+		{
+			widget->style()->unpolish(widget);
+			widget->style()->polish(widget);
+			widget->update();
+		}
+	}
+
 	setProgramProgressSmooth(precentage);//P2-12：进度条平滑动画替代直接 setValue
 };
 /*
@@ -3702,7 +3866,17 @@ void AxisMeasurement::programCheck(QString infTip,int mode)//图像质量确认�
 void AxisMeasurement::programFinish(bool normalFlag)
 {
 	programRunFlag = false;
-	ui.orginaImg->setText("数据采集结束！");
+	ui.orginaImg->clear();
+	ui.orginaImg->setText(normalFlag ? QStringLiteral("数据采集完成") : QStringLiteral("数据采集异常结束"));
+	const char* imageState = normalFlag ? "complete" : "error";
+	ui.frame1->setProperty("imageState", imageState);
+	ui.orginaImg->setProperty("imageState", imageState);
+	ui.frame1->style()->unpolish(ui.frame1);
+	ui.frame1->style()->polish(ui.frame1);
+	ui.orginaImg->style()->unpolish(ui.orginaImg);
+	ui.orginaImg->style()->polish(ui.orginaImg);
+	ui.frame1->update();
+	ui.orginaImg->update();
 	ui.startAutoMearsurement->setEnabled(true);
 	ui.allAxisGoHome->setEnabled(true);
 	ui.programNumber->setEnabled(true);
@@ -3724,7 +3898,6 @@ void AxisMeasurement::programFinish(bool normalFlag)
 	{
 		m_ngPartsNum_all++;
 	}
-	m_yield_all = (m_okPartsNum_all / m_measurePartsNum_all) * 100;
 	show_Statistics();
 	//showPartNumber("未选择程序");
 	showLsResult(999, 0);
