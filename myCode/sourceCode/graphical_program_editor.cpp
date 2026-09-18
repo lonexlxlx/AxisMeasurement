@@ -13,6 +13,7 @@
 #include <QShortcut>
 #include <QThread>
 #include <QVBoxLayout>
+#include <QtMath>
 #include <HalconCpp.h>
 #include <memory>
 #include <cstring>
@@ -504,17 +505,73 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
         EquHistoImage(illuminated, &equalized);
 
         const double centerX = bounds.center().x();
-        // The legacy programs use short horizontal lines of roughly 78-134 px.
-        // Keep enough line length for several 24 px-wide metrology measures on
-        // small preview images, while limiting the span on large circular edges.
-        const double halfSpan = qMin(bounds.width() * 0.40,
-            qBound(40.0, bounds.width() * 0.08, 70.0));
-        // A user-drawn hole ROI normally follows the visible outer rim. Move the
-        // probes inward to the actual inner hole edge; the original 20 px search
-        // half-length then absorbs normal drawing and rim-width variation.
-        const double edgeInset = qMin(30.0, bounds.height() * 0.16);
-        const double topY = bounds.top() + edgeInset;
-        const double bottomY = bounds.bottom() - edgeInset;
+        const double centerY = bounds.center().y();
+        // Locate the two transitions of the inner hole from a vertically smoothed
+        // gray profile through the central part of the ROI.  The ROI may include a
+        // wide annulus, so deriving probes only from its outer bounds can put one
+        // metrology line on the annulus and the other on the inner hole.
+        stage = QStringLiteral("ROI内孔定位");
+        const int profileLeft = qMax(0, qCeil(bounds.left() + bounds.width() * 0.38));
+        const int profileRight = qMin(gray.width() - 1, qFloor(bounds.right() - bounds.width() * 0.38));
+        const int profileTop = qMax(0, qCeil(bounds.top()));
+        const int profileBottom = qMin(gray.height() - 1, qFloor(bounds.bottom()));
+        if (profileRight < profileLeft || profileBottom - profileTop < 40) {
+            result.status = QStringLiteral("测量失败［ROI内孔定位］：ROI中央灰度剖面范围无效");
+            return result;
+        }
+        QVector<double> grayProfile(profileBottom - profileTop + 1, 0.0);
+        for (int row = profileTop; row <= profileBottom; ++row) {
+            const uchar* scan = gray.constScanLine(row);
+            double sum = 0;
+            for (int column = profileLeft; column <= profileRight; ++column)
+                sum += scan[column];
+            grayProfile[row - profileTop] = sum / (profileRight - profileLeft + 1);
+        }
+        const int gradientRadius = qBound(2, qRound(bounds.height() * 0.015), 6);
+        const int topStart = qMax(profileTop + gradientRadius, qCeil(bounds.top() + bounds.height() * 0.08));
+        const int topEnd = qMin(profileBottom - gradientRadius, qFloor(centerY - bounds.height() * 0.10));
+        const int bottomStart = qMax(profileTop + gradientRadius, qCeil(centerY + bounds.height() * 0.10));
+        const int bottomEnd = qMin(profileBottom - gradientRadius, qFloor(bounds.bottom() - bounds.height() * 0.08));
+        if (topEnd <= topStart || bottomEnd <= bottomStart) {
+            result.status = QStringLiteral("测量失败［ROI内孔定位］：ROI没有为上下孔边保留足够搜索范围");
+            return result;
+        }
+        auto profileGradient = [&](int row) {
+            return grayProfile[row + gradientRadius - profileTop]
+                - grayProfile[row - gradientRadius - profileTop];
+        };
+        double topMinimum = 1e9, topMaximum = -1e9;
+        double bottomMinimum = 1e9, bottomMaximum = -1e9;
+        int topMinimumRow = -1, topMaximumRow = -1;
+        int bottomMinimumRow = -1, bottomMaximumRow = -1;
+        for (int row = topStart; row <= topEnd; ++row) {
+            const double gradient = profileGradient(row);
+            if (gradient < topMinimum) { topMinimum = gradient; topMinimumRow = row; }
+            if (gradient > topMaximum) { topMaximum = gradient; topMaximumRow = row; }
+        }
+        for (int row = bottomStart; row <= bottomEnd; ++row) {
+            const double gradient = profileGradient(row);
+            if (gradient < bottomMinimum) { bottomMinimum = gradient; bottomMinimumRow = row; }
+            if (gradient > bottomMaximum) { bottomMaximum = gradient; bottomMaximumRow = row; }
+        }
+        const double darkHoleScore = -topMinimum + bottomMaximum;
+        const double brightHoleScore = topMaximum - bottomMinimum;
+        const bool darkHole = darkHoleScore >= brightHoleScore;
+        const double topY = darkHole ? topMinimumRow : topMaximumRow;
+        const double bottomY = darkHole ? bottomMaximumRow : bottomMinimumRow;
+        const double topContrast = darkHole ? -topMinimum : topMaximum;
+        const double bottomContrast = darkHole ? bottomMaximum : -bottomMinimum;
+        if (topY < 0 || bottomY < 0 || bottomY - topY < bounds.height() * 0.25
+            || topContrast < 5.0 || bottomContrast < 5.0) {
+            result.status = QStringLiteral("测量失败［ROI内孔定位］：未找到成对的内孔上下灰度跃迁；请让ROI完整包含孔和周围少量背景");
+            return result;
+        }
+        const double estimatedDiameter = bottomY - topY;
+        // Keep the probes around the central, near-tangent part of the two edges.
+        // The following metrology and Tukey parameters remain those of the legacy
+        // hole algorithm; only their image positions are supplied by the ROI.
+        const double halfSpan = qMin(bounds.width() * 0.35,
+            qBound(30.0, estimatedDiameter * 0.12, 55.0));
         HTuple topLine, bottomLine, lineIndices;
         topLine[0] = topY; topLine[1] = centerX - halfSpan;
         topLine[2] = topY; topLine[3] = centerX + halfSpan;
@@ -557,10 +614,12 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
         }
         const QPointF points0[] = { begin0, end0, begin0, end0 };
         const QPointF points1[] = { end1, begin1, begin1, end1 };
+        double candidateDistances[4] = { -1, -1, -1, -1 };
         double maximumDistance = -1;
         int maximumIndex = -1;
         for (int index = 0; index < 4; ++index) {
             const double candidate = QLineF(points0[index], points1[index]).length();
+            candidateDistances[index] = candidate;
             if (std::isfinite(candidate) && candidate > maximumDistance) {
                 maximumDistance = candidate;
                 maximumIndex = index;
@@ -583,14 +642,33 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
             result.status = QStringLiteral("测量失败［孔径计算］：标定后的孔径无效");
             return result;
         }
-        result.status = QStringLiteral("孔径试测完成（ROI自动定位上下边，原算法四组跨边距离取最大值，未判定）");
+        const QPointF midpoint0 = (begin0 + end0) / 2.0;
+        const QPointF midpoint1 = (begin1 + end1) / 2.0;
+        const double midpointDistance = QLineF(midpoint0, midpoint1).length();
+        const double firstLineLength = QLineF(begin0, end0).length();
+        const double secondLineLength = QLineF(begin1, end1).length();
+        result.status = QStringLiteral("孔径试测完成（ROI灰度定位内孔上下边，原算法四组跨边距离取最大值，未判定）"
+            "；定位=%1，上下行=%2/%3，对比=%4/%5；四组距离=%6/%7/%8/%9 px，取第%10组；中点距=%11 px；拟合线长=%12/%13 px")
+            .arg(darkHole ? QStringLiteral("暗孔") : QStringLiteral("亮孔"))
+            .arg(topY, 0, 'f', 1)
+            .arg(bottomY, 0, 'f', 1)
+            .arg(topContrast, 0, 'f', 1)
+            .arg(bottomContrast, 0, 'f', 1)
+            .arg(candidateDistances[0], 0, 'f', 3)
+            .arg(candidateDistances[1], 0, 'f', 3)
+            .arg(candidateDistances[2], 0, 'f', 3)
+            .arg(candidateDistances[3], 0, 'f', 3)
+            .arg(maximumIndex + 1)
+            .arg(midpointDistance, 0, 'f', 3)
+            .arg(firstLineLength, 0, 'f', 3)
+            .arg(secondLineLength, 0, 'f', 3);
     }
     catch (const HException& error) {
         if (metrologyHandle.Length() > 0) {
             try { ClearMetrologyModel(metrologyHandle); } catch (...) {}
         }
         result.status = error.ErrorCode() == 8573 && stage == QStringLiteral("ROI上下边Metrology")
-            ? QStringLiteral("测量失败［ROI上下边Metrology］：HALCON 8573：上下测量区没有取得足够的有效边缘点；画布叠加线为本次实际搜索位置，请让圆ROI贴近完整孔的可见外缘后重试")
+            ? QStringLiteral("测量失败［ROI上下边Metrology］：HALCON 8573：灰度定位后的上下测量区没有取得足够有效边缘点；画布叠加线为本次实际搜索位置，请让ROI完整包含孔和周围少量背景后重试")
             : halconTrialFailure(error, stage);
     }
     catch (const std::exception& error) {
@@ -1360,7 +1438,6 @@ void GraphicalProgramEditor::buildInterface()
     m_angleResultMode->addItems(QStringList() << QStringLiteral("较小夹角（0°–90°）")
         << QStringLiteral("较大补角（90°–180°）"));
     measurementForm->addRow(QStringLiteral("角度结果："), m_angleResultMode);
-    m_angleResultMode->setEnabled(m_measurementType->currentText() == QStringLiteral("角度"));
     m_holeUniformCount = new QSpinBox(measurementPage);
     m_holeUniformCount->setObjectName(QStringLiteral("holeUniformCount"));
     m_holeUniformCount->setRange(0, 999);
@@ -1377,7 +1454,6 @@ void GraphicalProgramEditor::buildInterface()
     m_holeCalibration->setToolTip(QStringLiteral("原软件测孔相机CalikKong标定系数；现场重新标定后按实际值修改。"));
     m_holeCalibration->setEnabled(false);
     connect(m_measurementType, &QComboBox::currentTextChanged, this, [this](const QString& type) {
-        m_angleResultMode->setEnabled(type == QStringLiteral("角度"));
         m_holeUniformCount->setEnabled(type == QStringLiteral("孔径"));
         m_holeCalibration->setEnabled(type == QStringLiteral("孔径"));
         refreshAngleControls();
@@ -1872,6 +1948,7 @@ void GraphicalProgramEditor::buildInterface()
             else if (chosenAction == deleteFeatureAction)
                 m_canvas->deleteFeatureById(featureId);
         });
+    refreshAngleControls();
     statusBar()->showMessage(QStringLiteral("请打开本地图像开始编辑"));
 }
 
@@ -2102,6 +2179,7 @@ void GraphicalProgramEditor::refreshAngleControls()
 {
     const bool angle = m_measurementType->currentText() == QStringLiteral("角度");
     m_angleInputMode->setEnabled(angle);
+    m_angleResultMode->setEnabled(angle);
     const int row = m_stepTable ? m_stepTable->currentRow() : -1;
     const bool storedAngle = row >= 0 && row < m_records.size() && m_records[row].type == QStringLiteral("角度");
     const bool single = storedAngle && m_records[row].singleRoiAngle;
