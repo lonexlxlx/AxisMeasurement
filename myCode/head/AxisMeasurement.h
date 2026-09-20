@@ -126,6 +126,11 @@ private:
     QLabel* m_statusInfoLabel = nullptr;//状态栏提示信息（同步显示 showDeviceInf 内容）
     void updateDeviceStatus(bool online);//刷新状态栏设备状态灯
 
+    //主界面视觉角色与动态状态统一入口：只负责属性和 QSS 刷新，不参与业务判断
+    void initializeVisualRoles();
+    void refreshWidgetStyle(QWidget* widget);
+    bool setVisualProperty(QWidget* widget, const char* propertyName, const char* propertyValue);
+
     //P2-9/10 布局重构：12 个分组框收纳 + QSplitter 窗口自适应
     void restructureMainLayout();//把 .ui 的绝对定位布局重组为 Splitter + TabWidget（只动容器，不动控件本身）
     QSplitter* m_mainSplitter = nullptr;//中央区主分隔条：左侧页面区 | 右侧统计+结果

@@ -758,11 +758,97 @@ QMainWindow#AxisMeasurementClass QMenuBar#menuBar {
     color: #334155;
     background: #FFFFFF;
     border-bottom: 1px solid #E3E8EF;
+    padding: 2px 6px;
+}
+QMainWindow#AxisMeasurementClass QMenuBar#menuBar::item {
+    color: #334155;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QMainWindow#AxisMeasurementClass QMenuBar#menuBar::item:selected,
+QMainWindow#AxisMeasurementClass QMenuBar#menuBar::item:pressed {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #BFDBFE;
+}
+QMainWindow#AxisMeasurementClass QMenu#measureModeSelect {
+    color: #334155;
+    background: #FFFFFF;
+    border: 1px solid #D7DEE8;
+    padding: 6px;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 10pt;
+}
+QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::item {
+    min-width: 180px;
+    min-height: 28px;
+    color: #334155;
+    background: transparent;
+    border-radius: 4px;
+    padding: 6px 18px;
+}
+QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::item:selected {
+    color: #1D4ED8;
+    background: #EFF6FF;
+}
+QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::item:disabled {
+    color: #A7AFBA;
+    background: transparent;
+}
+QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::separator {
+    height: 1px;
+    background: #E8EDF3;
+    margin: 4px 8px;
 }
 QMainWindow#AxisMeasurementClass QStatusBar#statusBar {
     color: #64748B;
     background: #FFFFFF;
+    border: none;
     border-top: 1px solid #E3E8EF;
+    min-height: 28px;
+    padding: 0 8px;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar::item {
+    border: none;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#statusInfoLabel {
+    color: #64748B;
+    background: transparent;
+    border: none;
+    font-size: 9pt;
+    font-weight: 400;
+    padding: 3px 8px;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#statusInfoLabel[statusType="working"] {
+    color: #1D4ED8;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#statusInfoLabel[statusType="success"] {
+    color: #15803D;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#statusInfoLabel[statusType="warning"] {
+    color: #B45309;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#statusInfoLabel[statusType="error"] {
+    color: #B91C1C;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#deviceStatusLabel {
+    background: transparent;
+    border: none;
+    border-left: 1px solid #E3E8EF;
+    font-size: 9pt;
+    font-weight: 600;
+    padding: 3px 10px 3px 14px;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#deviceStatusLabel[deviceState="online"] {
+    color: #15803D;
+}
+QMainWindow#AxisMeasurementClass QStatusBar#statusBar QLabel#deviceStatusLabel[deviceState="offline"] {
+    color: #DC2626;
 }
 
 QMainWindow#AxisMeasurementClass QWidget#rightDashboardPanel {
@@ -902,17 +988,89 @@ QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QPushButton:disabled 
     background: #F1F3F5;
     border-color: #E3E8EF;
 }
-QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget {
-    border: 1px solid #E5E7EB;
-    border-radius: 6px;
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable {
+    color: #334155;
     background: #FFFFFF;
-    alternate-background-color: #F9FAFB;
+    alternate-background-color: #F8FAFC;
+    border: 1px solid #E3E8EF;
+    border-radius: 6px;
+    gridline-color: #E8EDF3;
+    selection-background-color: #E8F1FF;
+    selection-color: #1F2937;
+    outline: none;
 }
-QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QHeaderView::section {
-    background: #F3F4F6;
-    color: #374151;
-    font-weight: 700;
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable::item {
+    padding: 4px 8px;
+    border: none;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable::item:hover {
+    color: #1F2937;
+    background: #F3F7FD;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable::item:selected,
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable::item:selected:active,
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable::item:selected:!active {
+    color: #1F2937;
+    background: #E8F1FF;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable:focus {
+    border-color: #93B4E8;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QHeaderView::section {
+    color: #334155;
+    background: #F3F6FA;
+    border: none;
+    border-right: 1px solid #E3E8EF;
+    border-bottom: 1px solid #DCE3EC;
+    font-weight: 600;
     padding: 6px 8px;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QHeaderView::section:hover {
+    color: #1D4ED8;
+    background: #EDF4FD;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QTableCornerButton::section {
+    background: #F3F6FA;
+    border: none;
+    border-right: 1px solid #E3E8EF;
+    border-bottom: 1px solid #DCE3EC;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar:vertical {
+    width: 10px;
+    margin: 2px;
+    background: transparent;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::handle:vertical {
+    min-height: 32px;
+    background: #CBD5E1;
+    border-radius: 5px;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar:horizontal {
+    height: 10px;
+    margin: 2px;
+    background: transparent;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::handle:horizontal {
+    min-width: 32px;
+    background: #CBD5E1;
+    border-radius: 5px;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::handle:horizontal:hover {
+    background: #94A3B8;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::add-line,
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::sub-line {
+    width: 0;
+    height: 0;
+    background: transparent;
+    border: none;
+}
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::add-page,
+QMainWindow#AxisMeasurementClass QGroupBox#rightResultCard QTableWidget#measureTable QScrollBar::sub-page {
+    background: transparent;
 }
 
 QMainWindow#AxisMeasurementClass QWidget#leftDashboardPanel {

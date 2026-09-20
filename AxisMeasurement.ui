@@ -4203,9 +4203,10 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>13</pointsize>
-     <weight>75</weight>
-     <bold>true</bold>
+     <family>Microsoft YaHei UI</family>
+     <pointsize>10</pointsize>
+     <weight>50</weight>
+     <bold>false</bold>
     </font>
    </property>
   </action>
@@ -4218,9 +4219,10 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>13</pointsize>
-     <weight>75</weight>
-     <bold>true</bold>
+     <family>Microsoft YaHei UI</family>
+     <pointsize>10</pointsize>
+     <weight>50</weight>
+     <bold>false</bold>
     </font>
    </property>
   </action>
@@ -4230,9 +4232,10 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>13</pointsize>
-     <weight>75</weight>
-     <bold>true</bold>
+     <family>Microsoft YaHei UI</family>
+     <pointsize>10</pointsize>
+     <weight>50</weight>
+     <bold>false</bold>
     </font>
    </property>
   </action>
