@@ -3046,6 +3046,9 @@ void AxisMeasurement::initializeVisualRoles()
 	ui.creatDatabase->setProperty("buttonRole", "outline");
 
 	ui.systemTime->setProperty("textRole", "secondary");
+	QLabel* moduleTitles[] = { ui.label_39, ui.label_32, ui.label_60, ui.label_61 };
+	for (QLabel* title : moduleTitles)
+		setVisualProperty(title, "textRole", "moduleTitle");
 	QLabel* sectionTitles[] = { ui.label_44, ui.label_20, ui.label_65 };
 	for (QLabel* title : sectionTitles)
 		title->setProperty("textRole", "sectionTitle");
@@ -3165,15 +3168,26 @@ void AxisMeasurement::restructureMainLayout()
 
 	//========== 一、自动测量页（autoMeasureUI）==========
 	//常驻：设备控制 + 程序选择(groupBox) + 光幕实时显示(groupBox_2) + 图像区(frame1)
-	//收纳：顶尖/旋转/光幕位置控制(autoMoveAdjust，内部三段) → 页签
+	//常驻：顶尖/旋转/光幕位置控制(autoMoveAdjust，内部三段)，使用普通卡片而非无切换意义的单页签
 	ui.pushButton->hide();//"图像绘制"调试按钮：槽函数逻辑已全部注释，不再占用界面位置
 
-	//顶尖/旋转/光幕位置控制收进页签（内部绝对定位，包滚动区防裁切）
-	QTabWidget* adjustTabs = new QTabWidget(ui.autoMeasureUI);
-	adjustTabs->setObjectName(QStringLiteral("autoAdjustTabs"));
+	//保留原控制面板和滚动保护，仅用普通标题卡片替代单页 QTabWidget。
 	QScrollArea* autoMoveScroll = wrapScroll(ui.autoMoveAdjust, QSize(300, 270));
-	adjustTabs->addTab(autoMoveScroll, QStringLiteral("顶尖 / 旋转 / 光幕位置"));
-	adjustTabs->setMinimumHeight(300);
+	autoMoveScroll->setObjectName(QStringLiteral("autoMoveControlScroll"));
+	QWidget* autoMoveCard = new QWidget(ui.autoMeasureUI);
+	autoMoveCard->setObjectName(QStringLiteral("leftMotionCard"));
+	autoMoveCard->setMinimumHeight(300);
+	autoMoveCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	QVBoxLayout* autoMoveCardLayout = new QVBoxLayout(autoMoveCard);
+	autoMoveCardLayout->setContentsMargins(0, 0, 0, 0);
+	autoMoveCardLayout->setSpacing(0);
+	QLabel* autoMoveTitle = new QLabel(QStringLiteral("顶尖 / 旋转 / 光幕位置"), autoMoveCard);
+	autoMoveTitle->setObjectName(QStringLiteral("leftMotionTitle"));
+	autoMoveTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	autoMoveTitle->setMinimumHeight(40);
+	autoMoveTitle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	autoMoveCardLayout->addWidget(autoMoveTitle);
+	autoMoveCardLayout->addWidget(autoMoveScroll, 1);
 
 	// 左下控制区改用布局管理，拖拽分割条时标题、按钮和白色背景板一起横向伸缩。
 	ui.autoMoveAdjust->setMinimumSize(321, 270);
@@ -3242,8 +3256,10 @@ void AxisMeasurement::restructureMainLayout()
 	ui.lsCurrentValue->setText(QStringLiteral("等待数据"));
 	ui.label_39->setStyleSheet(QStringLiteral(""));
 	ui.label_32->setStyleSheet(QStringLiteral(""));
-	ui.label_39->setMinimumHeight(24);
-	ui.label_32->setMinimumHeight(24);
+	ui.label_39->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	ui.label_32->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	ui.label_39->setMinimumHeight(40);
+	ui.label_32->setMinimumHeight(40);
 	ui.label_39->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.label_32->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
@@ -3268,7 +3284,7 @@ void AxisMeasurement::restructureMainLayout()
 	QVBoxLayout* processCardLayout = new QVBoxLayout(ui.groupBox);
 	processCardLayout->setContentsMargins(14, 4, 14, 14);
 	processCardLayout->setSpacing(3);//程序测量进程与后文的距离
-	processCardLayout->addWidget(ui.label_39, 0, Qt::AlignTop | Qt::AlignHCenter);
+	processCardLayout->addWidget(ui.label_39);
 	processCardLayout->addLayout(processGrid);
 
 	QWidget* lightCurtainPanel = ui.lsCurrentValue->parentWidget();
@@ -3281,7 +3297,7 @@ void AxisMeasurement::restructureMainLayout()
 			lightGrid->setColumnStretch(0, 0);
 			lightGrid->setColumnStretch(1, 1);
 		}
-		lightCurtainCardLayout->addWidget(ui.label_32, 0, Qt::AlignTop | Qt::AlignHCenter);
+		lightCurtainCardLayout->addWidget(ui.label_32);
 		lightCurtainCardLayout->addWidget(lightCurtainPanel);
 	}
 	ui.groupBox->setMinimumSize(321, ui.groupBox->geometry().height());//程序测量进程：宽度交给布局随分割条伸缩
@@ -3290,7 +3306,7 @@ void AxisMeasurement::restructureMainLayout()
 	ui.groupBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.groupBox_2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	autoLeftLayout->addWidget(ui.groupBox_2);
-	autoLeftLayout->addWidget(adjustTabs, 1);
+	autoLeftLayout->addWidget(autoMoveCard, 1);
 	QScrollArea* autoLeftScroll = new QScrollArea(ui.autoMeasureUI);
 	autoLeftScroll->setObjectName(QStringLiteral("autoLeftPanelScroll"));
 	autoLeftScroll->setWidget(autoLeftPanel);
@@ -3325,12 +3341,12 @@ void AxisMeasurement::restructureMainLayout()
 		ui.measureCancel, ui.programConfirm, ui.urgrentStopMearsure
 	};
 	QVBoxLayout* topDeviceLayout = new QVBoxLayout(ui.autoDeviceControl);
-	topDeviceLayout->setContentsMargins(14, 10, 14, 10);
-	topDeviceLayout->setSpacing(8);
+	topDeviceLayout->setContentsMargins(18, 10, 18, 10);
+	topDeviceLayout->setSpacing(10);
 	QHBoxLayout* topDeviceRow = new QHBoxLayout();
 	topDeviceRow->setContentsMargins(0, 0, 0, 0);
-	topDeviceRow->setSpacing(8);
-	ui.label_19->setMinimumWidth(44);
+	topDeviceRow->setSpacing(10);
+	ui.label_19->setMinimumWidth(48);
 	ui.label_19->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	topDeviceRow->addWidget(ui.label_19);
 	//topDeviceRow->addSpacing(1);//程序模块下拉框和程序文本框之间的距离处理  距离设置有问题
@@ -3340,22 +3356,25 @@ void AxisMeasurement::restructureMainLayout()
 	ui.programNumber->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
 	topDeviceRow->addWidget(ui.programNumber, 1);*/
 
-	ui.programNumber->setMinimumWidth(168);
-	ui.programNumber->setMaximumWidth(240);
-	ui.programNumber->setMinimumHeight(32);
-	ui.programNumber->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-	topDeviceRow->addWidget(ui.programNumber);
-	topDeviceRow->addSpacing(6);
+	ui.programNumber->setMinimumWidth(190);
+	ui.programNumber->setMaximumWidth(260);
+	ui.programNumber->setMinimumHeight(34);
+	topDeviceRow->addWidget(ui.programNumber, 1);
+	topDeviceRow->addSpacing(4);
 
 	for (QPushButton* button : topButtons) {
-		button->setMinimumWidth(76);
-		button->setMinimumHeight(32);
+		button->setMinimumHeight(34);
 		button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
 		topDeviceRow->addWidget(button);
 	}
-	ui.closeAllDevice->setMinimumWidth(96);
-	ui.startAutoMearsurement->setMinimumWidth(84);
-	ui.urgrentStopMearsure->setMinimumWidth(88);
+	//按按钮文字长度保留稳定宽度，避免 Windows 100%/125% 缩放时文字被裁切。
+	ui.openAllDevice->setMinimumWidth(88);
+	ui.closeAllDevice->setMinimumWidth(112);
+	ui.allAxisGoHome->setMinimumWidth(88);
+	ui.startAutoMearsurement->setMinimumWidth(92);
+	ui.measureCancel->setMinimumWidth(88);
+	ui.programConfirm->setMinimumWidth(88);
+	ui.urgrentStopMearsure->setMinimumWidth(92);
 	topDeviceLayout->addLayout(topDeviceRow);
 	ui.deviceInf->setMinimumHeight(24);
 	ui.deviceInf->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -3435,13 +3454,13 @@ void AxisMeasurement::restructureMainLayout()
 	ui.groupBox_7->setMinimumWidth(480);
 	ui.groupBox_6->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.groupBox_7->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-	ui.label_60->setAlignment(Qt::AlignCenter);
-	ui.label_60->setMinimumHeight(24);
+	ui.label_60->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	ui.label_60->setMinimumHeight(40);
 	ui.label_60->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.label_60->setObjectName(QStringLiteral("rightCardTitle"));
 	ui.label_60->setStyleSheet(QStringLiteral(""));
-	ui.label_61->setAlignment(Qt::AlignCenter);
-	ui.label_61->setMinimumHeight(24);
+	ui.label_61->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	ui.label_61->setMinimumHeight(40);
 	ui.label_61->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.label_61->setObjectName(QStringLiteral("rightCardTitle"));
 	ui.label_61->setStyleSheet(QStringLiteral(""));
@@ -3476,11 +3495,11 @@ void AxisMeasurement::restructureMainLayout()
 		QGridLayout* statTitleLayout = new QGridLayout(statTitleRow);
 		statTitleLayout->setContentsMargins(0, 0, 0, 0);
 		statTitleLayout->setSpacing(8);
-		statTitleLayout->addWidget(ui.label_60, 0, 1, Qt::AlignTop | Qt::AlignHCenter);
-		statTitleLayout->addWidget(ui.systemTime, 0, 2, Qt::AlignTop | Qt::AlignRight);
+		statTitleLayout->addWidget(ui.label_60, 0, 0, 1, 2);
+		statTitleLayout->addWidget(ui.systemTime, 0, 2, Qt::AlignVCenter | Qt::AlignRight);
 		statTitleLayout->setColumnStretch(0, 1);
 		statTitleLayout->setColumnStretch(1, 1);
-		statTitleLayout->setColumnStretch(2, 1);
+		statTitleLayout->setColumnStretch(2, 0);
 		statBoxLayout->addWidget(statTitleRow);
 		statBoxLayout->addWidget(statLayoutWidget);
 		statLayoutWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -3502,7 +3521,7 @@ void AxisMeasurement::restructureMainLayout()
 		QVBoxLayout* resultBoxLayout = new QVBoxLayout(ui.groupBox_7);
 		resultBoxLayout->setContentsMargins(14, 4, 14, 14);
 		resultBoxLayout->setSpacing(10);
-		resultBoxLayout->addWidget(ui.label_61, 0, Qt::AlignTop | Qt::AlignHCenter);
+		resultBoxLayout->addWidget(ui.label_61);
 		resultBoxLayout->addWidget(resultSummaryWidget, 0);
 		resultBoxLayout->addWidget(ui.measureTable, 1);
 		resultSummaryWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
