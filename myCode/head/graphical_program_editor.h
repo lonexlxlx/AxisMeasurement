@@ -5,9 +5,11 @@
 #include <QPainterPath>
 #include <QImage>
 #include <QSize>
+#include <QByteArray>
 #include <functional>
 #include <cmath>
 #include "graphical_corner_geometry.h"
+#include "graphical_canvas.h"
 
 struct GraphicalDetectionParameters {
     double smoothing = 2;
@@ -36,7 +38,6 @@ struct GraphicalDetectionParameters {
     }
 };
 
-class GraphicalCanvas;
 class QLabel;
 class QListWidget;
 class QTableWidget;
@@ -154,6 +155,10 @@ private:
     bool m_cameraExposureEdited = false;
     bool m_axisBackendAvailable = false;
     void openLocalImage();
+    void addLocalFrame();
+    bool activateFrame(int frameId, QString& error);
+    void storeCurrentFrame();
+    void refreshFrameSelector();
     void openProject();
     void saveProject();
     void saveProjectAs();
@@ -189,6 +194,19 @@ private:
     QString m_projectFilePath;
     int m_imageCameraIndex = -1;
     int m_imageExposure = -1;
+    struct ProjectFrame {
+        int id = 0;
+        QString filePath;
+        QString fileSha256;
+        int cameraIndex = -1;
+        int exposure = -1;
+        QImage image;
+        QVector<GraphicalCanvas::FeatureSnapshot> features;
+    };
+    QVector<ProjectFrame> m_frames;
+    int m_currentFrameId = 0;
+    int m_nextFrameId = 1;
+    QComboBox* m_frameSelector = nullptr;
     int m_relinkSequence = -1;
     int m_relinkSlot = 1;
 
@@ -212,12 +230,19 @@ private:
             QVector<AxisPosition> axes;
         };
         int sequence = 0;//记录序号，自增
+        int frameId = 0;//主关联图形所属工程帧
         int geometryId = -1;//关联的画布图形ID
+        int secondaryFrameId = 0;//第二关联图形所属工程帧
         int secondaryGeometryId = -1;//第二图形ID
         QString featureNumber;//特征号
         QString type; //测量类型
         int holeUniformCount = 0;//孔径旧表单holeNumber：圆周均布个数，不是H0/H1拍照位置
         double holeCalibration = 0.00691842;//原软件测孔相机CalikKong，单位mm/px
+        double lengthCalibration = 0.01218603;//原软件远心相机Calik，单位mm/px
+        QByteArray lengthTemplateModel;//单ROI长度形状模板的HALCON序列化数据
+        double lengthTemplateReferenceRow = 0;
+        double lengthTemplateReferenceColumn = 0;
+        double lengthTemplateReferenceAngle = 0;
         bool hasTolerance = false;//公差
         double nominal = 0;
         double lower = 0;
@@ -252,6 +277,8 @@ private:
         QPainterPath detectedEdges;
         QPainterPath fittedArc;
     };
+    bool collectCurrentDevicePosition(const QString& type,
+        MeasurementRecord::DevicePosition& position, QString& error) const;
     QVector<MeasurementRecord> m_records;
     int m_nextRecordSequence = 1;
     QComboBox* m_measurementType = nullptr;
@@ -260,6 +287,7 @@ private:
     QComboBox* m_cornerCandidate = nullptr;
     QSpinBox* m_holeUniformCount = nullptr;
     QDoubleSpinBox* m_holeCalibration = nullptr;
+    QDoubleSpinBox* m_lengthCalibration = nullptr;
     QPushButton* m_selectAngleRoi1 = nullptr;
     QPushButton* m_selectAngleRoi2 = nullptr;
     QLineEdit* m_featureNumber = nullptr;
