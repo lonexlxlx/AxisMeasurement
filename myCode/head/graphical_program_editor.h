@@ -167,6 +167,7 @@ private:
     void refreshFeatureList();
     void refreshFeatureProperties(int featureId);
     void saveMeasurementRecord(bool update);//新增或者更新按钮公用这个函数。校验：特征号必填、下偏差<=上偏差
+    QString suggestedFeatureNumber(const QString& type) const;
     void refreshMeasurementRecords();//把 m_records 刷到表格；同时检查关联图形有没有被删掉（删了就标"关联已删除"并清空试测结果）。
     void loadMeasurementRecord(int row);
     void cancelRelink();
@@ -243,6 +244,9 @@ private:
         double lengthTemplateReferenceRow = 0;
         double lengthTemplateReferenceColumn = 0;
         double lengthTemplateReferenceAngle = 0;
+        bool crossFrameLength = false;
+        DevicePosition lengthStartPosition;
+        DevicePosition lengthEndPosition;
         bool hasTolerance = false;//公差
         double nominal = 0;
         double lower = 0;
@@ -288,9 +292,11 @@ private:
     QSpinBox* m_holeUniformCount = nullptr;
     QDoubleSpinBox* m_holeCalibration = nullptr;
     QDoubleSpinBox* m_lengthCalibration = nullptr;
+    QComboBox* m_lengthMode = nullptr;
     QPushButton* m_selectAngleRoi1 = nullptr;
     QPushButton* m_selectAngleRoi2 = nullptr;
     QLineEdit* m_featureNumber = nullptr;
+    bool m_featureNumberEditedSinceLoad = false;
     QCheckBox* m_hasTolerance = nullptr;
     QDoubleSpinBox* m_nominal = nullptr;
     QDoubleSpinBox* m_lowerDeviation = nullptr;

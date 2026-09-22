@@ -1,6 +1,7 @@
 #include "graphical_program_editor.h"
 
 #include "graphical_canvas.h"
+#include "sharedFun.h"
 #include <QAction>
 #include <QComboBox>
 #include <QLineEdit>
@@ -1129,7 +1130,12 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
         return;
     }
 
-    if (m_projectDirty && QMessageBox::question(this, QStringLiteral("载入相机图像"),
+    const int selectedRow = m_stepTable ? m_stepTable->currentRow() : -1;
+    const bool appendCrossLengthFrame = camera == 0 && selectedRow >= 0
+        && selectedRow < m_records.size()
+        && m_records[selectedRow].type == QStringLiteral("长度")
+        && m_records[selectedRow].crossFrameLength;
+    if (!appendCrossLengthFrame && m_projectDirty && QMessageBox::question(this, QStringLiteral("载入相机图像"),
         QStringLiteral("载入新图像将清空当前图形和测量记录。是否继续？")) != QMessageBox::Yes) return;
     const CameraCommandResult result = m_cameraCommander(camera, command, m_cameraExposure->value());
     if (!result.error.isEmpty() || result.image.isNull()) {
@@ -1160,6 +1166,30 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
         QMessageBox::warning(this, QStringLiteral("载入采集图像失败"), hashError); return;
     }
     cancelRelink();
+    if (appendCrossLengthFrame) {
+        storeCurrentFrame();
+        ProjectFrame frame;
+        frame.id = m_nextFrameId++;
+        frame.filePath = QFileInfo(filePath).absoluteFilePath();
+        frame.fileSha256 = QString::fromLatin1(imageSha256);
+        frame.cameraIndex = camera;
+        frame.exposure = result.exposure;
+        frame.image = result.image;
+        m_frames.append(frame);
+        m_projectDirty = true;
+        QString frameError;
+        if (!activateFrame(frame.id, frameError)) {
+            m_frames.removeLast();
+            --m_nextFrameId;
+            QMessageBox::warning(this, QStringLiteral("载入端点图像失败"), frameError);
+            return;
+        }
+        m_stepTable->setCurrentCell(selectedRow, 0);
+        m_cameraState->setText(QStringLiteral("已将相机0最后一帧加入跨图长度记录：%1")
+            .arg(frame.filePath));
+        statusBar()->showMessage(QStringLiteral("端点图像已载入且原记录已保留；请绘制矩形ROI并确认起点或终点。"), 7000);
+        return;
+    }
     m_loadingProject = true;
     m_canvas->setImage(result.image);
     m_loadingProject = false;
@@ -1205,11 +1235,30 @@ void GraphicalProgramEditor::refreshDevicePositionPanel()
     }
     const int row = m_stepTable->currentRow();
     const bool validRow = row >= 0 && row < m_records.size();
-    m_recordDevicePosition->setEnabled(validRow && m_axisBackendAvailable
+    const bool crossLength = validRow && m_records[row].type == QStringLiteral("长度")
+        && m_records[row].crossFrameLength;
+    m_recordDevicePosition->setEnabled(validRow && !crossLength && m_axisBackendAvailable
         && !m_trialRunning && m_ownedAxis < 0 && m_ownedCamera < 0);
-    m_clearDevicePosition->setEnabled(validRow && m_records[row].devicePosition.collected);
+    m_clearDevicePosition->setEnabled(validRow && !crossLength && m_records[row].devicePosition.collected);
     if (!validRow) {
         m_devicePositionState->setText(QStringLiteral("请先选择一条测量记录。")); return;
+    }
+    if (crossLength) {
+        const auto endpointText = [](const QString& name,
+            const MeasurementRecord::DevicePosition& position) {
+            if (!position.collected) return name + QStringLiteral("：未采集");
+            for (const auto& axis : position.axes) if (axis.axis == 5)
+                return QStringLiteral("%1：轴5规划 %2 pulse；编码器 %3 pulse；相机%4/%5 μs")
+                    .arg(name).arg(axis.planned, 0, 'f', 1).arg(axis.encoder, 0, 'f', 1)
+                    .arg(position.cameraIndex).arg(position.exposure);
+            return name + QStringLiteral("：数据无效");
+        };
+        QStringList endpointLines;
+        endpointLines << endpointText(QStringLiteral("起点"), m_records[row].lengthStartPosition)
+            << endpointText(QStringLiteral("终点"), m_records[row].lengthEndPosition)
+            << QStringLiteral("请在测量配置页通过起点/终点确认按钮重采。");
+        m_devicePositionState->setText(endpointLines.join(QLatin1Char('\n')));
+        return;
     }
     const auto& position = m_records[row].devicePosition;
     if (!position.collected) {
@@ -1517,14 +1566,14 @@ void GraphicalProgramEditor::buildInterface()
     connect(m_axisEmergency, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::EmergencyStop); });
 
     QAction* openImageAction = toolBar->addAction(QStringLiteral("打开图像"));
-    QAction* addFrameAction = toolBar->addAction(QStringLiteral("添加帧"));
+    QAction* addFrameAction = toolBar->addAction(QStringLiteral("导入端点图"));
     QAction* openProjectAction = toolBar->addAction(QStringLiteral("打开工程"));
     QAction* saveProjectAction = toolBar->addAction(QStringLiteral("保存工程"));
     saveProjectAction->setShortcut(QKeySequence::Save);
     QAction* cameraAction = toolBar->addAction(QStringLiteral("相机图像"));
     m_frameSelector = new QComboBox(toolBar);
     m_frameSelector->setMinimumWidth(120);
-    m_frameSelector->setToolTip(QStringLiteral("切换工程图像帧；当前帧ROI会先自动保存"));
+    m_frameSelector->setToolTip(QStringLiteral("切换记录使用的端点图像；当前图像ROI会先自动保存"));
     toolBar->addWidget(m_frameSelector);
     toolBar->addSeparator();
     QAction* selectAction = toolBar->addAction(QStringLiteral("选择"));
@@ -1734,7 +1783,9 @@ void GraphicalProgramEditor::buildInterface()
     m_featureNumber->setObjectName(QStringLiteral("measurementFeatureNumber"));
     m_measurementType->setObjectName(QStringLiteral("measurementType"));
     m_featureNumber->setMaxLength(64);
-    m_featureNumber->setPlaceholderText(QStringLiteral("工序特征号，必填"));
+    m_featureNumber->setPlaceholderText(QStringLiteral("自动编号，可修改"));
+    connect(m_featureNumber, &QLineEdit::textEdited, this,
+        [this]() { m_featureNumberEditedSinceLoad = true; });
     measurementForm->addRow(QStringLiteral("测量类型："), m_measurementType);
     m_angleInputMode = new QComboBox(measurementPage);
     m_angleInputMode->setObjectName(QStringLiteral("angleInputMode"));
@@ -1773,16 +1824,26 @@ void GraphicalProgramEditor::buildInterface()
     m_lengthCalibration->setSuffix(QStringLiteral(" mm/px"));
     m_lengthCalibration->setToolTip(QStringLiteral("原软件远心相机Calik标定系数；现场重新标定后按实际值修改。"));
     m_lengthCalibration->setEnabled(false);
+    m_lengthMode = new QComboBox(measurementPage);
+    m_lengthMode->addItem(QStringLiteral("同图长度（单ROI）"), false);
+    m_lengthMode->addItem(QStringLiteral("跨图长度（起点/终点）"), true);
+    m_lengthMode->setEnabled(false);
+    connect(m_lengthMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+        [this]() { refreshAngleControls(); });
     connect(m_measurementType, &QComboBox::currentTextChanged, this, [this](const QString& type) {
         m_holeUniformCount->setEnabled(type == QStringLiteral("孔径"));
         m_holeCalibration->setEnabled(type == QStringLiteral("孔径"));
         m_lengthCalibration->setEnabled(type == QStringLiteral("长度"));
+        m_lengthMode->setEnabled(type == QStringLiteral("长度"));
+        if (!m_featureNumberEditedSinceLoad)
+            m_featureNumber->setText(suggestedFeatureNumber(type));
         refreshAngleControls();
     });
     measurementForm->addRow(QStringLiteral("特征号："), m_featureNumber);
     measurementForm->addRow(QStringLiteral("孔均布个数："), m_holeUniformCount);
     measurementForm->addRow(QStringLiteral("测孔标定："), m_holeCalibration);
     measurementForm->addRow(QStringLiteral("远心标定："), m_lengthCalibration);
+    measurementForm->addRow(QStringLiteral("长度模式："), m_lengthMode);
     m_hasTolerance = new QCheckBox(QStringLiteral("设置公称值和上下偏差"), measurementPage);
     measurementForm->addRow(m_hasTolerance);
     m_nominal = new QDoubleSpinBox(measurementPage);
@@ -1797,10 +1858,37 @@ void GraphicalProgramEditor::buildInterface()
     measurementForm->addRow(QStringLiteral("公称值："), m_nominal);
     measurementForm->addRow(QStringLiteral("下偏差："), m_lowerDeviation);
     measurementForm->addRow(QStringLiteral("上偏差："), m_upperDeviation);
-    connect(m_hasTolerance, &QCheckBox::toggled, this, [this](bool enabled) {
-        for (QDoubleSpinBox* input : {m_nominal, m_lowerDeviation, m_upperDeviation})
-            input->setEnabled(enabled);
-    });
+    const auto setFormFieldVisible = [measurementForm](QWidget* field, bool visible) {
+        field->setVisible(visible);
+        if (QWidget* label = measurementForm->labelForField(field)) label->setVisible(visible);
+    };
+    const auto refreshMeasurementFieldVisibility = [this, setFormFieldVisible]() {
+        const QString type = m_measurementType->currentText();
+        const bool angle = type == QStringLiteral("角度");
+        const bool hole = type == QStringLiteral("孔径");
+        const bool length = type == QStringLiteral("长度");
+        setFormFieldVisible(m_angleInputMode, angle);
+        setFormFieldVisible(m_cornerCandidate, angle);
+        setFormFieldVisible(m_angleResultMode, angle);
+        setFormFieldVisible(m_holeUniformCount, hole);
+        setFormFieldVisible(m_holeCalibration, hole);
+        setFormFieldVisible(m_lengthCalibration, length);
+        setFormFieldVisible(m_lengthMode, length);
+        const bool tolerance = m_hasTolerance->isChecked();
+        setFormFieldVisible(m_nominal, tolerance);
+        setFormFieldVisible(m_lowerDeviation, tolerance);
+        setFormFieldVisible(m_upperDeviation, tolerance);
+    };
+    connect(m_measurementType, &QComboBox::currentTextChanged, this,
+        [refreshMeasurementFieldVisibility](const QString&) { refreshMeasurementFieldVisibility(); });
+    connect(m_hasTolerance, &QCheckBox::toggled, this,
+        [this, refreshMeasurementFieldVisibility](bool enabled) {
+            for (QDoubleSpinBox* input : {m_nominal, m_lowerDeviation, m_upperDeviation})
+                input->setEnabled(enabled);
+            refreshMeasurementFieldVisibility();
+        });
+    m_featureNumber->setText(suggestedFeatureNumber(m_measurementType->currentText()));
+    refreshMeasurementFieldVisibility();
     QPushButton* addRecord = new QPushButton(QStringLiteral("新增测量记录"), measurementPage);
     QPushButton* updateRecord = new QPushButton(QStringLiteral("更新选中记录"), measurementPage);
     QPushButton* deleteRecord = new QPushButton(QStringLiteral("删除选中记录（保留图形）"), measurementPage);
@@ -1840,7 +1928,9 @@ void GraphicalProgramEditor::buildInterface()
     const auto armLineRoi = [this, selectAction](int slot) {
         const int row = m_stepTable->currentRow();
         if (slot == 2 && row >= 0 && row < m_records.size()
-            && (m_records[row].singleRoiAngle || m_records[row].type == QStringLiteral("长度"))) return;
+            && (m_records[row].singleRoiAngle
+                || (m_records[row].type == QStringLiteral("长度")
+                    && !m_records[row].crossFrameLength))) return;
         const bool supported = row >= 0 && row < m_records.size()
             && (m_records[row].type == QStringLiteral("角度")
                 || m_records[row].type == QStringLiteral("长度"));
@@ -1862,8 +1952,11 @@ void GraphicalProgramEditor::buildInterface()
         if (QShortcut* shortcut = findChild<QShortcut*>(QStringLiteral("cancelRelinkShortcut")))
             shortcut->setEnabled(true);
         statusBar()->showMessage(m_records[row].type == QStringLiteral("长度")
-            ? QStringLiteral("正在为长度记录 %1 选择单个模板ROI：请点击一个框住完整长度特征和两条目标边的矩形；Esc取消。")
-                .arg(sequence)
+            ? (m_records[row].crossFrameLength
+                ? QStringLiteral("正在确认跨图长度%1端：请点击当前帧中的矩形ROI；相机帧将同时采集轴5点位，本地图像保留为未采集。")
+                    .arg(slot == 1 ? QStringLiteral("起点") : QStringLiteral("终点"))
+                : QStringLiteral("正在为长度记录 %1 选择单个模板ROI：请点击一个框住完整长度特征和两条目标边的矩形；Esc取消。")
+                    .arg(sequence))
             : QStringLiteral("正在为角度记录 %1 选择 ROI %2：请点击一个矩形或圆形ROI；Esc取消。")
                 .arg(sequence).arg(slot));
     };
@@ -1886,6 +1979,7 @@ void GraphicalProgramEditor::buildInterface()
     QLabel* measurementHint = new QLabel(QStringLiteral(
         "圆弧半径使用一个ROI；角度支持双ROI或单ROI相邻角。\n"
         "单图长度只使用一个矩形ROI框住完整特征；首次试测建立模板，随后自动定位并拟合两条近似水平边。\n"
+        "跨图长度分别在两帧确认起点和终点矩形ROI；相机帧确认时自动采集轴5点位，本地图像保持点位未采集。\n"
         "孔径使用一个圆形或矩形ROI框住目标孔，程序自动定位上下测量区并按原测孔算法输出mm。\n"
         "长度类公差按mm、角度按°、粗糙度按μm录入（配置约定，非标定结果）。\n"
         "可先选图形进行关联，也可建立待关联记录。\n"
@@ -2163,6 +2257,10 @@ void GraphicalProgramEditor::buildInterface()
                 if (!primary && !secondary) continue;
                 record.clearTrial(QStringLiteral("未执行（图形已修改）"));
                 if (record.type == QStringLiteral("长度")) {
+                    if (record.crossFrameLength) {
+                        if (primary) record.lengthStartPosition = MeasurementRecord::DevicePosition();
+                        if (secondary) record.lengthEndPosition = MeasurementRecord::DevicePosition();
+                    }
                     record.lengthTemplateModel.clear();
                     record.lengthTemplateReferenceRow = 0;
                     record.lengthTemplateReferenceColumn = 0;
@@ -2205,7 +2303,7 @@ void GraphicalProgramEditor::buildInterface()
                             ? m_records[row].frameId : m_records[row].secondaryFrameId;
                         if (otherGeometry > 0 && otherFrame != m_currentFrameId) {
                             QMessageBox::warning(this, QStringLiteral("不能关联"),
-                                QStringLiteral("同一角度记录的两个ROI必须位于同一工程帧。请先切换到帧%1；Esc取消。")
+                                QStringLiteral("同一角度记录的两个ROI必须位于同一图像。请先切换到图像%1；Esc取消。")
                                     .arg(otherFrame));
                             return;
                         }
@@ -2222,6 +2320,20 @@ void GraphicalProgramEditor::buildInterface()
                                 QStringLiteral("长度模板须关联一个宽高至少2px的矩形ROI，并框住完整特征和两条目标边。请重新选择；Esc取消。"));
                             return;
                         }
+                        if (m_records[row].crossFrameLength) {
+                            if (m_imageCameraIndex >= 0 && m_imageCameraIndex != 0) {
+                                QMessageBox::warning(this, QStringLiteral("不能确认端点"),
+                                    QStringLiteral("跨图长度端点必须使用远心相机0图像。"));
+                                return;
+                            }
+                            const int otherFrame = m_relinkSlot == 2
+                                ? m_records[row].frameId : m_records[row].secondaryFrameId;
+                            if (otherFrame > 0 && otherFrame == m_currentFrameId) {
+                                QMessageBox::warning(this, QStringLiteral("不能确认端点"),
+                                    QStringLiteral("跨图长度的起点和终点必须来自两次不同的端点图像；请切换图像后再确认。"));
+                                return;
+                            }
+                        }
                     }
                     else if (m_records[row].type == QStringLiteral("孔径")) {
                         GraphicalCanvas::MeasurementRoi roi;
@@ -2232,6 +2344,15 @@ void GraphicalProgramEditor::buildInterface()
                         }
                     }
                     const int completedSlot = m_relinkSlot;
+                    MeasurementRecord::DevicePosition endpointPosition;
+                    if (m_records[row].type == QStringLiteral("长度")
+                        && m_records[row].crossFrameLength && m_imageCameraIndex >= 0) {
+                        QString pointError;
+                        if (!collectCurrentDevicePosition(QStringLiteral("长度"), endpointPosition, pointError)) {
+                            QMessageBox::warning(this, QStringLiteral("端点确认失败"), pointError);
+                            return;
+                        }
+                    }
                     if (completedSlot == 2) {
                         m_records[row].secondaryGeometryId = featureId;
                         m_records[row].secondaryFrameId = m_currentFrameId;
@@ -2241,7 +2362,14 @@ void GraphicalProgramEditor::buildInterface()
                         m_records[row].frameId = m_currentFrameId;
                     }
                     if (m_records[row].type == QStringLiteral("长度")) {
-                        m_records[row].secondaryGeometryId = -1;
+                        if (m_records[row].crossFrameLength) {
+                            if (completedSlot == 1) m_records[row].lengthStartPosition = endpointPosition;
+                            else m_records[row].lengthEndPosition = endpointPosition;
+                        }
+                        else {
+                            m_records[row].secondaryGeometryId = -1;
+                            m_records[row].secondaryFrameId = 0;
+                        }
                         m_records[row].lengthTemplateModel.clear();
                         m_records[row].lengthTemplateReferenceRow = 0;
                         m_records[row].lengthTemplateReferenceColumn = 0;
@@ -2289,8 +2417,10 @@ void GraphicalProgramEditor::buildInterface()
                     m_holeUniformCount->setValue(record.holeUniformCount);
                     m_holeCalibration->setValue(record.holeCalibration);
                     m_lengthCalibration->setValue(record.lengthCalibration);
+                    m_lengthMode->setCurrentIndex(record.crossFrameLength ? 1 : 0);
                     setDetectionInputs(record.detection);
                     m_featureNumber->setText(record.featureNumber);
+                    m_featureNumberEditedSinceLoad = false;
                     m_hasTolerance->setChecked(record.hasTolerance);
                     m_nominal->setValue(record.nominal);
                     m_lowerDeviation->setValue(record.lower);
@@ -2387,6 +2517,28 @@ void GraphicalProgramEditor::applyDetectionParameters()
     statusBar()->showMessage(QStringLiteral("已应用记录 %1 的检测参数；其他测量配置输入未提交。").arg(record.sequence));
 }
 
+QString GraphicalProgramEditor::suggestedFeatureNumber(const QString& type) const
+{
+    QString prefix;
+    if (type == QStringLiteral("直径")) prefix = QStringLiteral("D");
+    else if (type == QStringLiteral("粗糙度")) prefix = QStringLiteral("R");
+    else if (type == QStringLiteral("孔径")) prefix = QStringLiteral("H");
+    else if (type == QStringLiteral("圆柱度")) prefix = QStringLiteral("CY");
+    else if (type == QStringLiteral("跳动")) prefix = QStringLiteral("T");
+    else if (type == QStringLiteral("长度")) prefix = QStringLiteral("L");
+    else if (type == QStringLiteral("角度")) prefix = QStringLiteral("A");
+    else if (type == QStringLiteral("圆弧半径")) prefix = QStringLiteral("AR");
+    else prefix = QStringLiteral("F");
+    int number = 1;
+    while (true) {
+        const QString candidate = prefix + QString::number(number++);
+        bool used = false;
+        for (const MeasurementRecord& record : m_records)
+            if (record.featureNumber.compare(candidate, Qt::CaseInsensitive) == 0) { used = true; break; }
+        if (!used) return candidate;
+    }
+}
+
 void GraphicalProgramEditor::saveMeasurementRecord(bool update)////新增或者更新按钮公用这个函数。校验：特征号必填、下偏差<=上偏差
 {
     if (m_relinkSequence > 0) {
@@ -2398,10 +2550,10 @@ void GraphicalProgramEditor::saveMeasurementRecord(bool update)////新增或者�
         QMessageBox::warning(this, QStringLiteral("未更新"), QStringLiteral("请先在下方选中一条记录。"));
         return;
     }
-    if (m_featureNumber->text().trimmed().isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("未记录"), QStringLiteral("请输入工序特征号。"));
-        return;
-    }
+    if (!update && !m_featureNumberEditedSinceLoad)
+        m_featureNumber->setText(suggestedFeatureNumber(m_measurementType->currentText()));
+    if (m_featureNumber->text().trimmed().isEmpty())
+        m_featureNumber->setText(suggestedFeatureNumber(m_measurementType->currentText()));
     if (m_hasTolerance->isChecked() && m_lowerDeviation->value() > m_upperDeviation->value()) {
         QMessageBox::warning(this, QStringLiteral("未记录"), QStringLiteral("下偏差不能大于上偏差。"));
         return;
@@ -2431,12 +2583,22 @@ void GraphicalProgramEditor::saveMeasurementRecord(bool update)////新增或者�
     record.holeUniformCount = record.type == QStringLiteral("孔径") ? m_holeUniformCount->value() : 0;
     record.holeCalibration = m_holeCalibration->value();
     record.lengthCalibration = m_lengthCalibration->value();
+    record.crossFrameLength = record.type == QStringLiteral("长度")
+        && m_lengthMode->currentData().toBool();
     record.useSupplementaryAngle = m_angleResultMode->currentIndex() == 1;
     record.singleRoiAngle = record.type == QStringLiteral("角度") && m_angleInputMode->currentIndex() == 1;
     if (record.singleRoiAngle || record.type != QStringLiteral("角度"))
         { record.secondaryGeometryId = -1; record.secondaryFrameId = 0; }
+    if (record.crossFrameLength && update && m_records[row].type == QStringLiteral("长度")
+        && m_records[row].crossFrameLength) {
+        record.secondaryGeometryId = m_records[row].secondaryGeometryId;
+        record.secondaryFrameId = m_records[row].secondaryFrameId;
+        record.lengthStartPosition = m_records[row].lengthStartPosition;
+        record.lengthEndPosition = m_records[row].lengthEndPosition;
+    }
     if (update && record.type == QStringLiteral("长度")
         && m_records[row].type == QStringLiteral("长度")
+        && !record.crossFrameLength && !m_records[row].crossFrameLength
         && record.geometryId == m_records[row].geometryId) {
         record.lengthTemplateModel = m_records[row].lengthTemplateModel;
         record.lengthTemplateReferenceRow = m_records[row].lengthTemplateReferenceRow;
@@ -2475,12 +2637,17 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
             ? m_canvas->featureProperties(record.secondaryGeometryId) : QStringList();
         const bool primaryMissing = primaryOnCurrentFrame
             && record.geometryId > 0 && geometry.size() != 3;
-        const bool secondaryMissing = record.type == QStringLiteral("角度")
+        const bool secondaryMissing = (record.type == QStringLiteral("角度")
+                || (record.type == QStringLiteral("长度") && record.crossFrameLength))
             && secondaryOnCurrentFrame && record.secondaryGeometryId > 0
             && secondaryGeometry.size() != 3;
         if (primaryMissing || secondaryMissing) {
             record.clearTrial(QStringLiteral("未执行（关联已删除）"));
             if (record.type == QStringLiteral("长度")) {
+                if (record.crossFrameLength) {
+                    if (primaryMissing) record.lengthStartPosition = MeasurementRecord::DevicePosition();
+                    if (secondaryMissing) record.lengthEndPosition = MeasurementRecord::DevicePosition();
+                }
                 record.lengthTemplateModel.clear();
                 record.lengthTemplateReferenceRow = 0;
                 record.lengthTemplateReferenceColumn = 0;
@@ -2490,10 +2657,10 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
         QString association;
         if (record.type == QStringLiteral("角度")) {
             const QString first = record.geometryId <= 0 ? QStringLiteral("待关联")
-                : !primaryOnCurrentFrame ? QStringLiteral("帧%1/图形%2").arg(record.frameId).arg(record.geometryId)
+                : !primaryOnCurrentFrame ? QStringLiteral("图%1/图形%2").arg(record.frameId).arg(record.geometryId)
                 : geometry.size() == 3 ? geometry[0] : QStringLiteral("已删除");
             const QString second = record.secondaryGeometryId <= 0 ? QStringLiteral("待关联")
-                : !secondaryOnCurrentFrame ? QStringLiteral("帧%1/图形%2").arg(record.secondaryFrameId).arg(record.secondaryGeometryId)
+                : !secondaryOnCurrentFrame ? QStringLiteral("图%1/图形%2").arg(record.secondaryFrameId).arg(record.secondaryGeometryId)
                 : secondaryGeometry.size() == 3 ? secondaryGeometry[0] : QStringLiteral("已删除");
             association = record.type == QStringLiteral("角度") && record.singleRoiAngle
                 ? QStringLiteral("单ROI:%1").arg(first)
@@ -2501,17 +2668,64 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
         }
         else if (record.type == QStringLiteral("长度")) {
             const QString target = record.geometryId <= 0 ? QStringLiteral("待关联")
-                : !primaryOnCurrentFrame ? QStringLiteral("帧%1/图形%2").arg(record.frameId).arg(record.geometryId)
+                : !primaryOnCurrentFrame ? QStringLiteral("图%1/图形%2").arg(record.frameId).arg(record.geometryId)
                 : geometry.size() == 3 ? geometry[0] : QStringLiteral("已删除");
-            association = QStringLiteral("单ROI:%1").arg(target);
+            if (record.crossFrameLength) {
+                const auto endpointName = [this](int frameId, int geometryId,
+                    const QStringList& currentProperties, bool onCurrentFrame) {
+                    if (geometryId <= 0) return QStringLiteral("待关联");
+                    QString name;
+                    if (onCurrentFrame && currentProperties.size() == 3) name = currentProperties[0];
+                    else {
+                        for (const ProjectFrame& frame : m_frames) {
+                            if (frame.id != frameId) continue;
+                            for (const auto& feature : frame.features)
+                                if (feature.id == geometryId) {
+                                    name = QStringLiteral("%1_%2").arg(feature.type).arg(feature.id);
+                                    break;
+                                }
+                        }
+                    }
+                    if (name.isEmpty()) name = QStringLiteral("已删除");
+                    return QStringLiteral("图像%1/%2").arg(frameId).arg(name);
+                };
+                const QString start = endpointName(record.frameId, record.geometryId,
+                    geometry, primaryOnCurrentFrame);
+                const QString end = endpointName(record.secondaryFrameId, record.secondaryGeometryId,
+                    secondaryGeometry, secondaryOnCurrentFrame);
+                association = QStringLiteral("起点:%1；终点:%2").arg(start, end);
+            }
+            else association = QStringLiteral("单ROI:%1").arg(target);
         }
         else association = record.geometryId <= 0 ? QStringLiteral("待关联")
-            : !primaryOnCurrentFrame ? QStringLiteral("帧%1/图形%2").arg(record.frameId).arg(record.geometryId)
+            : !primaryOnCurrentFrame ? QStringLiteral("图%1/图形%2").arg(record.frameId).arg(record.geometryId)
             : geometry.size() == 3 ? geometry[0] : QStringLiteral("关联图形已删除");
         const QString unit = record.type == QStringLiteral("角度") ? QStringLiteral("°")
             : record.type == QStringLiteral("粗糙度") ? QStringLiteral("μm") : QStringLiteral("mm");
         QString deviceSummary = QStringLiteral("未采集");
-        if (record.devicePosition.collected) {
+        if (record.type == QStringLiteral("长度") && record.crossFrameLength) {
+            const auto axis5Encoder = [](const MeasurementRecord::DevicePosition& position,
+                double& encoder) {
+                if (!position.collected) return false;
+                for (const auto& axis : position.axes) if (axis.axis == 5) {
+                    encoder = axis.encoder; return std::isfinite(encoder);
+                }
+                return false;
+            };
+            double start = 0, end = 0;
+            const bool hasStart = axis5Encoder(record.lengthStartPosition, start);
+            const bool hasEnd = axis5Encoder(record.lengthEndPosition, end);
+            QStringList parts;
+            parts << (hasStart ? QStringLiteral("起点E:%1").arg(start, 0, 'f', 1)
+                : QStringLiteral("起点未采集"));
+            parts << (hasEnd ? QStringLiteral("终点E:%1").arg(end, 0, 'f', 1)
+                : QStringLiteral("终点未采集"));
+            if (hasStart && hasEnd)
+                parts << QStringLiteral("补偿位移:%1mm")
+                    .arg(axis5_compensation(end) - axis5_compensation(start), 0, 'f', 4);
+            deviceSummary = parts.join(QStringLiteral("；"));
+        }
+        else if (record.devicePosition.collected) {
             QStringList parts;
             for (const auto& axis : record.devicePosition.axes)
                 parts << QStringLiteral("轴%1:%2").arg(axis.axis).arg(axis.encoder, 0, 'f', 1);
@@ -2556,7 +2770,9 @@ void GraphicalProgramEditor::loadMeasurementRecord(int row)
     m_holeUniformCount->setValue(record.holeUniformCount);
     m_holeCalibration->setValue(record.holeCalibration);
     m_lengthCalibration->setValue(record.lengthCalibration);
+    m_lengthMode->setCurrentIndex(record.crossFrameLength ? 1 : 0);
     m_featureNumber->setText(record.featureNumber);
+    m_featureNumberEditedSinceLoad = false;
     m_hasTolerance->setChecked(record.hasTolerance);
     m_nominal->setValue(record.nominal);
     m_lowerDeviation->setValue(record.lower);
@@ -2605,16 +2821,21 @@ void GraphicalProgramEditor::refreshAngleControls()
     const int row = m_stepTable ? m_stepTable->currentRow() : -1;
     const bool storedAngle = row >= 0 && row < m_records.size() && m_records[row].type == QStringLiteral("角度");
     const bool storedLength = row >= 0 && row < m_records.size() && m_records[row].type == QStringLiteral("长度");
+    const bool crossLength = storedLength && m_records[row].crossFrameLength;
     const bool single = storedAngle && m_records[row].singleRoiAngle;
     if (m_selectAngleRoi1) {
+        m_selectAngleRoi1->setVisible(storedAngle || storedLength);
         m_selectAngleRoi1->setEnabled(storedAngle || storedLength);
-        m_selectAngleRoi1->setText(storedLength ? QStringLiteral("长度：选择/重选单ROI（完整特征）")
+        m_selectAngleRoi1->setText(crossLength ? QStringLiteral("跨图长度：确认起点ROI并采集点位")
+            : storedLength ? QStringLiteral("长度：选择/重选单ROI（完整特征）")
             : single ? QStringLiteral("角度：选择/重选包含相邻角的ROI")
             : QStringLiteral("角度：选择/重选 ROI 1（直线1）"));
     }
     if (m_selectAngleRoi2) {
-        m_selectAngleRoi2->setEnabled(storedAngle && !single);
-        m_selectAngleRoi2->setText(storedLength ? QStringLiteral("长度：单ROI自动提取两条边")
+        m_selectAngleRoi2->setVisible((storedAngle && !single) || crossLength);
+        m_selectAngleRoi2->setEnabled((storedAngle && !single) || crossLength);
+        m_selectAngleRoi2->setText(crossLength ? QStringLiteral("跨图长度：确认终点ROI并采集点位")
+            : storedLength ? QStringLiteral("长度：单ROI自动提取两条边")
             : QStringLiteral("角度：选择/重选 ROI 2（直线2）"));
     }
     m_cornerCandidate->setEnabled(single && !m_records[row].cornerPairs.isEmpty() && !m_trialRunning && m_relinkSequence <= 0);
@@ -2670,12 +2891,23 @@ void GraphicalProgramEditor::trialSelectedRecord()
     else if (!m_canvas->hasImage())
         validationError = QStringLiteral("请先打开图像。");
     else if (m_records[row].frameId > 0 && m_records[row].frameId != m_currentFrameId)
-        validationError = QStringLiteral("该记录的主ROI位于工程帧%1；请先在工具栏切换到对应帧。")
+        validationError = QStringLiteral("该记录的主ROI位于端点图像%1；请先在工具栏切换到对应图像。")
             .arg(m_records[row].frameId);
     else if (holeTrial && m_imageCameraIndex >= 0 && m_imageCameraIndex != 1)
         validationError = QStringLiteral("孔径试测需要测孔相机1图像；当前工程图像来自其他相机。");
     else if (lengthTrial && m_imageCameraIndex >= 0 && m_imageCameraIndex != 0)
         validationError = QStringLiteral("单图长度试测需要远心相机0图像；当前工程图像来自其他相机。");
+    else if (lengthTrial && m_records[row].crossFrameLength) {
+        const bool startReady = m_records[row].geometryId > 0;
+        const bool endReady = m_records[row].secondaryGeometryId > 0;
+        const bool startPoint = m_records[row].lengthStartPosition.collected;
+        const bool endPoint = m_records[row].lengthEndPosition.collected;
+        validationError = QStringLiteral("跨图长度端点配置：起点ROI%1、终点ROI%2、起点轴5点位%3、终点轴5点位%4。跨图两端拟合与公式将在下一阶段接入；当前不输出长度。")
+            .arg(startReady ? QStringLiteral("已确认") : QStringLiteral("未确认"))
+            .arg(endReady ? QStringLiteral("已确认") : QStringLiteral("未确认"))
+            .arg(startPoint ? QStringLiteral("已采集") : QStringLiteral("未采集"))
+            .arg(endPoint ? QStringLiteral("已采集") : QStringLiteral("未采集"));
+    }
     else if (m_records[row].geometryId <= 0)
         validationError = holeTrial ? QStringLiteral("孔径记录尚未关联ROI。")
             : (angleTrial || lengthTrial) ? QStringLiteral("记录尚未关联 ROI 1。")
@@ -2992,6 +3224,31 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
             object[QStringLiteral("holeCalibrationMmPerPixel")] = record.holeCalibration;
         if (record.type == QStringLiteral("长度")) {
             object[QStringLiteral("lengthCalibrationMmPerPixel")] = record.lengthCalibration;
+            object[QStringLiteral("crossFrameLength")] = record.crossFrameLength;
+            const auto endpointJson = [](const MeasurementRecord::DevicePosition& position) {
+                QJsonObject endpoint;
+                endpoint[QStringLiteral("status")] = position.collected
+                    ? QStringLiteral("collected") : QStringLiteral("uncollected");
+                endpoint[QStringLiteral("source")] = position.source;
+                endpoint[QStringLiteral("unit")] = position.unit;
+                if (position.collected) {
+                    endpoint[QStringLiteral("capturedAtUtc")] = position.capturedAtUtc;
+                    endpoint[QStringLiteral("cameraIndex")] = position.cameraIndex;
+                    endpoint[QStringLiteral("exposure")] = position.exposure;
+                    QJsonArray axes;
+                    for (const auto& axis : position.axes) {
+                        QJsonObject item;
+                        item[QStringLiteral("axis")] = axis.axis;
+                        item[QStringLiteral("planned")] = axis.planned;
+                        item[QStringLiteral("encoder")] = axis.encoder;
+                        axes.append(item);
+                    }
+                    endpoint[QStringLiteral("axes")] = axes;
+                }
+                return endpoint;
+            };
+            object[QStringLiteral("lengthStartPosition")] = endpointJson(record.lengthStartPosition);
+            object[QStringLiteral("lengthEndPosition")] = endpointJson(record.lengthEndPosition);
             QJsonObject lengthTemplate;
             lengthTemplate[QStringLiteral("status")] = record.lengthTemplateModel.isEmpty()
                 ? QStringLiteral("untrained") : QStringLiteral("trained");
@@ -3390,6 +3647,68 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
             error = QStringLiteral("测量记录%1的远心标定系数无效。").arg(record.sequence); return false;
         }
         record.lengthCalibration = lengthCalibration.toDouble(0.01218603);
+        const QJsonValue crossFrameLength = object.value(QStringLiteral("crossFrameLength"));
+        if (!crossFrameLength.isUndefined() && !crossFrameLength.isBool()) {
+            error = QStringLiteral("测量记录%1的跨图长度模式无效。").arg(record.sequence); return false;
+        }
+        record.crossFrameLength = crossFrameLength.toBool(false);
+        const auto readLengthEndpoint = [&error, &record](const QJsonValue& value,
+            MeasurementRecord::DevicePosition& position, const QString& name) {
+            if (value.isUndefined()) return true;
+            if (!value.isObject()) {
+                error = QStringLiteral("测量记录%1的%2点位格式错误。").arg(record.sequence).arg(name); return false;
+            }
+            const QJsonObject endpoint = value.toObject();
+            const QString status = endpoint.value(QStringLiteral("status")).toString();
+            if (endpoint.value(QStringLiteral("unit")).toString() != QStringLiteral("pulse")
+                || (status != QStringLiteral("collected") && status != QStringLiteral("uncollected"))) {
+                error = QStringLiteral("测量记录%1的%2点位状态错误。").arg(record.sequence).arg(name); return false;
+            }
+            if (status == QStringLiteral("uncollected")) {
+                if (endpoint.value(QStringLiteral("source")).toString() != QStringLiteral("none")) {
+                    error = QStringLiteral("测量记录%1的%2未采集点位来源错误。").arg(record.sequence).arg(name); return false;
+                }
+                return true;
+            }
+            if (endpoint.value(QStringLiteral("source")).toString() != QStringLiteral("hardware")
+                || !endpoint.value(QStringLiteral("capturedAtUtc")).isString()
+                || !isJsonInteger(endpoint.value(QStringLiteral("cameraIndex")))
+                || !isJsonInteger(endpoint.value(QStringLiteral("exposure")))
+                || !endpoint.value(QStringLiteral("axes")).isArray()) {
+                error = QStringLiteral("测量记录%1的%2硬件点位字段错误。").arg(record.sequence).arg(name); return false;
+            }
+            const QJsonArray axes = endpoint.value(QStringLiteral("axes")).toArray();
+            if (axes.size() != 1) {
+                error = QStringLiteral("测量记录%1的%2必须且只能包含轴5点位。").arg(record.sequence).arg(name); return false;
+            }
+            const QJsonObject axisObject = axes.at(0).toObject();
+            if (!isJsonInteger(axisObject.value(QStringLiteral("axis")))
+                || axisObject.value(QStringLiteral("axis")).toInt() != 5
+                || !axisObject.value(QStringLiteral("planned")).isDouble()
+                || !axisObject.value(QStringLiteral("encoder")).isDouble()) {
+                error = QStringLiteral("测量记录%1的%2轴5点位无效。").arg(record.sequence).arg(name); return false;
+            }
+            MeasurementRecord::AxisPosition axis;
+            axis.axis = 5;
+            axis.planned = axisObject.value(QStringLiteral("planned")).toDouble();
+            axis.encoder = axisObject.value(QStringLiteral("encoder")).toDouble();
+            position.collected = true;
+            position.source = QStringLiteral("hardware");
+            position.capturedAtUtc = endpoint.value(QStringLiteral("capturedAtUtc")).toString();
+            position.cameraIndex = endpoint.value(QStringLiteral("cameraIndex")).toInt();
+            position.exposure = endpoint.value(QStringLiteral("exposure")).toInt();
+            position.axes.append(axis);
+            if (!std::isfinite(axis.planned) || !std::isfinite(axis.encoder)
+                || position.cameraIndex != 0 || position.exposure < 0 || position.exposure > 30000
+                || !QDateTime::fromString(position.capturedAtUtc, Qt::ISODateWithMs).isValid()) {
+                error = QStringLiteral("测量记录%1的%2点位值无效。").arg(record.sequence).arg(name); return false;
+            }
+            return true;
+        };
+        if (!readLengthEndpoint(object.value(QStringLiteral("lengthStartPosition")),
+                record.lengthStartPosition, QStringLiteral("起点"))
+            || !readLengthEndpoint(object.value(QStringLiteral("lengthEndPosition")),
+                record.lengthEndPosition, QStringLiteral("终点"))) return false;
         const QJsonValue lengthTemplateValue = object.value(QStringLiteral("lengthTemplate"));
         if (!lengthTemplateValue.isUndefined()) {
             if (record.type != QStringLiteral("长度") || !lengthTemplateValue.isObject()) {
@@ -3588,10 +3907,18 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
             || (record.type != QStringLiteral("角度") && record.type != QStringLiteral("长度")
                 && (record.secondaryGeometryId > 0 || record.singleRoiAngle))
             || (record.type == QStringLiteral("长度") && record.singleRoiAngle)
+            || (record.type == QStringLiteral("长度") && !record.crossFrameLength
+                && (record.secondaryGeometryId > 0
+                    || record.lengthStartPosition.collected || record.lengthEndPosition.collected))
+            || (record.type == QStringLiteral("长度") && record.crossFrameLength
+                && record.secondaryGeometryId > 0 && record.frameId == record.secondaryFrameId)
             || (record.type != QStringLiteral("孔径") && record.holeUniformCount != 0)
             || (record.type != QStringLiteral("孔径") && !holeCalibration.isUndefined())
             || (record.type != QStringLiteral("长度") && !lengthCalibration.isUndefined())
             || (record.type != QStringLiteral("长度") && !lengthTemplateValue.isUndefined())
+            || (record.type != QStringLiteral("长度") && (!crossFrameLength.isUndefined()
+                || !object.value(QStringLiteral("lengthStartPosition")).isUndefined()
+                || !object.value(QStringLiteral("lengthEndPosition")).isUndefined()))
             || invalidAngleReferences) {
             error = QStringLiteral("测量记录%1内容或图形引用无效。").arg(record.sequence); return false;
         }
@@ -3741,7 +4068,7 @@ void GraphicalProgramEditor::refreshFrameSelector()
         const QString source = frame.cameraIndex >= 0
             ? QStringLiteral("相机%1").arg(frame.cameraIndex)
             : QFileInfo(frame.filePath).fileName();
-        m_frameSelector->addItem(QStringLiteral("帧%1 · %2").arg(frame.id).arg(source), frame.id);
+        m_frameSelector->addItem(QStringLiteral("图像%1 · %2").arg(frame.id).arg(source), frame.id);
         if (frame.id == m_currentFrameId) m_frameSelector->setCurrentIndex(m_frameSelector->count() - 1);
     }
     m_frameSelector->setEnabled(m_frames.size() > 1);
@@ -3778,7 +4105,7 @@ bool GraphicalProgramEditor::activateFrame(int frameId, QString& error)
     refreshFeatureList();
     refreshMeasurementRecords();
     m_canvas->fitImageInView();
-    statusBar()->showMessage(QStringLiteral("已切换到工程帧%1；该帧ROI已恢复。").arg(frameId), 4000);
+    statusBar()->showMessage(QStringLiteral("已切换到端点图像%1；该图像ROI已恢复。").arg(frameId), 4000);
     return true;
 }
 
@@ -3789,7 +4116,7 @@ void GraphicalProgramEditor::addLocalFrame()
             QStringLiteral("请先停止相机采集并等待算法结束。"));
         return;
     }
-    const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("添加工程图像帧"), QString(),
+    const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("导入端点图像"), QString(),
         QStringLiteral("图像文件 (*.bmp *.png *.jpg *.jpeg *.tif *.tiff);;所有文件 (*.*)"));
     if (filePath.isEmpty()) return;
     QString hashError;
