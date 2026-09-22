@@ -349,6 +349,10 @@
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>
+  <Target Name="CopyRuntimeThemeQss" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)config" />
+    <Copy SourceFiles="$(ProjectDir)config\theme.qss" DestinationFiles="$(OutDir)config\theme.qss" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

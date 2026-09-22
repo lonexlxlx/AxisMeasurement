@@ -130,6 +130,9 @@ private:
     void initializeVisualRoles();
     void refreshWidgetStyle(QWidget* widget);
     bool setVisualProperty(QWidget* widget, const char* propertyName, const char* propertyValue);
+    void enableStartupMotionControls();
+
+    bool motionControlReady() const;
 
     //P2-9/10 布局重构：12 个分组框收纳 + QSplitter 窗口自适应
     void restructureMainLayout();//把 .ui 的绝对定位布局重组为 Splitter + TabWidget（只动容器，不动控件本身）
