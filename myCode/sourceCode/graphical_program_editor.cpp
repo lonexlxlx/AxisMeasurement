@@ -1,4 +1,4 @@
-#include "graphical_program_editor.h"
+﻿#include "graphical_program_editor.h"
 
 #include "graphical_canvas.h"
 #include "sharedFun.h"
@@ -1027,6 +1027,7 @@ GraphicalProgramEditor::GraphicalProgramEditor(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle(QStringLiteral("图形化二次开发"));
+    setObjectName(QStringLiteral("graphicalProgramEditor"));
     resize(1500, 900);
     setWindowFlag(Qt::Window, true);
     setWindowModality(Qt::NonModal);
@@ -1376,6 +1377,7 @@ void GraphicalProgramEditor::clearSelectedDevicePosition()
 QWidget* GraphicalProgramEditor::buildAxisPanel()
 {
     QGroupBox* panel = new QGroupBox(QStringLiteral("手动轴控制"));
+    panel->setObjectName(QStringLiteral("graphicalAxisControlCard"));
     QVBoxLayout* layout = new QVBoxLayout(panel);
     m_axisState = new QLabel(QStringLiteral("未连接"), panel);
     m_axisState->setWordWrap(true);
@@ -1557,7 +1559,9 @@ void GraphicalProgramEditor::buildInterface()
     addToolBar(Qt::TopToolBarArea, axisSafetyBar);
     m_axisStop = new QPushButton(QStringLiteral("停止当前轴"), axisSafetyBar);
     m_axisEmergency = new QPushButton(QStringLiteral("全部轴急停"), axisSafetyBar);
-    m_axisEmergency->setStyleSheet(QStringLiteral("QPushButton { background: #DC2626; color: white; font-weight: bold; padding: 8px; }"));
+    m_axisStop->setObjectName(QStringLiteral("graphicalAxisStopButton"));
+    m_axisEmergency->setObjectName(QStringLiteral("graphicalAxisEmergencyButton"));
+    m_axisEmergency->setStyleSheet(QString());
     m_axisStop->setEnabled(false);
     m_axisEmergency->setEnabled(false);
     axisSafetyBar->addWidget(m_axisStop);
@@ -1661,6 +1665,7 @@ void GraphicalProgramEditor::buildInterface()
     }
 
     QWidget* centralWidget = new QWidget(this);
+    centralWidget->setObjectName(QStringLiteral("graphicalProgramEditorPage"));
     QVBoxLayout* rootLayout = new QVBoxLayout(centralWidget);
     rootLayout->setContentsMargins(6, 6, 6, 6);
 
@@ -1679,14 +1684,14 @@ void GraphicalProgramEditor::buildInterface()
     m_canvas = new GraphicalCanvas(mainSplitter);//m_canvas为中间的黑色图像区域,主要是canvas.cpp里的代码
     m_canvas->setMinimumSize(640, 420);
     //P1-7 画布深色背景：图像边界更清晰
-    m_canvas->setBackgroundBrush(QColor(QStringLiteral("#2B2B2B")));
+    m_canvas->setBackgroundBrush(QColor(QStringLiteral("#202938")));
     //P1-7 空态提示：未打开图像时居中显示，打开图像后隐藏
     QLabel* emptyHint = new QLabel(
         QStringLiteral("尚未打开图像\n\n点击工具栏「打开图像」选择本地图片开始编辑"), m_canvas);
     emptyHint->setObjectName(QStringLiteral("canvasEmptyHint"));
     emptyHint->setAlignment(Qt::AlignCenter);
     emptyHint->setAttribute(Qt::WA_TransparentForMouseEvents);
-    emptyHint->setStyleSheet(QStringLiteral("color:#9CA3AF; font-size:14px; background:transparent;"));
+    emptyHint->setStyleSheet(QString());
     QVBoxLayout* hintLayout = new QVBoxLayout(m_canvas);
     hintLayout->addWidget(emptyHint, 0, Qt::AlignCenter);
     //工具快捷键挂到画布上（WidgetWithChildrenShortcut 上下文需要 action 属于该 widget）
@@ -2058,7 +2063,7 @@ void GraphicalProgramEditor::buildInterface()
     QFormLayout* cameraForm = new QFormLayout;
     cameraForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
     m_cameraSelector = new QComboBox(cameraGroup);
-    m_cameraSelector->addItem(QStringLiteral("0 · 远心相机"), 0);
+    m_cameraSelector->addItem(QStringLiteral("0 · 远心相机"), 0);//此处的下拉框在界面上有冲突
     m_cameraSelector->addItem(QStringLiteral("1 · 孔径相机"), 1);
     m_cameraSelector->addItem(QStringLiteral("2 · 粗糙度相机"), 2);
     cameraForm->addRow(QStringLiteral("相机"), m_cameraSelector);
