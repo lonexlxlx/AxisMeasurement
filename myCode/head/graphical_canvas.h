@@ -74,6 +74,7 @@ public:
     bool restoreFeatures(const QVector<FeatureSnapshot>& snapshots, QString& error);
     void selectFeatureById(int featureId, bool centerOnFeature = true);
     void deleteFeatureById(int featureId);
+    bool hasSelectedFeatures() const;
     void deleteSelectedFeatures();
     struct MeasurementRoi {
         bool isCircle = false;

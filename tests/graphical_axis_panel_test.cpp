@@ -9,11 +9,14 @@
 #include <QEvent>
 #include <QFile>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QLineEdit>
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QLabel>
+#include <QTemporaryDir>
 #include <limits>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -84,17 +87,33 @@ static void testDetectionRecords()
         throw std::runtime_error("detection button missing");
     };
     auto* type = editor.findChild<QComboBox*>(QStringLiteral("measurementType"));
+    auto* axisSelector = editor.findChild<QComboBox*>(QStringLiteral("axisSelector"));
     auto* feature = editor.findChild<QLineEdit*>(QStringLiteral("measurementFeatureNumber"));
     auto* minimum = editor.findChild<QDoubleSpinBox*>(QStringLiteral("detectionMinLength"));
     auto* low = editor.findChild<QDoubleSpinBox*>(QStringLiteral("detectionLow"));
     auto* table = editor.findChild<QTableWidget*>();
     auto* diagnostic = editor.findChild<QLabel*>(QStringLiteral("detectionDiagnostic"));
-    require(type && feature && minimum && low && table && diagnostic, "detection UI missing");
+    auto* lowerAxialOffset = editor.findChild<QSpinBox*>(QStringLiteral("lowerAxialOffsetPulse"));
+    auto* upperAxialOffset = editor.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"));
+    auto* roundoutReference1 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"));
+    auto* roundoutReference2 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"));
+    require(type && axisSelector && feature && minimum && low && table && diagnostic
+        && lowerAxialOffset && upperAxialOffset && roundoutReference1 && roundoutReference2,
+        "detection UI missing");
+    require(type->findText(QStringLiteral("粗糙度")) < 0,
+        "graphical workflow must not expose the retired roughness measurement entry");
+    require(axisSelector->findData(1) < 0,
+        "graphical workflow must not expose the retired roughness axis entry");
+    auto enterFeatureNumber = [&](const QString& value) {
+        feature->setFocus();
+        feature->selectAll();
+        QTest::keyClicks(feature, value);
+    };
     type->setCurrentText(QStringLiteral("圆弧半径"));
-    feature->setText(QStringLiteral("F1"));
+    enterFeatureNumber(QStringLiteral("F1"));
     minimum->setValue(7);
     button(QStringLiteral("新增测量记录"))->click();
-    feature->setText(QStringLiteral("F2"));
+    enterFeatureNumber(QStringLiteral("F2"));
     minimum->setValue(13);
     button(QStringLiteral("新增测量记录"))->click();
     require(table->rowCount() == 2, "two measurement records required");
@@ -111,7 +130,7 @@ static void testDetectionRecords()
     table->setCurrentCell(1, 0);
     table->setCurrentCell(0, 0);
     require(low->value() == 20, "invalid parameter must not replace committed value");
-    feature->setText(QStringLiteral("UNSUBMITTED"));
+    enterFeatureNumber(QStringLiteral("UNSUBMITTED"));
     minimum->setValue(8);
     button(QStringLiteral("应用检测参数"))->click();
     require(table->item(0, 1)->text() == QStringLiteral("F1"), "parameter-only apply must preserve feature number");
@@ -131,7 +150,7 @@ static void testDetectionRecords()
     require(inputMode && candidate && gap, "single ROI UI missing");
     type->setCurrentText(QStringLiteral("角度"));
     inputMode->setCurrentIndex(1);
-    feature->setText(QStringLiteral("CORNER"));
+    enterFeatureNumber(QStringLiteral("CORNER"));
     gap->setValue(3);
     button(QStringLiteral("新增测量记录"))->click();
     require(table->item(2, 3)->text().startsWith(QStringLiteral("单ROI:")), "single ROI association required");
@@ -152,7 +171,188 @@ static void testDetectionRecords()
     button(QStringLiteral("更新选中记录"))->click();
     require(table->item(2, 3)->text().contains(QStringLiteral("ROI2:")), "committed mode must switch association");
     require(button(QStringLiteral("角度：选择/重选 ROI 2（直线2）"))->isEnabled(), "double ROI must enable second ROI");
+    type->setCurrentText(QStringLiteral("圆柱度"));
+    require(lowerAxialOffset->isEnabled() && upperAxialOffset->isEnabled()
+        && !lowerAxialOffset->isHidden() && !upperAxialOffset->isHidden()
+        && roundoutReference1->isHidden() && roundoutReference2->isHidden(),
+        "cylindricity must expose only axial offsets");
+    lowerAxialOffset->setValue(100);
+    upperAxialOffset->setValue(200);
+    enterFeatureNumber(QStringLiteral("CYTEST"));
+    button(QStringLiteral("新增测量记录"))->click();
+    require(table->rowCount() == 4, "cylindricity record required");
+    table->setCurrentCell(3, 0);
+    require(lowerAxialOffset->value() == 100 && upperAxialOffset->value() == 200,
+        "cylindricity offsets must survive record selection");
+    type->setCurrentText(QStringLiteral("跳动"));
+    require(!roundoutReference1->isHidden() && !roundoutReference2->isHidden()
+        && roundoutReference1->isEnabled() && roundoutReference2->isEnabled(),
+        "roundout must expose reference fields");
+    auto* programNumber = editor.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"));
+    require(programNumber && programNumber->maximum() == 50,
+        "program number must match the current 0-50 dispatcher range");
+    programNumber->setValue(12);
+    editor.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->setText(QStringLiteral("P-001"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->setText(QStringLiteral("测试零件"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->setText(QStringLiteral("OP10"));
+    const QStringList preflightIssues = editor.validateRecipeForExport();
+    require(std::any_of(preflightIssues.cbegin(), preflightIssues.cend(), [](const QString& issue) {
+        return issue.contains(QStringLiteral("尚未接入生产程序映射"));
+    }), "preflight must reject measurement types without production mapping");
     std::cout << "PASS: detection defaults, invalid thresholds/ranges/nonfinite input, record isolation, draft discard, parameter-only apply, invalidation state, reset semantics\n";
+}
+
+static void testCameraWorkflow()
+{
+    GraphicalProgramEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    bool connected = false;
+    bool capturing = false;
+    bool hasFrame = false;
+    int starts = 0;
+    int stops = 0;
+    int snapshots = 0;
+    using CameraCommand = GraphicalProgramEditor::CameraCommand;
+    editor.setCameraBackend([&](int camera) {
+        GraphicalProgramEditor::CameraSnapshot state;
+        state.connected = connected;
+        state.available = connected;
+        state.capturing = capturing;
+        state.hasFrame = hasFrame;
+        state.exposure = 500;
+        state.frameSize = hasFrame ? QSize(64, 48) : QSize();
+        state.message = connected
+            ? QStringLiteral("模拟相机%1已连接").arg(camera)
+            : QStringLiteral("模拟相机%1未连接").arg(camera);
+        return state;
+    }, [&](int, CameraCommand command, int exposure) {
+        GraphicalProgramEditor::CameraCommandResult result;
+        if (!connected) {
+            result.error = QStringLiteral("模拟相机未连接");
+            return result;
+        }
+        if (command == CameraCommand::StartCapture) {
+            ++starts;
+            capturing = true;
+            hasFrame = false;
+        }
+        else if (command == CameraCommand::StopCapture) {
+            ++stops;
+            capturing = false;
+            hasFrame = true;
+        }
+        else {
+            ++snapshots;
+            result.image = QImage(64, 48, QImage::Format_RGB32);
+            result.image.fill(QColor(40, 120, 200));
+            result.exposure = exposure;
+        }
+        return result;
+    });
+    editor.show();
+    QTest::qWait(250);
+    auto button = [&](const QString& name) {
+        for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
+        throw std::runtime_error("camera button missing");
+    };
+    auto* start = button(QStringLiteral("开始连续采集"));
+    auto* stop = button(QStringLiteral("停止采集"));
+    auto* load = button(QStringLiteral("载入最后一帧"));
+    auto* cameraSelector = editor.findChild<QComboBox*>(QStringLiteral("cameraSelector"));
+    require(cameraSelector && cameraSelector->count() == 2
+        && cameraSelector->findData(2) < 0,
+        "graphical workflow must only expose telecentric and hole cameras");
+    require(!start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
+        "disconnected camera controls must be disabled");
+
+    connected = true;
+    QTest::qWait(250);
+    require(start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
+        "connected camera must allow capture start only");
+    QTest::mouseClick(start, Qt::LeftButton);
+    QTest::qWait(250);
+    require(starts == 1 && capturing && stop->isEnabled(), "camera start command missing");
+    QTest::mouseClick(stop, Qt::LeftButton);
+    QTest::qWait(250);
+    require(stops == 1 && !capturing && load->isEnabled(), "last frame must become available after stop");
+    QTest::mouseClick(load, Qt::LeftButton);
+    QTest::qWait(250);
+    auto* canvas = editor.findChild<GraphicalCanvas*>();
+    require(snapshots == 1 && canvas && canvas->hasImage(),
+        "snapshot must be cached and loaded without a save dialog");
+    QTemporaryDir recipeDirectory;
+    require(recipeDirectory.isValid(), "temporary recipe directory missing");
+    const QString recipePath = recipeDirectory.filePath(QStringLiteral("camera.axisproj.json"));
+    editor.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"))->setValue(27);
+    editor.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->setText(QStringLiteral("AX-27"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->setText(QStringLiteral("轴类零件"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->setText(QStringLiteral("20"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->setText(QStringLiteral("离线配方测试"));
+    QString recipeError;
+    require(editor.saveRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("simulated camera recipe save failed: %1").arg(recipeError)));
+    const QString assetPath = recipeDirectory.filePath(
+        QStringLiteral("camera.axisproj.assets/frame_1_camera_0.png"));
+    require(QFileInfo::exists(recipePath) && QFileInfo::exists(assetPath),
+        "camera recipe and packaged asset required");
+    GraphicalProgramEditor reopened;
+    reopened.setAttribute(Qt::WA_DontShowOnScreen);
+    require(reopened.loadRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("simulated camera recipe reopen failed: %1").arg(recipeError)));
+    auto* reopenedCanvas = reopened.findChild<GraphicalCanvas*>();
+    require(reopenedCanvas && reopenedCanvas->hasImage(), "packaged camera image must reopen");
+    auto* reopenedSourceBadge = reopened.findChild<QLabel*>(QStringLiteral("canvasSourceBadge"));
+    require(reopenedSourceBadge && !reopenedSourceBadge->isHidden()
+        && reopenedSourceBadge->text().contains(QStringLiteral("非实时")),
+        "reopened recipe image must be visibly identified as non-live");
+    require(reopened.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"))->value() == 27
+        && reopened.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->text() == QStringLiteral("AX-27")
+        && reopened.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->text() == QStringLiteral("轴类零件")
+        && reopened.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->text() == QStringLiteral("20")
+        && reopened.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->text() == QStringLiteral("离线配方测试"),
+        "recipe metadata must survive save and reopen");
+    const QStringList emptyRecipeIssues = reopened.validateRecipeForExport();
+    require(emptyRecipeIssues.contains(QStringLiteral("至少需要一条测量记录。")),
+        "preflight must reject a recipe without measurement records");
+    auto* measurementType = editor.findChild<QComboBox*>(QStringLiteral("measurementType"));
+    auto* lowerAxialOffset = editor.findChild<QSpinBox*>(QStringLiteral("lowerAxialOffsetPulse"));
+    auto* upperAxialOffset = editor.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"));
+    auto* reference1 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"));
+    auto* reference2 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"));
+    require(measurementType && lowerAxialOffset && upperAxialOffset && reference1 && reference2,
+        "roundout configuration UI missing");
+    measurementType->setCurrentText(QStringLiteral("跳动"));
+    lowerAxialOffset->setValue(111);
+    upperAxialOffset->setValue(222);
+    reference1->setText(QStringLiteral("基准A"));
+    reference2->setText(QStringLiteral("基准B"));
+    button(QStringLiteral("新增测量记录"))->click();
+    auto* recordTable = editor.findChild<QTableWidget*>();
+    require(recordTable && recordTable->rowCount() == 1, "roundout record required");
+    require(editor.saveRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("roundout recipe save failed: %1").arg(recipeError)));
+    GraphicalProgramEditor reopenedRoundout;
+    reopenedRoundout.setAttribute(Qt::WA_DontShowOnScreen);
+    require(reopenedRoundout.loadRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("roundout recipe reopen failed: %1").arg(recipeError)));
+    reopenedRoundout.show();
+    QTest::qWait(100);
+    auto* reopenedTable = reopenedRoundout.findChild<QTableWidget*>();
+    require(reopenedTable && reopenedTable->rowCount() == 1, "roundout record must reopen");
+    reopenedTable->setCurrentCell(0, 0);
+    auto* reopenedType = reopenedRoundout.findChild<QComboBox*>(QStringLiteral("measurementType"));
+    auto* reopenedLower = reopenedRoundout.findChild<QSpinBox*>(QStringLiteral("lowerAxialOffsetPulse"));
+    auto* reopenedUpper = reopenedRoundout.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"));
+    auto* reopenedReference1 = reopenedRoundout.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"));
+    auto* reopenedReference2 = reopenedRoundout.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"));
+    require(reopenedType && reopenedLower && reopenedUpper && reopenedReference1 && reopenedReference2
+        && reopenedType->currentText() == QStringLiteral("跳动")
+        && reopenedLower->value() == 111 && reopenedUpper->value() == 222
+        && reopenedReference1->text() == QStringLiteral("基准A")
+        && reopenedReference2->text() == QStringLiteral("基准B"),
+        "roundout offsets and references must survive save and reopen");
+    editor.hide();
+    std::cout << "PASS: simulated camera states, start/stop, cached last-frame load, recipe metadata/assets packaging, roundout configuration, preflight and reopen\n";
 }
 
 int main(int argc, char** argv)
@@ -163,6 +363,7 @@ int main(int argc, char** argv)
     try {
         testCornerGeometry();
         testDetectionRecords();
+        testCameraWorkflow();
         GraphicalProgramEditor editor;
         editor.setAttribute(Qt::WA_DontShowOnScreen);
         using Command = GraphicalProgramEditor::AxisCommand;
@@ -196,13 +397,16 @@ int main(int argc, char** argv)
         auto* negative = button(QStringLiteral("负向 −（按住）"));
         auto* stop = button(QStringLiteral("停止当前轴"));
         auto* emergency = button(QStringLiteral("全部轴急停"));
+        auto* selector = editor.findChild<QComboBox*>(QStringLiteral("axisSelector"));
+        require(selector && selector->currentData().toInt() == 2,
+            "axis selector must default to the first available axis");
         require(!positive->isEnabled() && !stop->isEnabled(), "offline controls must be disabled");
         QComboBox* previewMode = nullptr;
         for (auto* combo : editor.findChildren<QComboBox*>())
             if (combo->findText(QStringLiteral("绝对点位")) >= 0) previewMode = combo;
         require(previewMode && !previewMode->isEnabled(), "offline mode selector must be disabled after preview ends");
         require(starts == 0, "offline state must not issue motion");
-        require(editor.windowModality() == Qt::ApplicationModal, "editor must exclude competing windows");
+        require(editor.windowModality() == Qt::NonModal, "editor must allow returning to the main window");
         require(editor.grab().save("x64/graphical_axis_offline.png"), "offline screenshot failed");
         connected = true;
         QTest::qWait(250);
@@ -213,21 +417,22 @@ int main(int argc, char** argv)
         previewMode->setCurrentIndex(0);
         require(positive->isVisible() && !button(QStringLiteral("移动至目标位置"))->isVisible(), "Jog mode must restore Jog controls");
         require(positive->isEnabled() && emergency->isEnabled(), "ready controls must be enabled");
+        const int selectedAxis = selector->currentData().toInt();
         QTest::mousePress(positive, Qt::LeftButton);
         QTest::qWait(250);
-        require(starts == 1 && moving && lastAxis == 1, "Jog must address selected axis");
+        require(starts == 1 && moving && lastAxis == selectedAxis, "Jog must address selected axis");
         require(positive->isEnabled() && !negative->isEnabled(), "pressed Jog must retain release delivery");
         QTest::mouseRelease(positive, Qt::LeftButton);
         QTest::qWait(250);
-        require(!moving && stops > 0 && lastAxis == 1, "Jog release must stop initiating axis");
-        QComboBox* selector = nullptr;
+        require(!moving && stops > 0 && lastAxis == selectedAxis, "Jog release must stop initiating axis");
         QComboBox* mode = nullptr;
         for (auto* combo : editor.findChildren<QComboBox*>()) {
-            if (combo->count() == 5 && combo->itemData(4).toInt() == 7) selector = combo;
             if (combo->findText(QStringLiteral("绝对点位")) >= 0) mode = combo;
         }
-        require(selector && mode, "axis selectors missing");
-        selector->setCurrentIndex(4);
+        require(mode, "axis mode selector missing");
+        const int axis7Index = selector->findData(7);
+        require(axis7Index >= 0, "turntable axis missing");
+        selector->setCurrentIndex(axis7Index);
         QTest::mousePress(positive, Qt::LeftButton);
         QEvent deactivate(QEvent::WindowDeactivate);
         QApplication::sendEvent(&editor, &deactivate);

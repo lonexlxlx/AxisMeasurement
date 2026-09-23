@@ -6,6 +6,7 @@
 #include <QImage>
 #include <QSize>
 #include <QByteArray>
+#include <QStringList>
 #include <functional>
 #include <cmath>
 #include "graphical_corner_geometry.h"
@@ -90,6 +91,9 @@ public:
     using CameraReader = std::function<CameraSnapshot(int)>;
     using CameraCommander = std::function<CameraCommandResult(int, CameraCommand, int)>;
     void setCameraBackend(CameraReader reader, CameraCommander commander);
+    bool saveRecipeFile(const QString& filePath, QString& error);
+    bool loadRecipeFile(const QString& filePath, QString& error);
+    QStringList validateRecipeForExport() const;
     struct LightCurtainSnapshot {
         bool connected = false;
         bool available = false;
@@ -156,6 +160,7 @@ private:
     bool m_axisBackendAvailable = false;
     void openLocalImage();
     void addLocalFrame();
+    void removeCurrentFrame();
     bool activateFrame(int frameId, QString& error);
     void storeCurrentFrame();
     void refreshFrameSelector();
@@ -240,6 +245,10 @@ private:
         int holeUniformCount = 0;//孔径旧表单holeNumber：圆周均布个数，不是H0/H1拍照位置
         double holeCalibration = 0.00691842;//原软件测孔相机CalikKong，单位mm/px
         double lengthCalibration = 0.01218603;//原软件远心相机Calik，单位mm/px
+        int lowerAxialOffsetPulse = 0;//圆柱度/圆跳动：轴5中点向下侧偏移，单位pulse
+        int upperAxialOffsetPulse = 0;//圆柱度/圆跳动：轴5中点向上侧偏移，单位pulse
+        QString roundoutReference1;//圆跳动旧表单基准1
+        QString roundoutReference2;//圆跳动旧表单基准2
         QByteArray lengthTemplateModel;//单ROI长度形状模板的HALCON序列化数据
         double lengthTemplateReferenceRow = 0;
         double lengthTemplateReferenceColumn = 0;
@@ -265,6 +274,10 @@ private:
         int candidateSelectionAuditSecond = -1;
         QString cornerDiagnostic;
         DevicePosition devicePosition;
+        QPainterPath crossStartDetectedEdges;
+        QPainterPath crossStartFittedLine;
+        QPainterPath crossEndDetectedEdges;
+        QPainterPath crossEndFittedLine;
         void clearTrial(const QString& reason) {
             pixelRadius = -1;
             trialAngle = -1;
@@ -276,6 +289,8 @@ private:
             candidateSelectionAuditMode = QStringLiteral("none");
             candidateSelectionAuditFirst = -1; candidateSelectionAuditSecond = -1;
             cornerDiagnostic.clear();
+            crossStartDetectedEdges = QPainterPath(); crossStartFittedLine = QPainterPath();
+            crossEndDetectedEdges = QPainterPath(); crossEndFittedLine = QPainterPath();
         }
         QString trialStatus = QStringLiteral("未执行");//检测边缘+拟合结果（画回画布）
         QPainterPath detectedEdges;
@@ -293,6 +308,10 @@ private:
     QDoubleSpinBox* m_holeCalibration = nullptr;
     QDoubleSpinBox* m_lengthCalibration = nullptr;
     QComboBox* m_lengthMode = nullptr;
+    QSpinBox* m_lowerAxialOffset = nullptr;
+    QSpinBox* m_upperAxialOffset = nullptr;
+    QLineEdit* m_roundoutReference1 = nullptr;
+    QLineEdit* m_roundoutReference2 = nullptr;
     QPushButton* m_selectAngleRoi1 = nullptr;
     QPushButton* m_selectAngleRoi2 = nullptr;
     QLineEdit* m_featureNumber = nullptr;
@@ -301,6 +320,12 @@ private:
     QDoubleSpinBox* m_nominal = nullptr;
     QDoubleSpinBox* m_lowerDeviation = nullptr;
     QDoubleSpinBox* m_upperDeviation = nullptr;
+    QSpinBox* m_recipeProgramNumber = nullptr;
+    QLineEdit* m_recipePartNumber = nullptr;
+    QLineEdit* m_recipePartName = nullptr;
+    QLineEdit* m_recipeProcessNumber = nullptr;
+    QLineEdit* m_recipeNote = nullptr;
+    QLabel* m_recipeValidationResult = nullptr;
 
     GraphicalCanvas* m_canvas = nullptr;
     QListWidget* m_featureList = nullptr;
