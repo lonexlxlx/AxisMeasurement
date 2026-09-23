@@ -17,7 +17,7 @@ try {
     $env:PATH = "$QtRoot\bin;$env:PATH"
     # Native font rendering; WA_DontShowOnScreen keeps the test window invisible.
     $env:QT_QPA_PLATFORM = 'windows'
-    & "$MsvcRoot\bin\Hostx64\x64\cl.exe" /nologo /utf-8 /std:c++17 /EHsc /MD /DQT_WIDGETS_LIB /DQT_GUI_LIB /DQT_CORE_LIB /DQT_TESTLIB_LIB tests\graphical_axis_panel_test.cpp /Fox64\graphical_axis_panel_test.obj /Fex64\graphical_axis_panel_test.exe /link x64\Release\graphical_program_editor.obj x64\Release\graphical_canvas.obj x64\Release\moc_graphical_canvas.obj x64\Release\qrc_AxisMeasurement.obj Qt5Widgets.lib Qt5Gui.lib Qt5Core.lib Qt5Test.lib halconcpp.lib delayimp.lib /DELAYLOAD:halconcpp.dll
+    & "$MsvcRoot\bin\Hostx64\x64\cl.exe" /nologo /utf-8 /std:c++17 /EHsc /MD /DQT_WIDGETS_LIB /DQT_GUI_LIB /DQT_CORE_LIB /DQT_TESTLIB_LIB tests\graphical_axis_panel_test.cpp /Fox64\graphical_axis_panel_test.obj /Fex64\graphical_axis_panel_test.exe /link x64\Release\graphical_program_editor.obj x64\Release\graphical_canvas.obj x64\Release\sharedFun.obj x64\Release\moc_graphical_canvas.obj x64\Release\qrc_AxisMeasurement.obj Qt5Widgets.lib Qt5Gui.lib Qt5Core.lib Qt5Test.lib halconcpp.lib delayimp.lib /DELAYLOAD:halconcpp.dll
     if ($LASTEXITCODE -ne 0) { throw 'Test build failed' }
     & .\x64\graphical_axis_panel_test.exe
     if ($LASTEXITCODE -ne 0) { throw "Test failed: $LASTEXITCODE" }

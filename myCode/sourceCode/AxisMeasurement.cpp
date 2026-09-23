@@ -18,6 +18,30 @@
 // Temporary UI-only preview requested by the user. Restore false after feedback.
 namespace { constexpr bool kManualLayoutPreview = false; }
 
+namespace {
+QImage cameraFrameToQImage(const cv::Mat& frame)
+{
+	if (frame.empty()) return QImage();
+	if (frame.type() == CV_8UC1) {
+		return QImage(frame.data, frame.cols, frame.rows, static_cast<int>(frame.step),
+			QImage::Format_Grayscale8).copy();
+	}
+	if (frame.type() == CV_8UC3) {
+		cv::Mat rgb;
+		cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
+		return QImage(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step),
+			QImage::Format_RGB888).copy();
+	}
+	if (frame.type() == CV_8UC4) {
+		cv::Mat rgba;
+		cv::cvtColor(frame, rgba, cv::COLOR_BGRA2RGBA);
+		return QImage(rgba.data, rgba.cols, rgba.rows, static_cast<int>(rgba.step),
+			QImage::Format_RGBA8888).copy();
+	}
+	return QImage();
+}
+}
+
 /// <summary>
 /// 构造函数/析构函数
 /// </summary>
@@ -57,7 +81,84 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		attachGraphicalAxisBackend(editor, moveControlCardPtr, [this]() {
 			return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
 		});
-		connect(this, &QObject::destroyed, editor, [editor]() { editor->setAxisBackend({}, {}); });
+		editor->setCameraBackend(
+			[this](int camera) {
+				GraphicalProgramEditor::CameraSnapshot state;
+				if (camera < 0 || camera >= 3 || !cameraPtrList[camera]) {
+					state.message = QStringLiteral("相机编号无效");
+					return state;
+				}
+				cam_device* device = cameraPtrList[camera];
+				state.connected = device->isOpenCam && device->isOpenStream;
+				state.available = state.connected && !programRunFlag
+					&& !goHomeThread_Ptr->isRunning();
+				state.capturing = camCaptureFlag[camera];
+				state.hasFrame = !state.capturing && !device->capturedImg.empty();
+				state.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : device->exposeTime;
+				if (state.hasFrame) state.frameSize = QSize(device->capturedImg.cols, device->capturedImg.rows);
+				if (!state.connected) state.message = QStringLiteral("相机%1未连接").arg(camera);
+				else if (!state.available) state.message = QStringLiteral("相机%1当前不可操作").arg(camera);
+				else if (state.capturing) state.message = QStringLiteral("相机%1正在连续采集").arg(camera);
+				else state.message = QStringLiteral("相机%1已就绪").arg(camera);
+				return state;
+			},
+			[this](int camera, GraphicalProgramEditor::CameraCommand command, int exposure) {
+				GraphicalProgramEditor::CameraCommandResult result;
+				if (camera < 0 || camera >= 3 || !cameraPtrList[camera] || !m_camThread_ptrList[camera]) {
+					result.error = QStringLiteral("相机编号无效。");
+					return result;
+				}
+				cam_device* device = cameraPtrList[camera];
+				camThread* thread = m_camThread_ptrList[camera];
+				if (!device->isOpenCam || !device->isOpenStream) {
+					result.error = QStringLiteral("相机%1未连接；请先在主窗口打开设备。").arg(camera);
+					return result;
+				}
+				if (programRunFlag || goHomeThread_Ptr->isRunning()) {
+					result.error = QStringLiteral("自动测量或回零正在运行。");
+					return result;
+				}
+				if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
+					for (int index = 0; index < 3; ++index) {
+						if (camCaptureFlag[index]) {
+							result.error = QStringLiteral("相机%1正在采集；请先停止。").arg(index);
+							return result;
+						}
+					}
+					if (thread->isRunning()) {
+						result.error = QStringLiteral("相机%1显示线程尚未停止，请稍后重试。").arg(camera);
+						return result;
+					}
+					device->setExposeTime(exposure);
+					device->m_captureMode = QStringLiteral("continuous");
+					device->startCapture();
+					thread->start();
+					camCaptureFlag[camera] = true;
+					return result;
+				}
+				if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
+					if (camCaptureFlag[camera]) device->stopCapture();
+					thread->requestInterruption();
+					if (thread->isRunning() && !thread->wait(1500)) {
+						result.error = QStringLiteral("相机%1显示线程未能及时停止。").arg(camera);
+						return result;
+					}
+					camCaptureFlag[camera] = false;
+					return result;
+				}
+				if (camCaptureFlag[camera]) {
+					result.error = QStringLiteral("请先停止相机%1采集。").arg(camera);
+					return result;
+				}
+				result.image = cameraFrameToQImage(device->capturedImg);
+				result.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : exposure;
+				if (result.image.isNull()) result.error = QStringLiteral("相机%1没有可用的最后一帧。").arg(camera);
+				return result;
+			});
+		connect(this, &QObject::destroyed, editor, [editor]() {
+			editor->setAxisBackend({}, {});
+			editor->setCameraBackend({}, {});
+		});
 	});
 	//m_sdk_assist->show();
 	connect(m_sdk_assist, SIGNAL(diameterPostionRecord()), this, SLOT(diameterPostionRecordExecute()));
@@ -79,6 +180,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	currentAxisNumber = 1;
 	currentAxisIndex = 0;
 	programRunFlag = false;
+	allDeviceOpenFlag = false;
 	DbOpenFlag = false;
 	m_measurePartsNum_all = 0;//检测的所有零件总数
 	m_okPartsNum_all = 0;//检测的所有零件良品数
@@ -1118,6 +1220,7 @@ float  AxisMeasurement::axis1And2_caculation(long int encodePos)
 
 void AxisMeasurement::on_openAllDevice_clicked()
 {
+	allDeviceOpenFlag = false;
 	showDeviceInf("正在打开设备，请勿进行其他操作！");
 	
 
@@ -1291,6 +1394,7 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 		showDeviceInf("设备未全部关闭，请检查设备连接！");
 	};
 	updateDeviceStatus(false); //P1-8 状态栏设备灯变红
+	allDeviceOpenFlag = false;
 	ui.openAllDevice->setEnabled(true);
 	// 保持运动控制卡片和六个按钮可见、可点击；设备未就绪时由 motionControlReady() 拦截硬件动作。
 	ui.autoMoveAdjust->setEnabled(true);

@@ -875,6 +875,14 @@ void GraphicalCanvas::deleteFeatureById(int featureId)
     emit featuresChanged();
 }
 
+bool GraphicalCanvas::hasSelectedFeatures() const
+{
+    for (QGraphicsItem* item : m_scene->selectedItems())
+        if (item != m_imageItem && item->data(0).toInt() > 0)
+            return true;
+    return false;
+}
+
 void GraphicalCanvas::deleteSelectedFeatures()
 {
     const QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();

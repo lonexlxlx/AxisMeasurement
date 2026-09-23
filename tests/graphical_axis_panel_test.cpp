@@ -13,6 +13,7 @@
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QLabel>
+#include <QTemporaryDir>
 #include <limits>
 #include <iostream>
 #include <stdexcept>
@@ -90,11 +91,16 @@ static void testDetectionRecords()
     auto* table = editor.findChild<QTableWidget*>();
     auto* diagnostic = editor.findChild<QLabel*>(QStringLiteral("detectionDiagnostic"));
     require(type && feature && minimum && low && table && diagnostic, "detection UI missing");
+    auto enterFeatureNumber = [&](const QString& value) {
+        feature->setFocus();
+        feature->selectAll();
+        QTest::keyClicks(feature, value);
+    };
     type->setCurrentText(QStringLiteral("圆弧半径"));
-    feature->setText(QStringLiteral("F1"));
+    enterFeatureNumber(QStringLiteral("F1"));
     minimum->setValue(7);
     button(QStringLiteral("新增测量记录"))->click();
-    feature->setText(QStringLiteral("F2"));
+    enterFeatureNumber(QStringLiteral("F2"));
     minimum->setValue(13);
     button(QStringLiteral("新增测量记录"))->click();
     require(table->rowCount() == 2, "two measurement records required");
@@ -111,7 +117,7 @@ static void testDetectionRecords()
     table->setCurrentCell(1, 0);
     table->setCurrentCell(0, 0);
     require(low->value() == 20, "invalid parameter must not replace committed value");
-    feature->setText(QStringLiteral("UNSUBMITTED"));
+    enterFeatureNumber(QStringLiteral("UNSUBMITTED"));
     minimum->setValue(8);
     button(QStringLiteral("应用检测参数"))->click();
     require(table->item(0, 1)->text() == QStringLiteral("F1"), "parameter-only apply must preserve feature number");
@@ -131,7 +137,7 @@ static void testDetectionRecords()
     require(inputMode && candidate && gap, "single ROI UI missing");
     type->setCurrentText(QStringLiteral("角度"));
     inputMode->setCurrentIndex(1);
-    feature->setText(QStringLiteral("CORNER"));
+    enterFeatureNumber(QStringLiteral("CORNER"));
     gap->setValue(3);
     button(QStringLiteral("新增测量记录"))->click();
     require(table->item(2, 3)->text().startsWith(QStringLiteral("单ROI:")), "single ROI association required");
@@ -155,6 +161,100 @@ static void testDetectionRecords()
     std::cout << "PASS: detection defaults, invalid thresholds/ranges/nonfinite input, record isolation, draft discard, parameter-only apply, invalidation state, reset semantics\n";
 }
 
+static void testCameraWorkflow()
+{
+    GraphicalProgramEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    bool connected = false;
+    bool capturing = false;
+    bool hasFrame = false;
+    int starts = 0;
+    int stops = 0;
+    int snapshots = 0;
+    using CameraCommand = GraphicalProgramEditor::CameraCommand;
+    editor.setCameraBackend([&](int camera) {
+        GraphicalProgramEditor::CameraSnapshot state;
+        state.connected = connected;
+        state.available = connected;
+        state.capturing = capturing;
+        state.hasFrame = hasFrame;
+        state.exposure = 500;
+        state.frameSize = hasFrame ? QSize(64, 48) : QSize();
+        state.message = connected
+            ? QStringLiteral("模拟相机%1已连接").arg(camera)
+            : QStringLiteral("模拟相机%1未连接").arg(camera);
+        return state;
+    }, [&](int, CameraCommand command, int exposure) {
+        GraphicalProgramEditor::CameraCommandResult result;
+        if (!connected) {
+            result.error = QStringLiteral("模拟相机未连接");
+            return result;
+        }
+        if (command == CameraCommand::StartCapture) {
+            ++starts;
+            capturing = true;
+            hasFrame = false;
+        }
+        else if (command == CameraCommand::StopCapture) {
+            ++stops;
+            capturing = false;
+            hasFrame = true;
+        }
+        else {
+            ++snapshots;
+            result.image = QImage(64, 48, QImage::Format_RGB32);
+            result.image.fill(QColor(40, 120, 200));
+            result.exposure = exposure;
+        }
+        return result;
+    });
+    editor.show();
+    QTest::qWait(250);
+    auto button = [&](const QString& name) {
+        for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
+        throw std::runtime_error("camera button missing");
+    };
+    auto* start = button(QStringLiteral("开始连续采集"));
+    auto* stop = button(QStringLiteral("停止采集"));
+    auto* load = button(QStringLiteral("载入最后一帧"));
+    require(!start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
+        "disconnected camera controls must be disabled");
+
+    connected = true;
+    QTest::qWait(250);
+    require(start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
+        "connected camera must allow capture start only");
+    QTest::mouseClick(start, Qt::LeftButton);
+    QTest::qWait(250);
+    require(starts == 1 && capturing && stop->isEnabled(), "camera start command missing");
+    QTest::mouseClick(stop, Qt::LeftButton);
+    QTest::qWait(250);
+    require(stops == 1 && !capturing && load->isEnabled(), "last frame must become available after stop");
+    QTest::mouseClick(load, Qt::LeftButton);
+    QTest::qWait(250);
+    auto* canvas = editor.findChild<GraphicalCanvas*>();
+    require(snapshots == 1 && canvas && canvas->hasImage(),
+        "snapshot must be cached and loaded without a save dialog");
+    QTemporaryDir recipeDirectory;
+    require(recipeDirectory.isValid(), "temporary recipe directory missing");
+    const QString recipePath = recipeDirectory.filePath(QStringLiteral("camera.axisproj.json"));
+    QString recipeError;
+    require(editor.saveRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("simulated camera recipe save failed: %1").arg(recipeError)));
+    const QString assetPath = recipeDirectory.filePath(
+        QStringLiteral("camera.axisproj.assets/frame_1_camera_0.png"));
+    require(QFileInfo::exists(recipePath) && QFileInfo::exists(assetPath),
+        "camera recipe and packaged asset required");
+    GraphicalProgramEditor reopened;
+    reopened.setAttribute(Qt::WA_DontShowOnScreen);
+    require(reopened.loadRecipeFile(recipePath, recipeError),
+        qPrintable(QStringLiteral("simulated camera recipe reopen failed: %1").arg(recipeError)));
+    auto* reopenedCanvas = reopened.findChild<GraphicalCanvas*>();
+    require(reopenedCanvas && reopenedCanvas->hasImage(), "packaged camera image must reopen");
+    editor.hide();
+    std::cout << "PASS: simulated camera states, start/stop, cached last-frame load, recipe asset packaging and reopen\n";
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -163,6 +263,7 @@ int main(int argc, char** argv)
     try {
         testCornerGeometry();
         testDetectionRecords();
+        testCameraWorkflow();
         GraphicalProgramEditor editor;
         editor.setAttribute(Qt::WA_DontShowOnScreen);
         using Command = GraphicalProgramEditor::AxisCommand;
@@ -202,7 +303,7 @@ int main(int argc, char** argv)
             if (combo->findText(QStringLiteral("绝对点位")) >= 0) previewMode = combo;
         require(previewMode && !previewMode->isEnabled(), "offline mode selector must be disabled after preview ends");
         require(starts == 0, "offline state must not issue motion");
-        require(editor.windowModality() == Qt::ApplicationModal, "editor must exclude competing windows");
+        require(editor.windowModality() == Qt::NonModal, "editor must allow returning to the main window");
         require(editor.grab().save("x64/graphical_axis_offline.png"), "offline screenshot failed");
         connected = true;
         QTest::qWait(250);

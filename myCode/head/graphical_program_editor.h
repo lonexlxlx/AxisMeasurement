@@ -90,6 +90,8 @@ public:
     using CameraReader = std::function<CameraSnapshot(int)>;
     using CameraCommander = std::function<CameraCommandResult(int, CameraCommand, int)>;
     void setCameraBackend(CameraReader reader, CameraCommander commander);
+    bool saveRecipeFile(const QString& filePath, QString& error);
+    bool loadRecipeFile(const QString& filePath, QString& error);
     struct LightCurtainSnapshot {
         bool connected = false;
         bool available = false;
@@ -156,6 +158,7 @@ private:
     bool m_axisBackendAvailable = false;
     void openLocalImage();
     void addLocalFrame();
+    void removeCurrentFrame();
     bool activateFrame(int frameId, QString& error);
     void storeCurrentFrame();
     void refreshFrameSelector();
@@ -265,6 +268,10 @@ private:
         int candidateSelectionAuditSecond = -1;
         QString cornerDiagnostic;
         DevicePosition devicePosition;
+        QPainterPath crossStartDetectedEdges;
+        QPainterPath crossStartFittedLine;
+        QPainterPath crossEndDetectedEdges;
+        QPainterPath crossEndFittedLine;
         void clearTrial(const QString& reason) {
             pixelRadius = -1;
             trialAngle = -1;
@@ -276,6 +283,8 @@ private:
             candidateSelectionAuditMode = QStringLiteral("none");
             candidateSelectionAuditFirst = -1; candidateSelectionAuditSecond = -1;
             cornerDiagnostic.clear();
+            crossStartDetectedEdges = QPainterPath(); crossStartFittedLine = QPainterPath();
+            crossEndDetectedEdges = QPainterPath(); crossEndFittedLine = QPainterPath();
         }
         QString trialStatus = QStringLiteral("未执行");//检测边缘+拟合结果（画回画布）
         QPainterPath detectedEdges;
