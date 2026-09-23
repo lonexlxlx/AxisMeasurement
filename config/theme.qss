@@ -174,6 +174,25 @@ QSplitter::handle:horizontal { width: 4px; }
 QSplitter::handle:vertical { height: 4px; }
 QSplitter::handle:hover { background: #93C5FD; }
 QSplitter::handle:pressed { background: #2563EB; }
+QWidget#graphicalProgramEditorPage {
+    background: #F3F4F6;
+}
+QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard {
+    background: #FFFFFF;
+    border: 1px solid #E3E8EF;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 8px 6px 6px 6px;
+}
+QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+    color: #2563EB;
+    background: #FFFFFF;
+}
+
 
 /* ---------- 工具栏与工具按钮（图形化编辑器） ---------- */
 QToolBar {
@@ -1171,6 +1190,163 @@ QMainWindow#AxisMeasurementClass QWidget#autoMoveAdjust QLabel[textRole="section
     font-size: 14pt;
     font-weight: 600;
 }
+
+/* ---------- 左侧手动轴控制：参数、轴状态与相机控制统一分层 ----------
+   仅通过现有 objectName 和动态属性调整外观，不改变任何动作或槽函数。 */
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI {
+    background: #F5F7FA;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox {
+    color: #334155;
+    background: #FFFFFF;
+    border: 1px solid #E3E8EF;
+    border-radius: 8px;
+    margin-top: 0;
+    padding: 12px;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox::title {
+    color: #334155;
+    background: transparent;
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 6px;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel {
+    color: #64748B;
+    background: transparent;
+    font-size: 9pt;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLineEdit,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QComboBox {
+    min-height: 26px;
+    padding: 3px 8px;
+    color: #1F2937;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 5px;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLineEdit:hover,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QComboBox:hover {
+    border-color: #93B4E8;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLineEdit:focus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QComboBox:focus {
+    border-color: #2563EB;
+    background: #F8FBFF;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QComboBox {
+    min-height: 30px;
+    padding-right: 28px;
+    font-weight: 600;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QPushButton {
+    min-height: 30px;
+    padding: 4px 10px;
+    color: #334155;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 5px;
+    font-weight: 600;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QPushButton:hover {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #93B4E8;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QPushButton:pressed {
+    color: #1E40AF;
+    background: #DBEAFE;
+    border-color: #2563EB;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QPushButton:disabled {
+    color: #A7AFBA;
+    background: #F1F3F5;
+    border-color: #E3E8EF;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#jogMode,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#trapMode {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #93B4E8;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#moveEnable,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#trapControl QPushButton#startTrap {
+    color: #FFFFFF;
+    background: #2563EB;
+    border-color: #2563EB;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#moveEnable:hover,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#trapControl QPushButton#startTrap:hover {
+    background: #1D4ED8;
+    border-color: #1D4ED8;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#urgentStop {
+    color: #FFFFFF;
+    background: #DC2626;
+    border-color: #DC2626;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#urgentStop:hover {
+    background: #B91C1C;
+    border-color: #B91C1C;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QPushButton#urgentStop:pressed {
+    background: #991B1B;
+    border-color: #991B1B;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisControl QComboBox#axisNumber {
+    min-height: 32px;
+    border-color: #93B4E8;
+    background: #F8FBFF;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel {
+    color: #64748B;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#actualPosion_mm,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#planPosion,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#actualSpeed,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#planSpeed,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#actualAcceleratedSpeed,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#planAcceleratedSpeed,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#axisMonitor QLabel#moveMode {
+    min-height: 24px;
+    padding: 3px 8px;
+    color: #1F2937;
+    background: #F8FAFC;
+    border: 1px solid #E3E8EF;
+    border-radius: 4px;
+    font-family: "Consolas", "Microsoft YaHei UI", sans-serif;
+    font-weight: 600;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#axisEnableStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#backwardLimitStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#driveAlarmStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#forwardLimitStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#ioUrgentStopStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#moveErrorStatus,
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QLabel#moveStatus {
+    min-width: 14px;
+    min-height: 14px;
+    max-width: 14px;
+    max-height: 14px;
+    border: 1px solid #CBD5E1;
+    border-radius: 7px;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#cameraControl QPushButton#startCamCapture {
+    color: #FFFFFF;
+    background: #2563EB;
+    border-color: #2563EB;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#cameraControl QPushButton#startCamCapture:hover {
+    background: #1D4ED8;
+}
+QMainWindow#AxisMeasurementClass QWidget#ManualControlUI QGroupBox#cameraControl QPushButton#stopCamCapture {
+    color: #B91C1C;
+    background: #FEF2F2;
+    border-color: #FCA5A5;
+}
 QMainWindow#AxisMeasurementClass QWidget#autoMoveAdjust QPushButton[controlRole="motion"] {
     min-height: 22px;
     max-height: 26px;
@@ -1374,4 +1550,360 @@ QMainWindow#AxisMeasurementClass QGroupBox#topDeviceBarCard QPushButton[buttonRo
     color: #A7AFBA;
     background: #F1F3F5;
     border-color: #E3E8EF;
+}
+
+/* ============================================================
+   图形化二次开发编辑器：统一视觉规范
+   仅作用于 objectName，不改变工具按钮行为、信号槽或测量逻辑
+   ============================================================ */
+QMainWindow#graphicalProgramEditor {
+    background: #F3F4F6;
+    color: #1F2937;
+}
+QMainWindow#graphicalProgramEditor QToolBar {
+    background: #FFFFFF;
+    border: none;
+    border-bottom: 1px solid #E5E7EB;
+    spacing: 3px;
+    padding: 3px;
+}
+QMainWindow#graphicalProgramEditor QToolBar::separator {
+    background: #E5E7EB;
+    width: 1px;
+    margin: 4px 6px;
+}
+QMainWindow#graphicalProgramEditor QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: #334155;
+}
+QMainWindow#graphicalProgramEditor QToolButton:hover {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #BFDBFE;
+}
+QMainWindow#graphicalProgramEditor QToolButton:pressed,
+QMainWindow#graphicalProgramEditor QToolButton:checked {
+    color: #1D4ED8;
+    background: #DBEAFE;
+    border-color: #93B4E8;
+}
+QMainWindow#graphicalProgramEditor QToolButton:disabled {
+    color: #A7AFBA;
+    background: #F8FAFC;
+    border-color: transparent;
+}
+QPushButton#graphicalAxisStopButton,
+QPushButton#graphicalAxisEmergencyButton {
+    min-height: 28px;
+    border-radius: 5px;
+    padding: 4px 12px;
+    font-weight: 700;
+}
+QPushButton#graphicalAxisStopButton {
+    color: #475569;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+}
+QPushButton#graphicalAxisStopButton:hover {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #93B4E8;
+}
+QPushButton#graphicalAxisEmergencyButton {
+    color: #FFFFFF;
+    background: #DC2626;
+    border: 1px solid #DC2626;
+}
+QPushButton#graphicalAxisEmergencyButton:hover {
+    background: #B91C1C;
+    border-color: #B91C1C;
+}
+QPushButton#graphicalAxisEmergencyButton:pressed {
+    background: #991B1B;
+    border-color: #991B1B;
+}
+QPushButton#graphicalAxisStopButton:disabled,
+QPushButton#graphicalAxisEmergencyButton:disabled {
+    color: #A7AFBA;
+    background: #F1F3F5;
+    border-color: #E3E8EF;
+}
+QMainWindow#graphicalProgramEditor QSplitter::handle {
+    background: #E5E7EB;
+}
+QMainWindow#graphicalProgramEditor QSplitter::handle:hover {
+    background: #93B4E8;
+}
+QMainWindow#graphicalProgramEditor QGraphicsView {
+    background: #202938;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+}
+QLabel#canvasEmptyHint {
+    color: #CBD5E1;
+    background: transparent;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+QMainWindow#graphicalProgramEditor QStatusBar {
+    background: #FFFFFF;
+    border-top: 1px solid #DCE3EC;
+    color: #64748B;
+}
+
+/* ---------- 右侧属性面板：选项卡、表单与记录状态 ----------
+   仅作用于右侧属性控件的视觉呈现，不影响编辑和记录操作。 */
+QMainWindow#graphicalProgramEditor QTabWidget {
+    background: #F5F7FA;
+}
+QMainWindow#graphicalProgramEditor QTabWidget::pane {
+    background: #FFFFFF;
+    border: 1px solid #DCE3EC;
+    border-radius: 6px;
+    top: -1px;
+}
+QMainWindow#graphicalProgramEditor QTabBar::tab {
+    min-height: 28px;
+    padding: 5px 10px;
+    color: #64748B;
+    background: #F1F4F8;
+    border: 1px solid #E3E8EF;
+    border-bottom: none;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+QMainWindow#graphicalProgramEditor QTabBar::tab:selected {
+    color: #1D4ED8;
+    background: #FFFFFF;
+    border-color: #DCE3EC;
+    border-bottom: 2px solid #2563EB;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QTabBar::tab:hover:!selected {
+    color: #334155;
+    background: #E8F1FF;
+}
+QMainWindow#graphicalProgramEditor QScrollArea {
+    background: #FFFFFF;
+    border: none;
+}
+QMainWindow#graphicalProgramEditor QScrollArea QWidget#qt_scrollarea_viewport {
+    background: #FFFFFF;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QWidget {
+    color: #334155;
+    font-size: 9pt;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QFormLayout QLabel,
+QMainWindow#graphicalProgramEditor QTabWidget QFormLayout QWidget {
+    color: #64748B;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLineEdit,
+QMainWindow#graphicalProgramEditor QTabWidget QComboBox,
+QMainWindow#graphicalProgramEditor QTabWidget QSpinBox,
+QMainWindow#graphicalProgramEditor QTabWidget QDoubleSpinBox {
+    min-height: 25px;
+    padding: 3px 7px;
+    color: #1F2937;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    selection-background-color: #DBEAFE;
+    selection-color: #1F2937;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLineEdit:hover,
+QMainWindow#graphicalProgramEditor QTabWidget QComboBox:hover,
+QMainWindow#graphicalProgramEditor QTabWidget QSpinBox:hover,
+QMainWindow#graphicalProgramEditor QTabWidget QDoubleSpinBox:hover {
+    border-color: #93B4E8;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLineEdit:focus,
+QMainWindow#graphicalProgramEditor QTabWidget QComboBox:focus,
+QMainWindow#graphicalProgramEditor QTabWidget QSpinBox:focus,
+QMainWindow#graphicalProgramEditor QTabWidget QDoubleSpinBox:focus {
+    background: #F8FBFF;
+    border-color: #2563EB;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLineEdit:disabled,
+QMainWindow#graphicalProgramEditor QTabWidget QComboBox:disabled,
+QMainWindow#graphicalProgramEditor QTabWidget QSpinBox:disabled,
+QMainWindow#graphicalProgramEditor QTabWidget QDoubleSpinBox:disabled {
+    color: #A7AFBA;
+    background: #F1F3F5;
+    border-color: #E3E8EF;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QCheckBox {
+    color: #475569;
+    spacing: 6px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QPushButton {
+    min-height: 27px;
+    padding: 4px 9px;
+    color: #334155;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QPushButton:hover {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #93B4E8;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QPushButton:pressed {
+    color: #1E40AF;
+    background: #DBEAFE;
+    border-color: #2563EB;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QPushButton:disabled {
+    color: #A7AFBA;
+    background: #F1F3F5;
+    border-color: #E3E8EF;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QTableWidget {
+    color: #334155;
+    background: #FFFFFF;
+    alternate-background-color: #F8FAFC;
+    border: 1px solid #DCE3EC;
+    border-radius: 4px;
+    gridline-color: #E8EDF3;
+    selection-background-color: #E8F1FF;
+    selection-color: #1F2937;
+    outline: none;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QTableWidget::item {
+    padding: 4px 6px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QHeaderView::section {
+    color: #475569;
+    background: #F1F4F8;
+    border: none;
+    border-right: 1px solid #E3E8EF;
+    border-bottom: 1px solid #DCE3EC;
+    padding: 5px 7px;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLabel {
+    background: transparent;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QLabel#measurementHint,
+QMainWindow#graphicalProgramEditor QTabWidget QLabel#devicePositionState,
+QMainWindow#graphicalProgramEditor QTabWidget QLabel#devicePositionHint {
+    color: #64748B;
+    background: #F8FAFC;
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    padding: 6px 8px;
+}
+
+/* ---------- 底部测量流程表格 ----------
+   仅通过“测量流程”分组标题限定范围，不修改表格数据、选中逻辑或信号连接。 */
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] {
+    color: #2563EB;
+    background: #FFFFFF;
+    border: 1px solid #D9E1EC;
+    border-radius: 7px;
+    margin-top: 8px;
+    padding: 10px 8px 8px 8px;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"]::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #2563EB;
+    background: #FFFFFF;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget {
+    color: #334155;
+    background: #FFFFFF;
+    alternate-background-color: #F8FAFC;
+    border: 1px solid #D9E1EC;
+    border-radius: 5px;
+    gridline-color: #E8EDF3;
+    selection-background-color: #DBEAFE;
+    selection-color: #1E3A8A;
+    outline: none;
+    show-decoration-selected: 1;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget::item {
+    min-height: 26px;
+    padding: 4px 7px;
+    border: none;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget::item:hover {
+    color: #1D4ED8;
+    background: #EFF6FF;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget::item:selected,
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget::item:selected:active,
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget::item:selected:!active {
+    color: #1E3A8A;
+    background: #DBEAFE;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QHeaderView {
+    background: #F8FAFC;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QHeaderView::section {
+    min-height: 28px;
+    color: #334155;
+    background: #EFF6FF;
+    border: none;
+    border-right: 1px solid #D9E1EC;
+    border-bottom: 1px solid #BFDBFE;
+    padding: 5px 7px;
+    font-size: 9pt;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QHeaderView::section:hover {
+    color: #1D4ED8;
+    background: #DBEAFE;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableCornerButton::section {
+    background: #EFF6FF;
+    border: none;
+    border-right: 1px solid #D9E1EC;
+    border-bottom: 1px solid #BFDBFE;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar:vertical {
+    width: 9px;
+    margin: 2px;
+    background: transparent;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::handle:vertical {
+    min-height: 28px;
+    background: #CBD5E1;
+    border-radius: 4px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar:horizontal {
+    height: 9px;
+    margin: 2px;
+    background: transparent;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::handle:horizontal {
+    min-width: 28px;
+    background: #CBD5E1;
+    border-radius: 4px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::handle:horizontal:hover {
+    background: #94A3B8;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::add-line,
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::sub-line {
+    width: 0;
+    height: 0;
+    background: transparent;
+    border: none;
+}
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::add-page,
+QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QScrollBar::sub-page {
+    background: transparent;
 }
