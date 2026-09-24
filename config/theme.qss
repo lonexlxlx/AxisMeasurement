@@ -181,16 +181,19 @@ QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard {
     background: #FFFFFF;
     border: 1px solid #E3E8EF;
     border-radius: 8px;
-    margin-top: 12px;
-    padding: 8px 6px 6px 6px;
+    margin-top: 0px;
+    padding: 28px 6px 6px 6px;
 }
 QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 10px;
-    padding: 0 4px;
+    subcontrol-origin: padding;
+    subcontrol-position: top center;
+    left: 0px;
+    top: 4px;
+    padding: 0 6px;
     color: #2563EB;
-    background: #FFFFFF;
+    background: transparent;
+    font-size: 10pt;
+    font-weight: 600;
 }
 
 
@@ -1666,8 +1669,24 @@ QMainWindow#graphicalProgramEditor QTabWidget {
 QMainWindow#graphicalProgramEditor QTabWidget::pane {
     background: #FFFFFF;
     border: 1px solid #DCE3EC;
-    border-radius: 6px;
+    border-radius: 8px;
     top: -1px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget > QScrollArea {
+    background: #FFFFFF;
+    border: 1px solid #DCE3EC;
+    border-radius: 7px;
+    margin: 6px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget > QScrollArea > QWidget#qt_scrollarea_viewport {
+    background: #FFFFFF;
+    border: none;
+    border-radius: 7px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QWidget {
+    color: #334155;
+    background: #FFFFFF;
+    font-size: 9pt;
 }
 QMainWindow#graphicalProgramEditor QTabBar::tab {
     min-height: 28px;
@@ -1690,15 +1709,23 @@ QMainWindow#graphicalProgramEditor QTabBar::tab:hover:!selected {
     color: #334155;
     background: #E8F1FF;
 }
-QMainWindow#graphicalProgramEditor QScrollArea {
+QMainWindow#graphicalProgramEditor QTabWidget QScrollArea {
+    background: #FFFFFF;
+    border: 1px solid #DCE3EC;
+    border-radius: 7px;
+    margin: 6px;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QScrollArea QWidget {
+    background: #FFFFFF;
+}
+QMainWindow#graphicalProgramEditor QTabWidget QScrollArea QWidget#qt_scrollarea_viewport {
     background: #FFFFFF;
     border: none;
-}
-QMainWindow#graphicalProgramEditor QScrollArea QWidget#qt_scrollarea_viewport {
-    background: #FFFFFF;
+    border-radius: 7px;
 }
 QMainWindow#graphicalProgramEditor QTabWidget QWidget {
     color: #334155;
+    background: #FFFFFF;
     font-size: 9pt;
 }
 QMainWindow#graphicalProgramEditor QTabWidget QFormLayout QLabel,
@@ -1803,6 +1830,59 @@ QMainWindow#graphicalProgramEditor QTabWidget QLabel#devicePositionHint {
     padding: 6px 8px;
 }
 
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraSelectorLabel,
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraExposureLabel {
+    min-width: 42px;
+    color: #475569;
+    background: transparent;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState {
+    color: #64748B;
+    background: #F8FAFC;
+    border: 1px solid #E5E7EB;
+    border-radius: 5px;
+    padding: 6px 8px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup {
+    padding-top: 22px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState {
+    margin-top: 1px;
+    margin-bottom: 1px;
+    padding: 4px 8px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QComboBox#cameraSelector,
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QSpinBox {
+    min-height: 24px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QPushButton {
+    min-height: 28px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel {
+    line-height: 1.1em;
+}
+QMainWindow#graphicalProgramEditor QGroupBox {
+    color: #2563EB;
+    margin-top: 0px;
+    padding-top: 28px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox::title {
+    subcontrol-origin: padding;
+    subcontrol-position: top center;
+    left: 0px;
+    top: 4px;
+    padding: 0 8px;
+    color: #2563EB;
+    background: transparent;
+    font-size: 10pt;
+    font-weight: 600;
+}
+
 /* ---------- 底部测量流程表格 ----------
    仅通过“测量流程”分组标题限定范围，不修改表格数据、选中逻辑或信号连接。 */
 QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] {
@@ -1810,17 +1890,19 @@ QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] {
     background: #FFFFFF;
     border: 1px solid #D9E1EC;
     border-radius: 7px;
-    margin-top: 8px;
-    padding: 10px 8px 8px 8px;
+    margin-top: 0px;
+    padding: 28px 8px 8px 8px;
     font-size: 10pt;
     font-weight: 600;
 }
 QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"]::title {
-    subcontrol-origin: margin;
-    left: 12px;
+    subcontrol-origin: padding;
+    subcontrol-position: top center;
+    left: 0px;
+    top: 4px;
     padding: 0 6px;
     color: #2563EB;
-    background: #FFFFFF;
+    background: transparent;
 }
 QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] QTableWidget {
     color: #334155;

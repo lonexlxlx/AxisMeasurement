@@ -1131,6 +1131,7 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
 #include <QSet>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QList>
@@ -1283,7 +1284,7 @@ void GraphicalProgramEditor::refreshCameraPanel()
     if (!m_cameraSelector || !isVisible()) return;
     const int camera = m_ownedCamera >= 0 ? m_ownedCamera : m_cameraSelector->currentData().toInt();
     CameraSnapshot snapshot;
-    snapshot.message = QStringLiteral("相机接口未连接");
+    snapshot.message = QStringLiteral("相机%1未连接").arg(camera);
     if (m_cameraReader) snapshot = m_cameraReader(camera);
     if (m_ownedCamera >= 0 && (!snapshot.connected || !snapshot.available || m_trialRunning)) {
         stopOwnedCamera();
@@ -2354,9 +2355,16 @@ void GraphicalProgramEditor::buildInterface()
     QWidget* positionPage = new QWidget(propertyTabs);//设备点位页
     QVBoxLayout* positionLayout = new QVBoxLayout(positionPage);
     QGroupBox* cameraGroup = new QGroupBox(QStringLiteral("相机采集"), positionPage);
+    cameraGroup->setObjectName(QStringLiteral("cameraGroup"));
     QVBoxLayout* cameraLayout = new QVBoxLayout(cameraGroup);
-    QFormLayout* cameraForm = new QFormLayout;
-    cameraForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    cameraLayout->setContentsMargins(10, 22, 10, 8);
+    cameraLayout->setSpacing(6);
+
+    QHBoxLayout* cameraSelectRow = new QHBoxLayout;
+    cameraSelectRow->setSpacing(6);
+    QLabel* cameraLabel = new QLabel(QStringLiteral("相机"), cameraGroup);
+    cameraLabel->setObjectName(QStringLiteral("cameraSelectorLabel"));
+    cameraSelectRow->addWidget(cameraLabel);
     m_cameraSelector = new QComboBox(cameraGroup);
 
 
@@ -2364,17 +2372,27 @@ void GraphicalProgramEditor::buildInterface()
     m_cameraSelector->setObjectName(QStringLiteral("cameraSelector"));
     m_cameraSelector->addItem(QStringLiteral("0 · 远心相机"), 0);
     m_cameraSelector->addItem(QStringLiteral("1 · 孔径相机"), 1);
-    cameraForm->addRow(QStringLiteral("相机"), m_cameraSelector);
+    cameraSelectRow->addWidget(m_cameraSelector, 1);
+    cameraLayout->addLayout(cameraSelectRow);
+
+    m_cameraState = new QLabel(QStringLiteral("相机接口未连接"), cameraGroup);
+    m_cameraState->setObjectName(QStringLiteral("cameraState"));
+    m_cameraState->setWordWrap(true);
+    cameraLayout->addWidget(m_cameraState);
+
+    QHBoxLayout* exposureRow = new QHBoxLayout;
+    exposureRow->setSpacing(6);
+    QLabel* exposureLabel = new QLabel(QStringLiteral("曝光"), cameraGroup);
+    exposureLabel->setObjectName(QStringLiteral("cameraExposureLabel"));
+    exposureRow->addWidget(exposureLabel);
     m_cameraExposure = new QSpinBox(cameraGroup);
     m_cameraExposure->setRange(0, 30000);
     m_cameraExposure->setValue(400);
     m_cameraExposure->setSuffix(QStringLiteral(" μs"));
     m_cameraExposure->setKeyboardTracking(false);
-    cameraForm->addRow(QStringLiteral("曝光"), m_cameraExposure);
-    cameraLayout->addLayout(cameraForm);
-    m_cameraState = new QLabel(QStringLiteral("相机接口未连接"), cameraGroup);
-    m_cameraState->setWordWrap(true);
-    cameraLayout->addWidget(m_cameraState);
+    exposureRow->addWidget(m_cameraExposure, 1);
+    cameraLayout->addLayout(exposureRow);
+
     m_cameraStart = new QPushButton(QStringLiteral("开始连续采集"), cameraGroup);
     m_cameraStop = new QPushButton(QStringLiteral("停止采集"), cameraGroup);
     m_cameraLoad = new QPushButton(QStringLiteral("载入最后一帧"), cameraGroup);
