@@ -1835,6 +1835,8 @@ void GraphicalProgramEditor::buildInterface()
     //图标资源已注册在 AxisMeasurement.qrc（:/AxisMeasurement/config/icons/）
     const struct { QAction* action; const char* icon; const char* key; const char* tip; } toolbarInfo[] = {
         { openImageAction, "open", nullptr, "打开本地图像（记录与图形将清空）" },
+        { openProjectAction, "open_project", nullptr, "打开配方" },
+        { saveProjectAction, "save_project", nullptr, "保存配方" },
         { cameraAction, "camera", nullptr, "打开设备点位页，从相机采集并载入图像" },
         { selectAction, "select", "V", "选择 (V)：选中/移动/调整图形" },
         { pointAction, "point", "P", "点 (P)：单击标注特征点" },
@@ -1937,7 +1939,7 @@ void GraphicalProgramEditor::buildInterface()
     emptyHint->setObjectName(QStringLiteral("canvasEmptyHint"));
     emptyHint->setAlignment(Qt::AlignCenter);
     emptyHint->setAttribute(Qt::WA_TransparentForMouseEvents);
-    emptyHint->setStyleSheet(QStringLiteral("color:#9CA3AF; font-size:14px; background:transparent;"));
+    emptyHint->setStyleSheet(QString());
     QLabel* sourceBadge = new QLabel(m_canvas);
     sourceBadge->setObjectName(QStringLiteral("canvasSourceBadge"));
     sourceBadge->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -1947,6 +1949,7 @@ void GraphicalProgramEditor::buildInterface()
     QGridLayout* hintLayout = new QGridLayout(m_canvas);
     hintLayout->addWidget(emptyHint, 0, 0, Qt::AlignCenter);
     hintLayout->addWidget(sourceBadge, 0, 0, Qt::AlignTop | Qt::AlignRight);
+
     //工具快捷键挂到画布上（WidgetWithChildrenShortcut 上下文需要 action 属于该 widget）
     m_canvas->addActions({ selectAction, pointAction, lineAction, rectangleAction, circleAction, arcAction, fitAction });
 
@@ -2355,6 +2358,10 @@ void GraphicalProgramEditor::buildInterface()
     QFormLayout* cameraForm = new QFormLayout;
     cameraForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
     m_cameraSelector = new QComboBox(cameraGroup);
+
+
+
+    m_cameraSelector->setObjectName(QStringLiteral("cameraSelector"));
     m_cameraSelector->addItem(QStringLiteral("0 · 远心相机"), 0);
     m_cameraSelector->addItem(QStringLiteral("1 · 孔径相机"), 1);
     cameraForm->addRow(QStringLiteral("相机"), m_cameraSelector);

@@ -5,6 +5,8 @@
         <file>config/icons/rotate_cw.png</file>
         <file>config/icons/rotate_cw_fast.png</file>
         <file>config/icons/open.png</file>
+        <file>config/icons/open_project.png</file>
+        <file>config/icons/save_project.png</file>
         <file>config/icons/camera.png</file>
         <file>config/icons/select.png</file>
         <file>config/icons/point.png</file>

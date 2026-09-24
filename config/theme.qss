@@ -1567,6 +1567,9 @@ QMainWindow#graphicalProgramEditor QToolBar {
     spacing: 3px;
     padding: 3px;
 }
+QMainWindow#graphicalProgramEditor QToolBar#graphicalProgramToolBar QToolButton {
+    icon-size: 20px;
+}
 QMainWindow#graphicalProgramEditor QToolBar::separator {
     background: #E5E7EB;
     width: 1px;
