@@ -30,6 +30,7 @@ class sdk_assist:public QMainWindow
 
 public:
     sdk_assist(QWidget *parent = nullptr);
+    void openGraphicalEditor();
     std::function<QString()> graphicalEntryError;
 	~sdk_assist();
 

@@ -4178,7 +4178,7 @@
     <addaction name="separator"/>
     <addaction name="ManualControl"/>
     <addaction name="separator"/>
-    <addaction name="sdkAssist"/>
+    <addaction name="graphicalProgramEditor"/>
    </widget>
    <addaction name="measureModeSelect"/>
   </widget>
@@ -4229,9 +4229,9 @@
     </font>
    </property>
   </action>
-  <action name="sdkAssist">
+  <action name="graphicalProgramEditor">
    <property name="text">
-    <string>二次开发辅助</string>
+    <string>图形化二次开发</string>
    </property>
    <property name="font">
     <font>

@@ -1290,10 +1290,15 @@ void GraphicalProgramEditor::refreshCameraPanel()
         stopOwnedCamera();
         return;
     }
-    m_cameraState->setText(snapshot.message + (snapshot.hasFrame
+    const QString stateText = snapshot.message + (snapshot.hasFrame
         ? QStringLiteral("\n最后一帧：%1 × %2，曝光 %3 μs")
             .arg(snapshot.frameSize.width()).arg(snapshot.frameSize.height()).arg(snapshot.exposure)
-        : QString()));
+        : QString());
+    m_cameraState->setText(stateText);
+    m_cameraState->setProperty("status", snapshot.connected && snapshot.available
+        ? (snapshot.capturing ? "warning" : "ok") : "error");
+    m_cameraState->style()->unpolish(m_cameraState);
+    m_cameraState->style()->polish(m_cameraState);
     if (!m_cameraExposureEdited && !snapshot.capturing && snapshot.exposure >= 0) {
         QSignalBlocker blocker(m_cameraExposure);
         m_cameraExposure->setValue(snapshot.exposure);
@@ -2352,16 +2357,16 @@ void GraphicalProgramEditor::buildInterface()
     const int detectionTab = propertyTabs->addTab(detectionScroll, QStringLiteral("检测参数"));
     propertyTabs->setTabToolTip(detectionTab, QStringLiteral("检测参数"));
 
-    QWidget* positionPage = new QWidget(propertyTabs);//设备点位页
-    QVBoxLayout* positionLayout = new QVBoxLayout(positionPage);
-    QGroupBox* cameraGroup = new QGroupBox(QStringLiteral("相机采集"), positionPage);
+    QWidget* positionPageContent = new QWidget;
+    QVBoxLayout* positionLayout = new QVBoxLayout(positionPageContent);
+    QGroupBox* cameraGroup = new QGroupBox(QStringLiteral("相机采集"), positionPageContent);
     cameraGroup->setObjectName(QStringLiteral("cameraGroup"));
     QVBoxLayout* cameraLayout = new QVBoxLayout(cameraGroup);
-    cameraLayout->setContentsMargins(10, 22, 10, 8);
-    cameraLayout->setSpacing(6);
+    cameraLayout->setContentsMargins(10, 16, 10, 8);
+    cameraLayout->setSpacing(7);
 
     QHBoxLayout* cameraSelectRow = new QHBoxLayout;
-    cameraSelectRow->setSpacing(6);
+    cameraSelectRow->setSpacing(5);
     QLabel* cameraLabel = new QLabel(QStringLiteral("相机"), cameraGroup);
     cameraLabel->setObjectName(QStringLiteral("cameraSelectorLabel"));
     cameraSelectRow->addWidget(cameraLabel);
@@ -2377,11 +2382,12 @@ void GraphicalProgramEditor::buildInterface()
 
     m_cameraState = new QLabel(QStringLiteral("相机接口未连接"), cameraGroup);
     m_cameraState->setObjectName(QStringLiteral("cameraState"));
+    m_cameraState->setProperty("status", "warning");
     m_cameraState->setWordWrap(true);
     cameraLayout->addWidget(m_cameraState);
 
     QHBoxLayout* exposureRow = new QHBoxLayout;
-    exposureRow->setSpacing(6);
+    exposureRow->setSpacing(5);
     QLabel* exposureLabel = new QLabel(QStringLiteral("曝光"), cameraGroup);
     exposureLabel->setObjectName(QStringLiteral("cameraExposureLabel"));
     exposureRow->addWidget(exposureLabel);
@@ -2405,7 +2411,7 @@ void GraphicalProgramEditor::buildInterface()
     cameraLayout->addWidget(cameraHint);
     positionLayout->addWidget(cameraGroup);
 
-    QGroupBox* lightCurtainGroup = new QGroupBox(QStringLiteral("光幕传感器"), positionPage);
+    QGroupBox* lightCurtainGroup = new QGroupBox(QStringLiteral("光幕传感器"), positionPageContent);
     QVBoxLayout* lightCurtainLayout = new QVBoxLayout(lightCurtainGroup);
     m_lightCurtainState = new QLabel(QStringLiteral("光幕接口未连接"), lightCurtainGroup);
     m_lightCurtainState->setWordWrap(true);
@@ -2417,7 +2423,7 @@ void GraphicalProgramEditor::buildInterface()
     lightCurtainLayout->addWidget(lightCurtainHint);
     positionLayout->addWidget(lightCurtainGroup);
 
-    QGroupBox* pointGroup = new QGroupBox(QStringLiteral("测量记录点位"), positionPage);
+    QGroupBox* pointGroup = new QGroupBox(QStringLiteral("测量记录点位"), positionPageContent);
     QVBoxLayout* pointLayout = new QVBoxLayout(pointGroup);
     m_devicePositionState = new QLabel(QStringLiteral("请先选择一条测量记录。"), pointGroup);
     m_devicePositionState->setWordWrap(true);
@@ -2433,7 +2439,11 @@ void GraphicalProgramEditor::buildInterface()
     pointLayout->addWidget(pointHint);
     positionLayout->addWidget(pointGroup);
     positionLayout->addStretch();
-    const int positionTab = propertyTabs->addTab(positionPage, QStringLiteral("设备点位"));
+    auto* positionScroll = new QScrollArea(propertyTabs);
+    positionScroll->setObjectName(QStringLiteral("devicePositionScroll"));
+    positionScroll->setWidgetResizable(true);
+    positionScroll->setWidget(positionPageContent);
+    const int positionTab = propertyTabs->addTab(positionScroll, QStringLiteral("设备点位"));
     propertyTabs->setTabToolTip(positionTab, QStringLiteral("设备点位"));
 
     QWidget* recipePage = new QWidget(propertyTabs);
@@ -2566,8 +2576,8 @@ void GraphicalProgramEditor::buildInterface()
                 refreshFrameSelector();
             }
         });
-    connect(cameraAction, &QAction::triggered, this, [propertyTabs, positionPage]() {
-        propertyTabs->setCurrentWidget(positionPage);
+    connect(cameraAction, &QAction::triggered, this, [propertyTabs, positionScroll]() {
+        propertyTabs->setCurrentWidget(positionScroll);
     });
     connect(openProjectAction, &QAction::triggered, this, &GraphicalProgramEditor::openProject);
     connect(saveProjectAction, &QAction::triggered, this, &GraphicalProgramEditor::saveProject);

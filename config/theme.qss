@@ -195,6 +195,47 @@ QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard::title {
     font-size: 10pt;
     font-weight: 600;
 }
+QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup {
+    background: #FFFFFF;
+    border: 1px solid #E3E8EF;
+    border-radius: 8px;
+    margin-top: 0px;
+    padding: 28px 10px 8px 10px;
+}
+QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup::title {
+    subcontrol-origin: padding;
+    subcontrol-position: top center;
+    left: 0px;
+    top: 4px;
+    padding: 0 6px;
+    color: #2563EB;
+    background: transparent;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QWidget#graphicalProgramEditorPage QLabel#cameraState {
+    background: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    color: #475569;
+    padding: 6px 8px;
+    min-height: 20px;
+}
+QWidget#graphicalProgramEditorPage QLabel#cameraState[status="ok"] {
+    background: #F0FDF4;
+    border-color: #86EFAC;
+    color: #166534;
+}
+QWidget#graphicalProgramEditorPage QLabel#cameraState[status="warning"] {
+    background: #FFFBEB;
+    border-color: #FCD34D;
+    color: #92400E;
+}
+QWidget#graphicalProgramEditorPage QLabel#cameraState[status="error"] {
+    background: #FEF2F2;
+    border-color: #FCA5A5;
+    color: #991B1B;
+}
 
 
 /* ---------- 工具栏与工具按钮（图形化编辑器） ---------- */
@@ -1844,13 +1885,43 @@ QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState {
     border-radius: 5px;
     padding: 6px 8px;
 }
+QMainWindow#graphicalProgramEditor QScrollArea#devicePositionScroll {
+    background: #FFFFFF;
+    border: 1px solid #DCE3EC;
+    border-radius: 7px;
+}
+QMainWindow#graphicalProgramEditor QScrollArea#devicePositionScroll QWidget#qt_scrollarea_viewport {
+    background: #FFFFFF;
+    border: none;
+}
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup {
-    padding-top: 22px;
+    min-height: 300px;
+    margin-bottom: 8px;
 }
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState {
-    margin-top: 1px;
-    margin-bottom: 1px;
-    padding: 4px 8px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 3px 8px;
+    min-height: 14px;
+    color: #475569;
+    background: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState[status="ok"] {
+    background: #F0FDF4;
+    border-color: #86EFAC;
+    color: #166534;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState[status="warning"] {
+    background: #FFFBEB;
+    border-color: #FCD34D;
+    color: #92400E;
+}
+QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel#cameraState[status="error"] {
+    background: #FEF2F2;
+    border-color: #FCA5A5;
+    color: #991B1B;
 }
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QComboBox#cameraSelector,
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QSpinBox {
@@ -1860,8 +1931,8 @@ QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QSpinBox {
 }
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QPushButton {
     min-height: 28px;
-    margin-top: 1px;
-    margin-bottom: 1px;
+    margin-top: 2px;
+    margin-bottom: 2px;
 }
 QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel {
     line-height: 1.1em;

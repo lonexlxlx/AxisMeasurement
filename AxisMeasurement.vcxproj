@@ -113,7 +113,6 @@
     <QtMoc Include="myCode\head\program_50.h" />
     <ClInclude Include="myCode\head\resource.h" />
     <ClInclude Include="myCode\head\roughnessFun.h" />
-    <QtMoc Include="myCode\head\sdk_assist.h" />
     <QtMoc Include="myCode\head\graphical_canvas.h" />
     <ClInclude Include="myCode\head\graphical_program_editor.h" />
     <ClInclude Include="myCode\head\graphical_corner_geometry.h" />
@@ -237,7 +236,6 @@
     <ClCompile Include="myCode\sourceCode\program_8.cpp" />
     <ClCompile Include="myCode\sourceCode\program_9.cpp" />
     <ClCompile Include="myCode\sourceCode\roughnessFun.cpp" />
-    <ClCompile Include="myCode\sourceCode\sdk_assist.cpp" />
     <ClCompile Include="myCode\sourceCode\graphical_canvas.cpp" />
     <ClCompile Include="myCode\sourceCode\graphical_program_editor.cpp" />
     <ClCompile Include="myCode\sourceCode\sharedFun.cpp" />
@@ -253,7 +251,6 @@
   <ItemGroup>
     <QtUic Include="$(ProjectDir)AxisMeasurement.ui" />
     <QtUic Include="logIn.ui" />
-    <QtUic Include="sdk_assist.ui" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{53FE936D-BE2A-4EAC-B877-06EA0737729B}</ProjectGuid>

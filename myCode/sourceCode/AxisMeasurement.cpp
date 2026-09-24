@@ -16,27 +16,27 @@
 #include "graphical_axis_backend.h"
 
 // Temporary UI-only preview requested by the user. Restore false after feedback.
-namespace { constexpr bool kManualLayoutPreview = false; }
+namespace { constexpr bool kManualLayoutPreview = false; } //手动控制界面临时预览开关，编译时期的常量
 
 namespace {
-QImage cameraFrameToQImage(const cv::Mat& frame)
+QImage cameraFrameToQImage(const cv::Mat& frame)//把OpenCV的cv::Mat转成Ot的OImage
 {
-	if (frame.empty()) return QImage();
-	if (frame.type() == CV_8UC1) {
+	if (frame.empty()) return QImage();//不支持的类型返回空 QImage
+	if (frame.type() == CV_8UC1) {  //CV_8UC1：灰度图，转 Format_Grayscale8。
 		return QImage(frame.data, frame.cols, frame.rows, static_cast<int>(frame.step),
 			QImage::Format_Grayscale8).copy();
 	}
-	if (frame.type() == CV_8UC3) {
+	if (frame.type() == CV_8UC3) {  //CV_8UC3：BGR 图，先转 RGB，再转 Format_RGB888
 		cv::Mat rgb;
 		cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
 		return QImage(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step),
 			QImage::Format_RGB888).copy();
 	}
-	if (frame.type() == CV_8UC4) {
+	if (frame.type() == CV_8UC4) {  //CV_8UC4：BGRA 图，先转 RGBA，再转 Format_RGBA8888
 		cv::Mat rgba;
 		cv::cvtColor(frame, rgba, cv::COLOR_BGRA2RGBA);
 		return QImage(rgba.data, rgba.cols, rgba.rows, static_cast<int>(rgba.step),
-			QImage::Format_RGBA8888).copy();
+			QImage::Format_RGBA8888).copy();//最后都调用 .copy()，避免 QImage 只引用 cv::Mat 数据，Mat 释放后图像悬空。
 	}
 	return QImage();
 }
@@ -46,7 +46,7 @@ QImage cameraFrameToQImage(const cv::Mat& frame)
 /// 构造函数/析构函数
 /// </summary>
 //
-void MyHalconExceptionHandler(const HException& except)
+void MyHalconExceptionHandler(const HException& except)//Halcon异常处理器，把Halcon异常继续抛出，后面通过 HException::InstallHHandler(&MyHalconExceptionHandler); 安装。
 {
 	throw except;
 }
@@ -68,106 +68,92 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	updateDateTimer = new QTimer(this);
 	connect(updateDateTimer, SIGNAL(timeout()), this, SLOT(showTime()));
 	updateDateTimer->start(1000);
-	m_sdk_assist=new(sdk_assist);
-	m_sdk_assist->graphicalEntryError = [this]() -> QString {
-		if (programRunFlag || goHomeThread_Ptr->isRunning())
-			return QStringLiteral("自动测量或回零正在运行，请先结束当前运动。");
-		return QString();
-	};
-	connect(this, &QObject::destroyed, m_sdk_assist, [assist = m_sdk_assist]() {
-		assist->graphicalEntryError = []() { return QStringLiteral("主窗口已关闭，请重新启动软件。"); };
+	m_graphicalProgramEditor = new GraphicalProgramEditor(this);
+	m_graphicalProgramEditor->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
+	m_graphicalProgramEditor->setAttribute(Qt::WA_DeleteOnClose, false);
+	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
+		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
 	});
-	connect(m_sdk_assist, &sdk_assist::graphicalEditorCreated, this, [this](GraphicalProgramEditor* editor) {
-		attachGraphicalAxisBackend(editor, moveControlCardPtr, [this]() {
-			return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
-		});
-		editor->setCameraBackend(
-			[this](int camera) {
-				GraphicalProgramEditor::CameraSnapshot state;
-				if (camera < 0 || camera >= 3 || !cameraPtrList[camera]) {
-					state.message = QStringLiteral("相机编号无效");
-					return state;
-				}
-				cam_device* device = cameraPtrList[camera];
-				state.connected = device->isOpenCam && device->isOpenStream;
-				state.available = state.connected && !programRunFlag
-					&& !goHomeThread_Ptr->isRunning();
-				state.capturing = camCaptureFlag[camera];
-				state.hasFrame = !state.capturing && !device->capturedImg.empty();
-				state.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : device->exposeTime;
-				if (state.hasFrame) state.frameSize = QSize(device->capturedImg.cols, device->capturedImg.rows);
-				if (!state.connected) state.message = QStringLiteral("相机%1未连接").arg(camera);
-				else if (!state.available) state.message = QStringLiteral("相机%1当前不可操作").arg(camera);
-				else if (state.capturing) state.message = QStringLiteral("相机%1正在连续采集").arg(camera);
-				else state.message = QStringLiteral("相机%1已就绪").arg(camera);
+	m_graphicalProgramEditor->setCameraBackend(
+		[this](int camera) {
+			GraphicalProgramEditor::CameraSnapshot state;
+			if (camera < 0 || camera >= 3 || !cameraPtrList[camera]) {
+				state.message = QStringLiteral("相机编号无效");
 				return state;
-			},
-			[this](int camera, GraphicalProgramEditor::CameraCommand command, int exposure) {
-				GraphicalProgramEditor::CameraCommandResult result;
-				if (camera < 0 || camera >= 3 || !cameraPtrList[camera] || !m_camThread_ptrList[camera]) {
-					result.error = QStringLiteral("相机编号无效。");
-					return result;
-				}
-				cam_device* device = cameraPtrList[camera];
-				camThread* thread = m_camThread_ptrList[camera];
-				if (!device->isOpenCam || !device->isOpenStream) {
-					result.error = QStringLiteral("相机%1未连接；请先在主窗口打开设备。").arg(camera);
-					return result;
-				}
-				if (programRunFlag || goHomeThread_Ptr->isRunning()) {
-					result.error = QStringLiteral("自动测量或回零正在运行。");
-					return result;
-				}
-				if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
-					for (int index = 0; index < 3; ++index) {
-						if (camCaptureFlag[index]) {
-							result.error = QStringLiteral("相机%1正在采集；请先停止。").arg(index);
-							return result;
-						}
-					}
-					if (thread->isRunning()) {
-						result.error = QStringLiteral("相机%1显示线程尚未停止，请稍后重试。").arg(camera);
-						return result;
-					}
-					device->setExposeTime(exposure);
-					device->m_captureMode = QStringLiteral("continuous");
-					device->startCapture();
-					thread->start();
-					camCaptureFlag[camera] = true;
-					return result;
-				}
-				if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
-					if (camCaptureFlag[camera]) device->stopCapture();
-					thread->requestInterruption();
-					if (thread->isRunning() && !thread->wait(1500)) {
-						result.error = QStringLiteral("相机%1显示线程未能及时停止。").arg(camera);
-						return result;
-					}
-					camCaptureFlag[camera] = false;
-					return result;
-				}
-				if (camCaptureFlag[camera]) {
-					result.error = QStringLiteral("请先停止相机%1采集。").arg(camera);
-					return result;
-				}
-				result.image = cameraFrameToQImage(device->capturedImg);
-				result.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : exposure;
-				if (result.image.isNull()) result.error = QStringLiteral("相机%1没有可用的最后一帧。").arg(camera);
+			}
+			cam_device* device = cameraPtrList[camera];
+			state.connected = device->isOpenCam && device->isOpenStream;
+			state.available = state.connected && !programRunFlag
+				&& !goHomeThread_Ptr->isRunning();
+			state.capturing = camCaptureFlag[camera];
+			state.hasFrame = !state.capturing && !device->capturedImg.empty();
+			state.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : device->exposeTime;
+			if (state.hasFrame) state.frameSize = QSize(device->capturedImg.cols, device->capturedImg.rows);
+			if (!state.connected) state.message = QStringLiteral("相机%1未连接").arg(camera);
+			else if (!state.available) state.message = QStringLiteral("相机%1当前不可操作").arg(camera);
+			else if (state.capturing) state.message = QStringLiteral("相机%1正在连续采集").arg(camera);
+			else state.message = QStringLiteral("相机%1已就绪").arg(camera);
+			return state;
+		},
+		[this](int camera, GraphicalProgramEditor::CameraCommand command, int exposure) {
+			GraphicalProgramEditor::CameraCommandResult result;
+			if (camera < 0 || camera >= 3 || !cameraPtrList[camera] || !m_camThread_ptrList[camera]) {
+				result.error = QStringLiteral("相机编号无效。");
 				return result;
-			});
-		connect(this, &QObject::destroyed, editor, [editor]() {
-			editor->setAxisBackend({}, {});
-			editor->setCameraBackend({}, {});
+			}
+			cam_device* device = cameraPtrList[camera];
+			camThread* thread = m_camThread_ptrList[camera];
+			if (!device->isOpenCam || !device->isOpenStream) {
+				result.error = QStringLiteral("相机%1未连接；请先在主窗口打开设备。").arg(camera);
+				return result;
+			}
+			if (programRunFlag || goHomeThread_Ptr->isRunning()) {
+				result.error = QStringLiteral("自动测量或回零正在运行。");
+				return result;
+			}
+			if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
+				for (int index = 0; index < 3; ++index) {
+					if (camCaptureFlag[index]) {
+						result.error = QStringLiteral("相机%1正在采集；请先停止。").arg(index);
+						return result;
+					}
+				}
+				if (thread->isRunning()) {
+					result.error = QStringLiteral("相机%1显示线程尚未停止，请稍后重试。").arg(camera);
+					return result;
+				}
+				device->setExposeTime(exposure);
+				device->m_captureMode = QStringLiteral("continuous");
+				device->startCapture();
+				thread->start();
+				camCaptureFlag[camera] = true;
+				return result;
+			}
+			if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
+				if (camCaptureFlag[camera]) device->stopCapture();
+				thread->requestInterruption();
+				if (thread->isRunning() && !thread->wait(1500)) {
+					result.error = QStringLiteral("相机%1显示线程未能及时停止。").arg(camera);
+					return result;
+				}
+				camCaptureFlag[camera] = false;
+				return result;
+			}
+			if (camCaptureFlag[camera]) {
+				result.error = QStringLiteral("请先停止相机%1采集。").arg(camera);
+				return result;
+			}
+			result.image = cameraFrameToQImage(device->capturedImg);
+			result.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : exposure;
+			if (result.image.isNull()) result.error = QStringLiteral("相机%1没有可用的最后一帧。").arg(camera);
+			return result;
 		});
+	connect(this, &QObject::destroyed, m_graphicalProgramEditor, [this]() {
+		if (m_graphicalProgramEditor) {
+			m_graphicalProgramEditor->setAxisBackend({}, {});
+			m_graphicalProgramEditor->setCameraBackend({}, {});
+		}
 	});
-	//m_sdk_assist->show();
-	connect(m_sdk_assist, SIGNAL(diameterPostionRecord()), this, SLOT(diameterPostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(roughnessPostionRecord()), this, SLOT(roughnessPostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(cylindricityPostionRecord()), this, SLOT(cylindricityPostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(roundoutPostionRecord()), this, SLOT(roundoutPostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(holePostionRecord()), this, SLOT(holePostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(telecentricPostionRecord()), this, SLOT(telecentricPostionRecordExecute()));
-	connect(m_sdk_assist, SIGNAL(tips(QString)), this, SLOT(showTips(QString)));
 	
 
 	//用于测试部分
@@ -998,7 +984,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	//连接菜单信号槽函数
 	connect(ui.autoMeasureMode, SIGNAL(triggered()), this, SLOT(on_autoMeasureMode_Triggered()));
 	connect(ui.ManualControl, SIGNAL(triggered()), this, SLOT(on_ManualControl_Triggered()));
-	connect(ui.sdkAssist, SIGNAL(triggered()), this, SLOT(on_sdkAssist_Triggered()));
+	connect(ui.graphicalProgramEditor, SIGNAL(triggered()), this, SLOT(on_graphicalProgramEditor_Triggered()));
 
 	//用于测试的部分
 	/*
@@ -1109,78 +1095,16 @@ void AxisMeasurement::on_ManualControl_Triggered()
 	};
 
 };
-void AxisMeasurement::on_sdkAssist_Triggered()
+void AxisMeasurement::on_graphicalProgramEditor_Triggered()
 {
-	cout << "Son_sdkAssist_Triggered()" << endl;
-	currentMeasureMode = "sdk_assist";
-	//ui.uiWidget->setCurrentIndex(2);
-	m_sdk_assist->show();
+	currentMeasureMode = "GraphicalProgramEditor";
+	if (!m_graphicalProgramEditor)
+		return;
+	m_graphicalProgramEditor->show();
+	m_graphicalProgramEditor->raise();
+	m_graphicalProgramEditor->activateWindow();
 };
 
-//点位记录槽函数
-void AxisMeasurement::diameterPostionRecordExecute()
-{
-	cout << "AxisMeasurement::diameterPostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置
-	m_sdk_assist->m_diameterPositionInf[m_sdk_assist->currentDiameterOrder].axisGuangMuEncodePostion = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_diameterPositionInf[m_sdk_assist->currentDiameterOrder].axisGuangMuRealPostion = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-};
-void  AxisMeasurement::roughnessPostionRecordExecute()
-{
-	cout << "roughnessPostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置
-	m_sdk_assist->m_roughnessPositionInf[m_sdk_assist->currentRoughnessOrder].axisGuangMuEncodePostion = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_roughnessPositionInf[m_sdk_assist->currentRoughnessOrder].axisGuangMuRealPostion = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-	moveControlCardPtr->updateAxisStatus(1);//获取粗糙度轴位置
-	m_sdk_assist->m_roughnessPositionInf[m_sdk_assist->currentRoughnessOrder].axisRoughnessEncodePostion = moveControlCardPtr->dPrfPos[0];
-	m_sdk_assist->m_roughnessPositionInf[m_sdk_assist->currentRoughnessOrder].axisRoughnessRealPostion = axis1And2_caculation(moveControlCardPtr->dPrfPos[0]);
-	m_sdk_assist->m_roughnessPositionInf[m_sdk_assist->currentRoughnessOrder].roughnessExposeTime = cameraPtrList[2]->exposeTime;//获取粗糙度相机的当前曝光
-
-};
-void  AxisMeasurement::cylindricityPostionRecordExecute()
-{
-	cout << "cylindricityPostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置(中间截面)
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuEncodePostion_middle = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuRealPostion_middle = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuEncodePostion_upper = moveControlCardPtr->dPrfPos[4]+ m_sdk_assist->cylindricityUpperRelativeLocation_current;
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuRealPostion_upper = axis_compsation(m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuEncodePostion_upper);
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuEncodePostion_bottom = moveControlCardPtr->dPrfPos[4]- m_sdk_assist->cylindricityBottomRelativeLocation_current;
-	m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuRealPostion_bottom = axis_compsation(m_sdk_assist->m_cylindricityPositionInf[m_sdk_assist->currentCylindricityOrder].axisGuangMuEncodePostion_bottom);
-};
-
-void  AxisMeasurement::roundoutPostionRecordExecute()
-{
-	cout << "roundoutPostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置(中间截面)
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuEncodePostion_middle = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuRealPostion_middle = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuEncodePostion_upper = moveControlCardPtr->dPrfPos[4] + m_sdk_assist->roundoutUpperRelativeLocation_current;
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuRealPostion_upper = axis_compsation(m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuEncodePostion_upper);
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuEncodePostion_bottom = moveControlCardPtr->dPrfPos[4] - m_sdk_assist->roundoutBottomRelativeLocation_current;
-	m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuRealPostion_bottom = axis_compsation(m_sdk_assist->m_roundoutPositionInf[m_sdk_assist->currentRoundoutOrder].axisGuangMuEncodePostion_bottom);
-
-}
-void  AxisMeasurement::holePostionRecordExecute()
-{
-	cout << "holePostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置
-	m_sdk_assist->m_holePositionInf[m_sdk_assist->currentHoleOrder].axisGuangMuEncodePostion = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_holePositionInf[m_sdk_assist->currentHoleOrder].axisGuangMuRealPostion = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-	moveControlCardPtr->updateAxisStatus(2);//获取孔轴位置
-	m_sdk_assist->m_holePositionInf[m_sdk_assist->currentHoleOrder].axisHoleEncodePostion = moveControlCardPtr->dPrfPos[1];
-	m_sdk_assist->m_holePositionInf[m_sdk_assist->currentHoleOrder].axisHoleRealPostion = axis1And2_caculation(moveControlCardPtr->dPrfPos[1]);
-	m_sdk_assist->m_holePositionInf[m_sdk_assist->currentHoleOrder].holeExposeTime = cameraPtrList[1]->exposeTime;//获取测孔相机的当前曝光
-};
-void  AxisMeasurement::telecentricPostionRecordExecute()
-{
-	cout << "telecentricPostionRecordExecute()" << endl;
-	moveControlCardPtr->updateAxisStatus(5);//获取光幕轴位置
-	m_sdk_assist->m_telecentricPositionInf[m_sdk_assist->currentTelecentricOrder].axisGuangMuEncodePostion = moveControlCardPtr->dPrfPos[4];
-	m_sdk_assist->m_telecentricPositionInf[m_sdk_assist->currentTelecentricOrder].axisGuangMuRealPostion = axis_compsation(moveControlCardPtr->dPrfPos[4]);
-	m_sdk_assist->m_telecentricPositionInf[m_sdk_assist->currentTelecentricOrder].telecentricExposeTime = cameraPtrList[0]->exposeTime;//获取粗糙度相机的当前曝光
-
-};
 float AxisMeasurement::axis_compsation(long int encodePos)
 {
 	double axis5_realReference = encodePos * 0.0005;

@@ -88,7 +88,7 @@
 #include "moveThread.h"
 #include "GalaxyIncludes.h"
 #include "logIn.h"
-#include "sdk_assist.h"
+#include "graphical_program_editor.h"
 #include "roughnessFun.h"
 #include"sharedFun.h"
 //HalconCpp测试
@@ -117,7 +117,7 @@ private:
     
     //系统相关
     logIn* m_logIn;//登陆界面对象
-    sdk_assist*  m_sdk_assist;//二次开发辅助界面
+    GraphicalProgramEditor* m_graphicalProgramEditor = nullptr;
     QDateTime dateTime;//系统时间
     QTimer * updateDateTimer;//用于更新系统时间的定时器
 
@@ -357,15 +357,9 @@ private slots:
 
     void on_autoMeasureMode_Triggered();
     void on_ManualControl_Triggered();
-    void on_sdkAssist_Triggered();
+    void on_graphicalProgramEditor_Triggered();
 
-    //点位记录的槽函数
-    void diameterPostionRecordExecute();
-    void roughnessPostionRecordExecute();
-    void cylindricityPostionRecordExecute();
-    void roundoutPostionRecordExecute();
-    void holePostionRecordExecute();
-    void telecentricPostionRecordExecute();
+    //点位记录接口已由图形化编辑器的设备点位页面直接管理
     float axis_compsation(long int encodePos);
     float axis1And2_caculation(long int encodePos);
     //自动测量模式中的槽函数
