@@ -2040,7 +2040,13 @@ void GraphicalProgramEditor::buildInterface()
 
     QWidget* measurementPage = new QWidget(propertyTabs);//测量配置页
     QVBoxLayout* measurementLayout = new QVBoxLayout(measurementPage);
+    measurementLayout->setContentsMargins(8, 8, 8, 8);
+    measurementLayout->setSpacing(4);
+    measurementLayout->setSizeConstraint(QLayout::SetMinimumSize);
     QFormLayout* measurementForm = new QFormLayout;
+    measurementForm->setContentsMargins(0, 0, 0, 0);
+    measurementForm->setHorizontalSpacing(8);
+    measurementForm->setVerticalSpacing(1);
     measurementForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
     measurementLayout->addLayout(measurementForm);
     m_measurementType = new QComboBox(measurementPage);

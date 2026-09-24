@@ -179,21 +179,10 @@ QWidget#graphicalProgramEditorPage {
 }
 QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard {
     background: #FFFFFF;
-    border: 1px solid #E3E8EF;
-    border-radius: 8px;
-    margin-top: 0px;
-    padding: 28px 6px 6px 6px;
-}
-QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard::title {
-    subcontrol-origin: padding;
-    subcontrol-position: top center;
-    left: 0px;
-    top: 4px;
-    padding: 0 6px;
-    color: #2563EB;
-    background: transparent;
-    font-size: 10pt;
-    font-weight: 600;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 8px 6px 6px 6px;
 }
 QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup {
     background: #FFFFFF;
