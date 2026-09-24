@@ -140,6 +140,15 @@
     <ClInclude Include="myCode\head\graphical_axis_backend.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </ClInclude>
+    <ClInclude Include="myCode\head\graphical_sensor_measurement.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+    <ClInclude Include="myCode\head\graphical_program_contract.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
+    <ClInclude Include="myCode\head\graphical_program_registry.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
     <QtMoc Include="myCode\head\program_20.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </QtMoc>

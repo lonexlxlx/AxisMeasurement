@@ -54,6 +54,8 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
+	for (int index = 0; index < ui.programNumber->count(); ++index)
+		ui.programNumber->setItemData(index, index, Qt::UserRole);
 	//this->setWindowIcon(QIcon("://AxisMeasurement/config/logo.ico")); 
 
 	//P2-9/10/11：布局重构（分组收纳+QSplitter 自适应+数值仪表盘化），必须在任何控件操作之前执行
@@ -1350,8 +1352,8 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 };
 void AxisMeasurement::on_programNumber_currentIndexChanged(int nIndex)
 {
-
-	currentProgram = nIndex;
+	const QVariant programData = ui.programNumber->itemData(nIndex, Qt::UserRole);
+	currentProgram = programData.isValid() ? programData.toInt() : nIndex;
 	showClampingPicture(currentProgram);
 	//cout << "on_programNumber_currentIndexChanged-" << currentProgram << endl;
 	//需要按照下面格式追加子程序相关内容

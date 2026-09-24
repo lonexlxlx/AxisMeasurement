@@ -94,6 +94,7 @@ public:
     bool saveRecipeFile(const QString& filePath, QString& error);
     bool loadRecipeFile(const QString& filePath, QString& error);
     QStringList validateRecipeForExport() const;
+    bool exportProgramPackage(const QString& outputRoot, QString& packagePath, QString& error);
     struct LightCurtainSnapshot {
         bool connected = false;
         bool available = false;

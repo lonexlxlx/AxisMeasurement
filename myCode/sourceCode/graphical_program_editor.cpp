@@ -1,4 +1,6 @@
-﻿#include "graphical_program_editor.h"
+#include "graphical_program_editor.h"
+#include "graphical_sensor_measurement.h"
+#include "graphical_program_contract.h"
 
 #include "graphical_canvas.h"
 #include "sharedFun.h"
@@ -1155,6 +1157,7 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
 #include <QEvent>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QCoreApplication>
 
 // Temporary offline layout preview; restore false after the user's feedback.
 namespace {
@@ -1174,6 +1177,13 @@ int deviceCameraForMeasurement(const QString& type)
     return 0;
 }
 
+bool measurementRequiresImage(const QString& type)
+{
+    return type != QStringLiteral("直径")
+        && type != QStringLiteral("圆柱度")
+        && type != QStringLiteral("跳动");
+}
+
 void setCanvasSourceBadge(GraphicalCanvas* canvas, const QString& text)
 {
     if (!canvas) return;
@@ -1186,6 +1196,20 @@ void setCanvasSourceBadge(GraphicalCanvas* canvas, const QString& text)
 }
 
 static QByteArray projectFileSha256(const QString& filePath, QString& error);
+
+static QString graphicalProjectRoot()
+{
+    const QStringList starts = { QDir::currentPath(), QCoreApplication::applicationDirPath() };
+    for (const QString& start : starts) {
+        QDir directory(start);
+        for (int depth = 0; depth < 8; ++depth) {
+            if (QFileInfo::exists(directory.filePath(QStringLiteral("AxisMeasurement.vcxproj"))))
+                return directory.absolutePath();
+            if (!directory.cdUp()) break;
+        }
+    }
+    return QString();
+}
 
 static bool writePngAtomically(const QImage& image, const QString& filePath, QString& error)
 {
@@ -1236,6 +1260,9 @@ GraphicalProgramEditor::GraphicalProgramEditor(QWidget* parent)
     setWindowFlag(Qt::Window, true);
     setWindowModality(Qt::NonModal);
     buildInterface();
+    // Widget initialization emits several value-change signals. A newly opened
+    // editor still represents a clean, empty definition.
+    m_projectDirty = false;
     QTimer* axisTimer = new QTimer(this);
     connect(axisTimer, &QTimer::timeout, this, &GraphicalProgramEditor::refreshAxisPanel);
     connect(axisTimer, &QTimer::timeout, this, &GraphicalProgramEditor::refreshCameraPanel);
@@ -1362,7 +1389,15 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
         && selectedRow < m_records.size()
         && m_records[selectedRow].type == QStringLiteral("长度")
         && m_records[selectedRow].crossFrameLength;
-    if (!appendCrossLengthFrame && m_projectDirty && QMessageBox::question(this, QStringLiteral("载入相机图像"),
+    const bool hasEditableContent = (m_canvas && m_canvas->hasImage()) || !m_frames.isEmpty()
+        || !m_records.isEmpty() || (m_canvas && !m_canvas->featureEntries().isEmpty())
+        || (m_recipeProgramNumber && m_recipeProgramNumber->value() > 0)
+        || (m_recipePartNumber && !m_recipePartNumber->text().trimmed().isEmpty())
+        || (m_recipePartName && !m_recipePartName->text().trimmed().isEmpty())
+        || (m_recipeProcessNumber && !m_recipeProcessNumber->text().trimmed().isEmpty())
+        || (m_recipeNote && !m_recipeNote->text().trimmed().isEmpty());
+    if (!appendCrossLengthFrame && hasEditableContent && m_projectDirty
+        && QMessageBox::question(this, QStringLiteral("载入相机图像"),
         QStringLiteral("载入新图像将清空当前图形和测量记录。是否继续？")) != QMessageBox::Yes) return;
     const CameraCommandResult result = m_cameraCommander(camera, command, m_cameraExposure->value());
     if (!result.error.isEmpty() || result.image.isNull()) {
@@ -1431,7 +1466,8 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
     m_recipePartName->clear();
     m_recipeProcessNumber->clear();
     m_recipeNote->clear();
-    m_recipeValidationResult->setText(QStringLiteral("填写配方信息后检查记录、ROI、标定和设备点位。"));
+    m_recipeValidationResult->clear();
+    m_recipeValidationResult->hide();
     refreshFrameSelector();
     m_projectFilePath.clear();
     m_projectDirty = true;
@@ -1506,10 +1542,14 @@ void GraphicalProgramEditor::refreshDevicePositionPanel()
     if (record.type == QStringLiteral("圆柱度") || record.type == QStringLiteral("跳动")) {
         for (const auto& axis : position.axes) {
             if (axis.axis != 5 || !std::isfinite(axis.encoder)) continue;
-            lines << QStringLiteral("轴5三截面：下侧 %1 pulse；中间 %2 pulse；上侧 %3 pulse")
-                .arg(axis.encoder - record.lowerAxialOffsetPulse, 0, 'f', 1)
-                .arg(axis.encoder, 0, 'f', 1)
-                .arg(axis.encoder + record.upperAxialOffsetPulse, 0, 'f', 1);
+            const qint64 middle = qRound64(axis.encoder);
+            const auto positions = GraphicalSensorMeasurement::axialPositions(
+                middle, record.lowerAxialOffsetPulse, record.upperAxialOffsetPulse);
+            if (positions.ok)
+                lines << QStringLiteral("轴5三截面：下侧 %1 pulse；中间 %2 pulse；上侧 %3 pulse")
+                    .arg(positions.lower).arg(positions.middle).arg(positions.upper);
+            else
+                lines << QStringLiteral("轴5三截面配置无效：%1").arg(positions.error);
             break;
         }
         if (record.type == QStringLiteral("跳动")) {
@@ -1543,7 +1583,7 @@ void GraphicalProgramEditor::recordSelectedDevicePosition()
     refreshMeasurementRecords();
     m_stepTable->setCurrentCell(row, 0);
     refreshDevicePositionPanel();
-    statusBar()->showMessage(QStringLiteral("记录 %1 的设备点位已采集；保存配方后持久化。")
+    statusBar()->showMessage(QStringLiteral("记录 %1 的设备点位已采集；保存测量方案后持久化。")
         .arg(m_records[row].sequence), 5000);
 }
 
@@ -1589,21 +1629,6 @@ bool GraphicalProgramEditor::collectCurrentDevicePosition(const QString& type,
         next.cameraIndex = camera;
         next.exposure = snapshot.exposure;
     }
-    if (type == QStringLiteral("直径")) {
-        LightCurtainSnapshot snapshot;
-        if (m_lightCurtainReader) snapshot = m_lightCurtainReader();
-        if (!snapshot.connected || !snapshot.available || !snapshot.hasSample
-            || !std::isfinite(snapshot.rawOut1) || !std::isfinite(snapshot.compensatedDiameter)) {
-            error = QStringLiteral("光幕OUT1没有有效样本；原点位保持不变。\n%1")
-                .arg(snapshot.message);
-            return false;
-        }
-        next.hasLightCurtainSample = true;
-        next.lightCurtainRawOut1 = snapshot.rawOut1;
-        next.lightCurtainDiameter = snapshot.compensatedDiameter;
-        next.lightCurtainSampledAtUtc = QDateTime::fromMSecsSinceEpoch(
-            snapshot.sampledAtMs, Qt::UTC).toString(Qt::ISODateWithMs);
-    }
     position = next;
     return true;
 }
@@ -1644,17 +1669,20 @@ QWidget* GraphicalProgramEditor::buildAxisPanel()
     form->addRow(QStringLiteral("运动轴"), m_axisSelector);
     m_axisMode = new QComboBox(m_axisInputs);
     m_axisMode->addItems({ QStringLiteral("Jog（按住移动）"), QStringLiteral("绝对点位") });
+    m_axisMode->setToolTip(QStringLiteral("绝对点位模式使用绝对脉冲坐标。"));
     form->addRow(QStringLiteral("模式"), m_axisMode);
     m_axisSpeed = new QDoubleSpinBox(m_axisInputs);
     m_axisSpeed->setDecimals(3);
     m_axisSpeed->setRange(0.001, 1000);
     m_axisSpeed->setValue(1);
     m_axisSpeed->setKeyboardTracking(false);
+    m_axisSpeed->setToolTip(QStringLiteral("输入范围不代表设备安全速度；加减速沿用轴参数。"));
     form->addRow(QStringLiteral("速度 pulse/ms"), m_axisSpeed);
     m_axisTarget = new QDoubleSpinBox(m_axisInputs);
     m_axisTarget->setDecimals(0);
     m_axisTarget->setRange(-2147483647.0, 2147483647.0);
     m_axisTarget->setKeyboardTracking(false);
+    m_axisTarget->setToolTip(QStringLiteral("绝对脉冲位置。"));
     form->addRow(QStringLiteral("目标 pulse"), m_axisTarget);
     layout->addWidget(m_axisInputs);
     QHBoxLayout* jogRow = new QHBoxLayout;
@@ -1671,9 +1699,6 @@ QWidget* GraphicalProgramEditor::buildAxisPanel()
     servoRow->addWidget(m_axisEnable);
     servoRow->addWidget(m_axisDisable);
     layout->addLayout(servoRow);
-    QLabel* hint = new QLabel(QStringLiteral("目标是绝对脉冲位置。加减速沿用原轴参数；速度上限仅为输入范围，不代表设备安全速度。"), panel);
-    hint->setWordWrap(true);
-    layout->addWidget(hint);
     m_axisMessage = new QLabel(panel);
     m_axisMessage->setWordWrap(true);
     layout->addWidget(m_axisMessage);
@@ -1816,8 +1841,8 @@ void GraphicalProgramEditor::buildInterface()
     connect(m_axisEmergency, &QPushButton::clicked, this, [this]() { executeAxisCommand(AxisCommand::EmergencyStop); });
 
     QAction* openImageAction = toolBar->addAction(QStringLiteral("打开图像"));
-    QAction* openProjectAction = toolBar->addAction(QStringLiteral("打开配方"));
-    QAction* saveProjectAction = toolBar->addAction(QStringLiteral("保存配方"));
+    QAction* openProjectAction = toolBar->addAction(QStringLiteral("打开方案"));
+    QAction* saveProjectAction = toolBar->addAction(QStringLiteral("保存方案"));
     saveProjectAction->setShortcut(QKeySequence::Save);
     QAction* cameraAction = toolBar->addAction(QStringLiteral("相机图像"));
     m_frameSelector = new QComboBox(toolBar);
@@ -1841,8 +1866,8 @@ void GraphicalProgramEditor::buildInterface()
     //图标资源已注册在 AxisMeasurement.qrc（:/AxisMeasurement/config/icons/）
     const struct { QAction* action; const char* icon; const char* key; const char* tip; } toolbarInfo[] = {
         { openImageAction, "open", nullptr, "打开本地图像（记录与图形将清空）" },
-        { openProjectAction, "open_project", nullptr, "打开配方" },
-        { saveProjectAction, "save_project", nullptr, "保存配方" },
+        { openProjectAction, "open_project", nullptr, "打开测量方案" },
+        { saveProjectAction, "save_project", nullptr, "保存测量方案" },
         { cameraAction, "camera", nullptr, "打开设备点位页，从相机采集并载入图像" },
         { selectAction, "select", "V", "选择 (V)：选中/移动/调整图形" },
         { pointAction, "point", "P", "点 (P)：单击标注特征点" },
@@ -1970,9 +1995,6 @@ void GraphicalProgramEditor::buildInterface()
     m_coordinateLabel->setWordWrap(true);
     featurePropertyLayout->addRow(QStringLiteral("图像坐标："), m_coordinateLabel);
     m_coordinateLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    QLabel* coordinateHint = new QLabel(QStringLiteral("原图左上角为原点，X向右、Y向下。\n这里只显示手绘几何，不是算法测量结果。"), featurePropertyPage);
-    coordinateHint->setWordWrap(true);
-    featurePropertyLayout->addRow(coordinateHint);
     m_primarySizeLabel = new QLabel(QStringLiteral("尺寸："), featurePropertyPage);
     m_primarySize = new QDoubleSpinBox(featurePropertyPage);
     m_secondarySize = new QDoubleSpinBox(featurePropertyPage);
@@ -2119,11 +2141,11 @@ void GraphicalProgramEditor::buildInterface()
     m_roundoutReference1 = new QLineEdit(measurementPage);
     m_roundoutReference1->setObjectName(QStringLiteral("roundoutReference1"));
     m_roundoutReference1->setMaxLength(128);
-    m_roundoutReference1->setPlaceholderText(QStringLiteral("可选：基准1"));
+    m_roundoutReference1->setPlaceholderText(QStringLiteral("填写基准特征号1"));
     m_roundoutReference2 = new QLineEdit(measurementPage);
     m_roundoutReference2->setObjectName(QStringLiteral("roundoutReference2"));
     m_roundoutReference2->setMaxLength(128);
-    m_roundoutReference2->setPlaceholderText(QStringLiteral("可选：基准2"));
+    m_roundoutReference2->setPlaceholderText(QStringLiteral("填写基准特征号2"));
     connect(m_measurementType, &QComboBox::currentTextChanged, this, [this](const QString& type) {
         m_holeUniformCount->setEnabled(type == QStringLiteral("孔径"));
         m_holeCalibration->setEnabled(type == QStringLiteral("孔径"));
@@ -2285,17 +2307,6 @@ void GraphicalProgramEditor::buildInterface()
     QPushButton* trialArc = new QPushButton(QStringLiteral("试测选中记录"), measurementPage);
     measurementLayout->addWidget(trialArc);
     connect(trialArc, &QPushButton::clicked, this, [this]() { trialSelectedRecord(); });
-    QLabel* measurementHint = new QLabel(QStringLiteral(
-        "圆弧半径使用一个ROI；角度支持双ROI或单ROI相邻角。\n"
-        "单图长度只使用一个矩形ROI框住完整特征；首次试测建立模板，随后自动定位并拟合两条近似水平边。\n"
-        "跨图长度分别在两帧确认起点和终点矩形ROI；相机帧确认时自动采集轴5点位，本地图像保持点位未采集。\n"
-        "孔径使用一个圆形或矩形ROI框住目标孔，程序自动定位上下测量区并按原测孔算法输出mm。\n"
-        "圆柱度和圆跳动以采集的轴5点位为中间截面，通过上下偏移生成三处测量位置；实际结果需要光幕与转台完成整周采样。\n"
-        "长度类公差按mm、角度按°录入（配置约定，非标定结果）。\n"
-        "可先选图形进行关联，也可建立待关联记录。\n"
-        "工程可保存为JSON；重新载入后历史试测结果失效。程序导出尚未接入。"), measurementPage);
-    measurementHint->setWordWrap(true);
-    measurementLayout->addWidget(measurementHint);
     connect(addRecord, &QPushButton::clicked, this, [this]() { saveMeasurementRecord(false); });
     connect(updateRecord, &QPushButton::clicked, this, [this]() { saveMeasurementRecord(true); });
     connect(deleteRecord, &QPushButton::clicked, this, [this]() {
@@ -2319,9 +2330,6 @@ void GraphicalProgramEditor::buildInterface()
     detectionScroll->setWidgetResizable(true);
     QWidget* detectionPage = new QWidget(detectionScroll);
     QVBoxLayout* detectionLayout = new QVBoxLayout(detectionPage);
-    QLabel* detectionHint = new QLabel(QStringLiteral("圆弧半径 / 双ROI角度 / 单ROI倒角 / 单ROI模板长度。\n试测使用已提交值，修改后请应用。单ROI保留独立直线段，不使用合并距离；角点间隙判断两条边是否相邻。"), detectionPage);
-    detectionHint->setWordWrap(true);
-    detectionLayout->addWidget(detectionHint);
     QFormLayout* detectionForm = new QFormLayout;
     detectionForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
     detectionLayout->addLayout(detectionForm);
@@ -2350,10 +2358,7 @@ void GraphicalProgramEditor::buildInterface()
     detectionLayout->addWidget(resetDetection);
     connect(applyDetection, &QPushButton::clicked, this, &GraphicalProgramEditor::applyDetectionParameters);
     connect(resetDetection, &QPushButton::clicked, this, [this]() { setDetectionInputs(GraphicalDetectionParameters()); });
-    QLabel* parameterHint = new QLabel(QStringLiteral("最短长度减小可保留短边，也可能引入噪声；最长长度0沿用图宽的一半。单ROI以90%轮廓点的点线偏差控制拟合质量，允许少量毛刺或圆角过渡点；角点间隙允许两条拟合线跨过过渡后相交。数值过大可能接纳干扰边。"), detectionPage);
-    parameterHint->setWordWrap(true);
-    detectionLayout->addWidget(parameterHint);
-    m_detectionDiagnostic = new QLabel(QStringLiteral("选中记录后显示最近执行状态。"), detectionPage);
+    m_detectionDiagnostic = new QLabel(detectionPage);
     m_detectionDiagnostic->setObjectName(QStringLiteral("detectionDiagnostic"));
     m_detectionDiagnostic->setWordWrap(true);
     m_detectionDiagnostic->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -2411,10 +2416,6 @@ void GraphicalProgramEditor::buildInterface()
     cameraLayout->addWidget(m_cameraStart);
     cameraLayout->addWidget(m_cameraStop);
     cameraLayout->addWidget(m_cameraLoad);
-    QLabel* cameraHint = new QLabel(QStringLiteral(
-        "请先开始采集，等待图像稳定后停止，再载入最后一帧。配方参考图由软件自动管理；载入新图像会清空当前图形和测量记录。"), cameraGroup);
-    cameraHint->setWordWrap(true);
-    cameraLayout->addWidget(cameraHint);
     positionLayout->addWidget(cameraGroup);
 
     QGroupBox* lightCurtainGroup = new QGroupBox(QStringLiteral("光幕传感器"), positionPageContent);
@@ -2423,10 +2424,6 @@ void GraphicalProgramEditor::buildInterface()
     m_lightCurtainState->setWordWrap(true);
     m_lightCurtainState->setTextInteractionFlags(Qt::TextSelectableByMouse);
     lightCurtainLayout->addWidget(m_lightCurtainState);
-    QLabel* lightCurtainHint = new QLabel(QStringLiteral(
-        "直径点位记录读取光幕OUT1最新有效样本，并同时保存原始值和原软件补偿结果。"), lightCurtainGroup);
-    lightCurtainHint->setWordWrap(true);
-    lightCurtainLayout->addWidget(lightCurtainHint);
     positionLayout->addWidget(lightCurtainGroup);
 
     QGroupBox* pointGroup = new QGroupBox(QStringLiteral("测量记录点位"), positionPageContent);
@@ -2439,10 +2436,6 @@ void GraphicalProgramEditor::buildInterface()
     m_clearDevicePosition = new QPushButton(QStringLiteral("清除选中记录的设备点位"), pointGroup);
     pointLayout->addWidget(m_recordDevicePosition);
     pointLayout->addWidget(m_clearDevicePosition);
-    QLabel* pointHint = new QLabel(QStringLiteral(
-        "直径/圆柱度/跳动记录光幕轴；孔径记录测孔轴、光幕轴和孔径相机曝光；远心图像测量记录光幕轴和远心相机曝光。单位为pulse。"), pointGroup);
-    pointHint->setWordWrap(true);
-    pointLayout->addWidget(pointHint);
     positionLayout->addWidget(pointGroup);
     positionLayout->addStretch();
     auto* positionScroll = new QScrollArea(propertyTabs);
@@ -2457,9 +2450,9 @@ void GraphicalProgramEditor::buildInterface()
     QFormLayout* recipeForm = new QFormLayout;
     m_recipeProgramNumber = new QSpinBox(recipePage);
     m_recipeProgramNumber->setObjectName(QStringLiteral("recipeProgramNumber"));
-    m_recipeProgramNumber->setRange(0, 50);
+    m_recipeProgramNumber->setRange(0, 999);
     m_recipeProgramNumber->setSpecialValueText(QStringLiteral("未设置"));
-    m_recipeProgramNumber->setToolTip(QStringLiteral("当前主程序已登记0–50号槽位；生成前还需检查该编号是否已被占用。"));
+    m_recipeProgramNumber->setToolTip(QStringLiteral("0–50已登记，51–60存在未登记源码；新生成程序从61开始，生成时仍需检查编号冲突。"));
     m_recipePartNumber = new QLineEdit(recipePage);
     m_recipePartNumber->setObjectName(QStringLiteral("recipePartNumber"));
     m_recipePartName = new QLineEdit(recipePage);
@@ -2470,7 +2463,7 @@ void GraphicalProgramEditor::buildInterface()
     m_recipeNote->setObjectName(QStringLiteral("recipeNote"));
     for (QLineEdit* input : {m_recipePartNumber, m_recipePartName, m_recipeProcessNumber, m_recipeNote})
         input->setMaxLength(128);
-    recipeForm->addRow(QStringLiteral("程序号（1–50）："), m_recipeProgramNumber);
+    recipeForm->addRow(QStringLiteral("新程序号（61–999）："), m_recipeProgramNumber);
     recipeForm->addRow(QStringLiteral("零件图号："), m_recipePartNumber);
     recipeForm->addRow(QStringLiteral("零件名称："), m_recipePartName);
     recipeForm->addRow(QStringLiteral("工序号："), m_recipeProcessNumber);
@@ -2479,26 +2472,25 @@ void GraphicalProgramEditor::buildInterface()
     QPushButton* validateRecipe = new QPushButton(QStringLiteral("检查生成条件"), recipePage);
     validateRecipe->setObjectName(QStringLiteral("validateRecipeButton"));
     recipeLayout->addWidget(validateRecipe);
-    m_recipeValidationResult = new QLabel(
-        QStringLiteral("填写配方信息后检查记录、ROI、标定和设备点位。"), recipePage);
+    m_recipeValidationResult = new QLabel(recipePage);
     m_recipeValidationResult->setObjectName(QStringLiteral("recipeValidationResult"));
     m_recipeValidationResult->setWordWrap(true);
     m_recipeValidationResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_recipeValidationResult->hide();
     recipeLayout->addWidget(m_recipeValidationResult);
-    QLabel* recipeHint = new QLabel(QStringLiteral(
-        "检查通过表示配方数据已具备进入程序映射的条件；程序号冲突检查和旧Excel/VBA生成将在接入生成器后执行。"), recipePage);
-    recipeHint->setWordWrap(true);
-    recipeLayout->addWidget(recipeHint);
     recipeLayout->addStretch();
     QScrollArea* recipeScroll = new QScrollArea(propertyTabs);
     recipeScroll->setWidgetResizable(true);
     recipeScroll->setWidget(recipePage);
-    const int recipeTab = propertyTabs->addTab(recipeScroll, QStringLiteral("配方信息"));
-    propertyTabs->setTabToolTip(recipeTab, QStringLiteral("配方信息与生成检查"));
+    const int recipeTab = propertyTabs->addTab(recipeScroll, QStringLiteral("方案信息"));
+    propertyTabs->setTabToolTip(recipeTab, QStringLiteral("测量方案信息与生成检查"));
     const auto markRecipeDirty = [this]() {
-        if (!m_loadingProject) m_projectDirty = true;
-        if (m_recipeValidationResult)
-            m_recipeValidationResult->setText(QStringLiteral("配方已修改，请重新检查生成条件。"));
+        if (m_loadingProject) return;
+        m_projectDirty = true;
+        if (m_recipeValidationResult) {
+            m_recipeValidationResult->setText(QStringLiteral("内容已修改，请重新检查。"));
+            m_recipeValidationResult->show();
+        }
     };
     connect(m_recipeProgramNumber, QOverload<int>::of(&QSpinBox::valueChanged), this,
         [markRecipeDirty](int) { markRecipeDirty(); });
@@ -2506,9 +2498,10 @@ void GraphicalProgramEditor::buildInterface()
         connect(input, &QLineEdit::textEdited, this, markRecipeDirty);
     connect(validateRecipe, &QPushButton::clicked, this, [this]() {
         const QStringList issues = validateRecipeForExport();
+        m_recipeValidationResult->show();
         if (issues.isEmpty()) {
             m_recipeValidationResult->setText(QStringLiteral(
-                "检查通过：配方基础数据完整，可以进入程序映射。"));
+                "检查通过：测量方案基础数据完整，可以进入程序映射。"));
             statusBar()->showMessage(QStringLiteral("生成条件检查通过；尚未生成生产程序。"), 6000);
         }
         else {
@@ -3251,7 +3244,7 @@ void GraphicalProgramEditor::showRecordDetection(int row)
     refreshAngleControls();
     m_detectionDiagnostic->setText(row >= 0 && row < m_records.size()
         ? QStringLiteral("记录 %1：%2").arg(m_records[row].sequence).arg(m_records[row].trialStatus)
-        : QStringLiteral("选中记录后显示最近执行状态。"));
+        : QString());
     if (row >= 0 && row < m_records.size()) {
         const MeasurementRecord& record = m_records[row];
         if (record.type == QStringLiteral("长度") && record.crossFrameLength) {
@@ -3647,8 +3640,9 @@ static bool isJsonInteger(const QJsonValue& value)
 QStringList GraphicalProgramEditor::validateRecipeForExport() const
 {
     QStringList issues;
-    if (!m_recipeProgramNumber || m_recipeProgramNumber->value() <= 0)
-        issues << QStringLiteral("请设置大于0的程序号。");
+    if (!m_recipeProgramNumber
+        || GraphicalProgramGeneration::isReservedProgramNumber(m_recipeProgramNumber->value()))
+        issues << QStringLiteral("新程序号须从61开始；0–50已登记，51–60存在未登记源码。");
     if (!m_recipePartNumber || m_recipePartNumber->text().trimmed().isEmpty())
         issues << QStringLiteral("请填写零件图号。");
     if (!m_recipePartName || m_recipePartName->text().trimmed().isEmpty())
@@ -3676,10 +3670,6 @@ QStringList GraphicalProgramEditor::validateRecipeForExport() const
         return false;
     };
     QSet<QString> featureNumbers;
-    const QSet<QString> productionTypes = {
-        QStringLiteral("直径"), QStringLiteral("孔径"),
-        QStringLiteral("长度"), QStringLiteral("角度")
-    };
     for (const MeasurementRecord& record : m_records) {
         const QString label = QStringLiteral("记录%1（%2）").arg(record.sequence).arg(record.type);
         const QString featureNumber = record.featureNumber.trimmed();
@@ -3695,11 +3685,13 @@ QStringList GraphicalProgramEditor::validateRecipeForExport() const
             if (record.lowerAxialOffsetPulse <= 0 || record.upperAxialOffsetPulse <= 0)
                 issues << label + QStringLiteral("需要设置大于0的轴5下侧、上侧偏移量。");
         }
-        if (!productionTypes.contains(record.type)) {
+        const GraphicalProgramContract contract = GraphicalProgramGeneration::contractForType(
+            record.type, record.crossFrameLength, record.singleRoiAngle);
+        if (!contract.supported) {
             issues << label + QStringLiteral("尚未接入生产程序映射。");
             continue;
         }
-        if (record.type != QStringLiteral("直径")) {
+        if (contract.requiresImage) {
             if (!frameHasFeature(record.frameId, record.geometryId))
                 issues << label + QStringLiteral("的主ROI不存在或已删除。");
         }
@@ -3712,9 +3704,11 @@ QStringList GraphicalProgramEditor::validateRecipeForExport() const
             if (!std::isfinite(record.holeCalibration) || record.holeCalibration <= 0)
                 issues << label + QStringLiteral("的测孔标定无效。");
         }
-        if (record.type == QStringLiteral("长度")) {
+        if (record.type == QStringLiteral("长度") || record.type == QStringLiteral("圆弧半径")) {
             if (!std::isfinite(record.lengthCalibration) || record.lengthCalibration <= 0)
                 issues << label + QStringLiteral("的远心标定无效。");
+        }
+        if (record.type == QStringLiteral("长度")) {
             if (record.crossFrameLength) {
                 if (!frameHasFeature(record.secondaryFrameId, record.secondaryGeometryId))
                     issues << label + QStringLiteral("的终点ROI不存在或已删除。");
@@ -3727,22 +3721,185 @@ QStringList GraphicalProgramEditor::validateRecipeForExport() const
         if (!(record.type == QStringLiteral("长度") && record.crossFrameLength)
             && !record.devicePosition.collected)
             issues << label + QStringLiteral("尚未采集设备点位。");
-        if (record.type == QStringLiteral("直径") && record.devicePosition.collected
-            && !record.devicePosition.hasLightCurtainSample)
-            issues << label + QStringLiteral("缺少有效光幕样本。");
+        if (contract.requiresImage && !record.detection.validationError().isEmpty())
+            issues << label + QStringLiteral("的检测参数无效：") + record.detection.validationError();
+        if ((record.type == QStringLiteral("圆柱度") || record.type == QStringLiteral("跳动"))
+            && record.devicePosition.collected) {
+            double axis5Encoder = 0;
+            bool hasAxis5 = false;
+            for (const auto& axis : record.devicePosition.axes) {
+                if (axis.axis == 5 && std::isfinite(axis.encoder)) {
+                    axis5Encoder = axis.encoder;
+                    hasAxis5 = true;
+                    break;
+                }
+            }
+            if (!hasAxis5)
+                issues << label + QStringLiteral("缺少有效轴5编码器点位。");
+            else {
+                const auto positions = GraphicalSensorMeasurement::axialPositions(
+                    axis5Encoder, record.lowerAxialOffsetPulse, record.upperAxialOffsetPulse);
+                if (!positions.ok)
+                    issues << label + QStringLiteral("的三截面点位无效：") + positions.error;
+            }
+        }
+        if (record.type == QStringLiteral("跳动")) {
+            const QString reference1 = record.roundoutReference1.trimmed();
+            const QString reference2 = record.roundoutReference2.trimmed();
+            if (reference1.isEmpty() || reference2.isEmpty())
+                issues << label + QStringLiteral("需要填写两个基准特征号。");
+            else if (reference1.compare(reference2, Qt::CaseInsensitive) == 0)
+                issues << label + QStringLiteral("的两个基准特征号不能相同。");
+        }
     }
     return issues;
+}
+
+bool GraphicalProgramEditor::exportProgramPackage(const QString& outputRoot,
+    QString& packagePath, QString& error)
+{
+    packagePath.clear();
+    error.clear();
+    const QStringList issues = validateRecipeForExport();
+    if (!issues.isEmpty()) {
+        error = QStringLiteral("生成条件未通过：\n%1").arg(issues.join(QLatin1Char('\n')));
+        return false;
+    }
+    const int programNumber = m_recipeProgramNumber->value();
+    const QString repositoryRoot = graphicalProjectRoot();
+    if (!repositoryRoot.isEmpty()) {
+        const QString baseName = QStringLiteral("program_%1").arg(programNumber);
+        const QStringList conflicts = {
+            QDir(repositoryRoot).filePath(QStringLiteral("myCode/head/%1.h").arg(baseName)),
+            QDir(repositoryRoot).filePath(QStringLiteral("myCode/sourceCode/%1.cpp").arg(baseName)),
+            QDir(repositoryRoot).filePath(QStringLiteral("x64/Release/SDKprogram/generated/%1.h").arg(baseName)),
+            QDir(repositoryRoot).filePath(QStringLiteral("x64/Release/SDKprogram/generated/%1.cpp").arg(baseName))
+        };
+        for (const QString& conflict : conflicts) {
+            if (QFileInfo::exists(conflict)) {
+                error = QStringLiteral("程序号%1已有文件：%2").arg(programNumber).arg(conflict);
+                return false;
+            }
+        }
+    }
+
+    QDir root(QFileInfo(outputRoot).absoluteFilePath());
+    if (!root.exists() && !QDir().mkpath(root.absolutePath())) {
+        error = QStringLiteral("无法创建生成输出目录：%1").arg(root.absolutePath());
+        return false;
+    }
+    const QString directoryName = QStringLiteral("program_%1").arg(programNumber);
+    const QString finalPath = root.filePath(directoryName);
+    if (QFileInfo::exists(finalPath)) {
+        error = QStringLiteral("生成目标已存在：%1").arg(finalPath);
+        return false;
+    }
+    const QString stagingName = QStringLiteral(".%1.tmp-%2").arg(
+        directoryName, QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString stagingPath = root.filePath(stagingName);
+    if (!QDir().mkpath(stagingPath)) {
+        error = QStringLiteral("无法创建生成暂存目录：%1").arg(stagingPath);
+        return false;
+    }
+    const auto fail = [&](const QString& message) {
+        QDir(stagingPath).removeRecursively();
+        error = message;
+        return false;
+    };
+
+    storeCurrentFrame();
+    const QVector<ProjectFrame> originalFrames = m_frames;
+    const QString originalImagePath = m_imageFilePath;
+    const QString originalImageHash = m_imageFileSha256;
+    const QString definitionPath = QDir(stagingPath).filePath(QStringLiteral("measurement.axisproj.json"));
+    QString writeError;
+    const bool definitionWritten = writeProject(definitionPath, writeError);
+    m_frames = originalFrames;
+    m_imageFilePath = originalImagePath;
+    m_imageFileSha256 = originalImageHash;
+    if (!definitionWritten)
+        return fail(QStringLiteral("生成测量定义失败：%1").arg(writeError));
+
+    const QByteArray definitionHash = projectFileSha256(definitionPath, writeError);
+    if (definitionHash.isEmpty())
+        return fail(QStringLiteral("校验测量定义失败：%1").arg(writeError));
+
+    QJsonObject manifest;
+    manifest[QStringLiteral("format")] = QStringLiteral("AxisMeasurement.GraphicalProgramPackage");
+    manifest[QStringLiteral("version")] = 1;
+    manifest[QStringLiteral("programNumber")] = programNumber;
+    manifest[QStringLiteral("createdAtUtc")] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    manifest[QStringLiteral("definition")] = QStringLiteral("measurement.axisproj.json");
+    manifest[QStringLiteral("definitionSha256")] = QString::fromLatin1(definitionHash);
+    const QString assetsName = QStringLiteral("measurement.axisproj.assets");
+    manifest[QStringLiteral("assetDirectory")] = QDir(stagingPath).exists(assetsName)
+        ? QJsonValue(assetsName) : QJsonValue(QJsonValue::Null);
+    QJsonObject metadata;
+    metadata[QStringLiteral("partNumber")] = m_recipePartNumber->text().trimmed();
+    metadata[QStringLiteral("partName")] = m_recipePartName->text().trimmed();
+    metadata[QStringLiteral("processNumber")] = m_recipeProcessNumber->text().trimmed();
+    metadata[QStringLiteral("note")] = m_recipeNote->text().trimmed();
+    manifest[QStringLiteral("metadata")] = metadata;
+    QJsonArray records;
+    for (const MeasurementRecord& record : m_records) {
+        const GraphicalProgramContract contract = GraphicalProgramGeneration::contractForType(
+            record.type, record.crossFrameLength, record.singleRoiAngle);
+        QJsonObject item;
+        item[QStringLiteral("sequence")] = record.sequence;
+        item[QStringLiteral("featureNumber")] = record.featureNumber;
+        item[QStringLiteral("type")] = record.type;
+        item[QStringLiteral("legacyWorksheet")] = contract.legacyWorksheet;
+        item[QStringLiteral("cameraIndex")] = contract.cameraIndex;
+        QJsonArray axes;
+        for (int axis : contract.axes) axes.append(axis);
+        item[QStringLiteral("axes")] = axes;
+        item[QStringLiteral("requiresImage")] = contract.requiresImage;
+        item[QStringLiteral("requiresCalibration")] = contract.requiresCalibration;
+        item[QStringLiteral("requiresSecondRoi")] = contract.requiresSecondRoi;
+        item[QStringLiteral("requiresTemplate")] = contract.requiresTemplate;
+        item[QStringLiteral("threeSectionScan")] = contract.threeSectionScan;
+        item[QStringLiteral("requiresTwoReferences")] = contract.requiresTwoReferences;
+        records.append(item);
+    }
+    manifest[QStringLiteral("records")] = records;
+
+    QSaveFile manifestFile(QDir(stagingPath).filePath(QStringLiteral("generation_manifest.json")));
+    if (!manifestFile.open(QIODevice::WriteOnly))
+        return fail(QStringLiteral("无法写入生成清单：%1").arg(manifestFile.errorString()));
+    if (manifestFile.write(QJsonDocument(manifest).toJson(QJsonDocument::Indented)) < 0
+        || !manifestFile.commit())
+        return fail(QStringLiteral("无法提交生成清单：%1").arg(manifestFile.errorString()));
+    if (!root.rename(stagingName, directoryName))
+        return fail(QStringLiteral("无法提交生成程序包：%1").arg(finalPath));
+    packagePath = QFileInfo(finalPath).absoluteFilePath();
+    return true;
 }
 
 bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& error)
 {
     error.clear();
     storeCurrentFrame();
-    if (!m_canvas->hasImage() || m_frames.isEmpty()) {
-        error = QStringLiteral("当前配方没有可保存的图像。"); return false;
+    const bool imageLess = !m_canvas->hasImage() && m_frames.isEmpty();
+    if (m_canvas->hasImage() != !m_frames.isEmpty()) {
+        error = QStringLiteral("测量方案图像状态不完整，无法保存。"); return false;
+    }
+    if (imageLess) {
+        if (m_records.isEmpty()) {
+            error = QStringLiteral("无图像测量方案至少需要一条传感器测量记录。"); return false;
+        }
+        for (const MeasurementRecord& record : m_records) {
+            if (measurementRequiresImage(record.type) || record.frameId != 0
+                || record.geometryId != -1 || record.secondaryFrameId != 0
+                || record.secondaryGeometryId != -1) {
+                error = QStringLiteral("记录%1（%2）需要参考图或包含图形关联，不能保存为无图像测量方案。")
+                    .arg(record.sequence).arg(record.type);
+                return false;
+            }
+        }
     }
     const QVector<GraphicalCanvas::FeatureSnapshot> featureSnapshots = m_canvas->featureSnapshots();
-    if (!m_canvas->validateFeatureSnapshots(featureSnapshots, m_canvas->sourceImage().size(), error)) return false;
+    if (!imageLess
+        && !m_canvas->validateFeatureSnapshots(featureSnapshots, m_canvas->sourceImage().size(), error)) return false;
 
     struct PersistedFrame {
         int id = 0;
@@ -3757,7 +3914,7 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
     bool assetDirectoryReady = false;
     for (const ProjectFrame& frame : m_frames) {
         if (frame.id <= 0 || frame.image.isNull()) {
-            error = QStringLiteral("配方图像数据不完整，无法保存。"); return false;
+            error = QStringLiteral("测量方案图像数据不完整，无法保存。"); return false;
         }
         if (!m_canvas->validateFeatureSnapshots(frame.features, frame.image.size(), error)) return false;
 
@@ -3766,14 +3923,14 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         if (frame.cameraIndex >= 0) {
             if (!assetDirectoryReady) {
                 if (!projectDirectory.mkpath(assetDirectoryName)) {
-                    error = QStringLiteral("无法创建配方图像资源目录。"); return false;
+                    error = QStringLiteral("无法创建测量方案图像资源目录。"); return false;
                 }
                 assetDirectoryReady = true;
             }
             persisted.absolutePath = projectDirectory.filePath(assetDirectoryName
                 + QStringLiteral("/frame_%1_camera_%2.png").arg(frame.id).arg(frame.cameraIndex));
             if (!writePngAtomically(frame.image, persisted.absolutePath, error)) {
-                error = QStringLiteral("保存配方图像资源失败：%1").arg(error); return false;
+                error = QStringLiteral("保存测量方案图像资源失败：%1").arg(error); return false;
             }
         }
         else {
@@ -3799,13 +3956,15 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
     for (const PersistedFrame& frame : persistedFrames) {
         if (frame.id == m_currentFrameId) { currentPersistedFrame = &frame; break; }
     }
-    if (!currentFrame || !currentPersistedFrame) {
-        error = QStringLiteral("当前图像不属于该配方。"); return false;
+    if (!imageLess && (!currentFrame || !currentPersistedFrame)) {
+        error = QStringLiteral("当前图像不属于该测量方案。"); return false;
     }
 
     QJsonObject root;
     root[QStringLiteral("format")] = QStringLiteral("AxisMeasurement.GraphicalProject");
-    root[QStringLiteral("version")] = 2;
+    // Keep image-based plans on version 2 so they remain readable by the
+    // preceding release. Version 3 adds the explicit image-less form only.
+    root[QStringLiteral("version")] = imageLess ? 3 : 2;
     QJsonObject recipe;
     recipe[QStringLiteral("programNumber")] = m_recipeProgramNumber ? m_recipeProgramNumber->value() : 0;
     recipe[QStringLiteral("partNumber")] = m_recipePartNumber ? m_recipePartNumber->text().trimmed() : QString();
@@ -3814,17 +3973,22 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
     recipe[QStringLiteral("note")] = m_recipeNote ? m_recipeNote->text().trimmed() : QString();
     root[QStringLiteral("recipe")] = recipe;
     QJsonObject imageObject;
-    imageObject[QStringLiteral("path")] = projectDirectory.relativeFilePath(currentPersistedFrame->absolutePath);
-    imageObject[QStringLiteral("width")] = m_canvas->sourceImage().width();
-    imageObject[QStringLiteral("height")] = m_canvas->sourceImage().height();
-    imageObject[QStringLiteral("sha256")] = QString::fromLatin1(currentPersistedFrame->sha256);
-    imageObject[QStringLiteral("source")] = currentFrame->cameraIndex >= 0
-        ? QStringLiteral("camera") : QStringLiteral("local");
-    if (currentFrame->cameraIndex >= 0) {
-        imageObject[QStringLiteral("cameraIndex")] = currentFrame->cameraIndex;
-        imageObject[QStringLiteral("exposure")] = currentFrame->exposure;
+    if (imageLess) {
+        root[QStringLiteral("image")] = QJsonValue::Null;
     }
-    root[QStringLiteral("image")] = imageObject;
+    else {
+        imageObject[QStringLiteral("path")] = projectDirectory.relativeFilePath(currentPersistedFrame->absolutePath);
+        imageObject[QStringLiteral("width")] = m_canvas->sourceImage().width();
+        imageObject[QStringLiteral("height")] = m_canvas->sourceImage().height();
+        imageObject[QStringLiteral("sha256")] = QString::fromLatin1(currentPersistedFrame->sha256);
+        imageObject[QStringLiteral("source")] = currentFrame->cameraIndex >= 0
+            ? QStringLiteral("camera") : QStringLiteral("local");
+        if (currentFrame->cameraIndex >= 0) {
+            imageObject[QStringLiteral("cameraIndex")] = currentFrame->cameraIndex;
+            imageObject[QStringLiteral("exposure")] = currentFrame->exposure;
+        }
+        root[QStringLiteral("image")] = imageObject;
+    }
 
     QJsonArray features;
     for (const auto& feature : featureSnapshots) {
@@ -3850,7 +4014,7 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         for (const PersistedFrame& candidate : persistedFrames) {
             if (candidate.id == frame.id) { persisted = &candidate; break; }
         }
-        if (!persisted) { error = QStringLiteral("配方图像索引不完整。"); return false; }
+        if (!persisted) { error = QStringLiteral("测量方案图像索引不完整。"); return false; }
         QJsonObject frameObject;
         frameObject[QStringLiteral("id")] = frame.id;
         frameObject[QStringLiteral("path")] = projectDirectory.relativeFilePath(persisted->absolutePath);
@@ -3882,8 +4046,8 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         frameArray.append(frameObject);
     }
     root[QStringLiteral("frames")] = frameArray;
-    root[QStringLiteral("currentFrameId")] = m_currentFrameId;
-    root[QStringLiteral("nextFrameId")] = m_nextFrameId;
+    root[QStringLiteral("currentFrameId")] = imageLess ? 0 : m_currentFrameId;
+    root[QStringLiteral("nextFrameId")] = imageLess ? 1 : m_nextFrameId;
 
     QJsonArray records;
     for (const MeasurementRecord& record : m_records) {
@@ -3907,8 +4071,9 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
             object[QStringLiteral("roundoutReference1")] = record.roundoutReference1;
             object[QStringLiteral("roundoutReference2")] = record.roundoutReference2;
         }
-        if (record.type == QStringLiteral("长度")) {
+        if (record.type == QStringLiteral("长度") || record.type == QStringLiteral("圆弧半径"))
             object[QStringLiteral("lengthCalibrationMmPerPixel")] = record.lengthCalibration;
+        if (record.type == QStringLiteral("长度")) {
             object[QStringLiteral("crossFrameLength")] = record.crossFrameLength;
             const auto endpointJson = [](const MeasurementRecord::DevicePosition& position) {
                 QJsonObject endpoint;
@@ -3989,13 +4154,6 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         const int expectedCamera = deviceCameraForMeasurement(record.type);
         QVector<int> actualAxes;
         for (const auto& axis : record.devicePosition.axes) actualAxes.append(axis.axis);
-        const bool validLightCurtain = record.type == QStringLiteral("直径")
-            ? record.devicePosition.hasLightCurtainSample
-                && std::isfinite(record.devicePosition.lightCurtainRawOut1)
-                && std::isfinite(record.devicePosition.lightCurtainDiameter)
-                && QDateTime::fromString(record.devicePosition.lightCurtainSampledAtUtc,
-                    Qt::ISODateWithMs).isValid()
-            : !record.devicePosition.hasLightCurtainSample;
         const bool validUncollected = !record.devicePosition.collected
             && record.devicePosition.source == QStringLiteral("none")
             && record.devicePosition.unit == QStringLiteral("pulse")
@@ -4009,7 +4167,7 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
             && QDateTime::fromString(record.devicePosition.capturedAtUtc, Qt::ISODateWithMs).isValid()
             && actualAxes == expectedAxes
             && record.devicePosition.cameraIndex == expectedCamera
-            && validLightCurtain
+            && !record.devicePosition.hasLightCurtainSample
             && ((expectedCamera < 0 && record.devicePosition.exposure == -1)
                 || (expectedCamera >= 0 && record.devicePosition.exposure >= 0
                     && record.devicePosition.exposure <= 30000));
@@ -4022,16 +4180,7 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         devicePosition[QStringLiteral("source")] = record.devicePosition.source;
         devicePosition[QStringLiteral("unit")] = record.devicePosition.unit;
         QJsonObject lightCurtain;
-        lightCurtain[QStringLiteral("status")] = record.devicePosition.hasLightCurtainSample
-            ? QStringLiteral("sampled") : QStringLiteral("none");
-        if (record.devicePosition.hasLightCurtainSample) {
-            lightCurtain[QStringLiteral("output")] = 1;
-            lightCurtain[QStringLiteral("rawValue")] = record.devicePosition.lightCurtainRawOut1;
-            lightCurtain[QStringLiteral("rawUnit")] = QStringLiteral("mm");
-            lightCurtain[QStringLiteral("compensatedDiameter")] = record.devicePosition.lightCurtainDiameter;
-            lightCurtain[QStringLiteral("compensatedUnit")] = QStringLiteral("mm");
-            lightCurtain[QStringLiteral("sampledAtUtc")] = record.devicePosition.lightCurtainSampledAtUtc;
-        }
+        lightCurtain[QStringLiteral("status")] = QStringLiteral("none");
         devicePosition[QStringLiteral("lightCurtain")] = lightCurtain;
         if (record.devicePosition.collected) {
             devicePosition[QStringLiteral("capturedAtUtc")] = record.devicePosition.capturedAtUtc;
@@ -4071,7 +4220,7 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
             break;
         }
     }
-    if (currentFrame->cameraIndex >= 0) {
+    if (!imageLess && currentFrame->cameraIndex >= 0) {
         m_imageFilePath = currentPersistedFrame->absolutePath;
         m_imageFileSha256 = QString::fromLatin1(currentPersistedFrame->sha256);
     }
@@ -4093,10 +4242,11 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
     const int projectVersion = root.value(QStringLiteral("version")).toInt(-1);
     if (root.value(QStringLiteral("format")).toString() != QStringLiteral("AxisMeasurement.GraphicalProject")
         || !isJsonInteger(root.value(QStringLiteral("version")))
-        || (projectVersion != 1 && projectVersion != 2)) {
+        || (projectVersion != 1 && projectVersion != 2 && projectVersion != 3)) {
         error = QStringLiteral("不支持的工程格式或版本。"); return false;
     }
-    if (!root.value(QStringLiteral("image")).isObject()
+    const bool imageLess = projectVersion == 3 && root.value(QStringLiteral("image")).isNull();
+    if ((!imageLess && !root.value(QStringLiteral("image")).isObject())
         || !root.value(QStringLiteral("features")).isArray()
         || !root.value(QStringLiteral("records")).isArray()
         || !isJsonInteger(root.value(QStringLiteral("nextRecordSequence")))
@@ -4109,7 +4259,7 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
     const QJsonValue recipeValue = root.value(QStringLiteral("recipe"));
     if (!recipeValue.isUndefined()) {
         if (!recipeValue.isObject()) {
-            error = QStringLiteral("配方信息格式错误。"); return false;
+            error = QStringLiteral("测量方案信息格式错误。"); return false;
         }
         const QJsonObject recipe = recipeValue.toObject();
         if (!isJsonInteger(recipe.value(QStringLiteral("programNumber")))
@@ -4117,58 +4267,62 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
             || !recipe.value(QStringLiteral("partName")).isString()
             || !recipe.value(QStringLiteral("processNumber")).isString()
             || !recipe.value(QStringLiteral("note")).isString()) {
-            error = QStringLiteral("配方信息字段格式错误。"); return false;
+            error = QStringLiteral("测量方案信息字段格式错误。"); return false;
         }
         recipeProgramNumber = recipe.value(QStringLiteral("programNumber")).toInt();
         recipePartNumber = recipe.value(QStringLiteral("partNumber")).toString().trimmed();
         recipePartName = recipe.value(QStringLiteral("partName")).toString().trimmed();
         recipeProcessNumber = recipe.value(QStringLiteral("processNumber")).toString().trimmed();
         recipeNote = recipe.value(QStringLiteral("note")).toString().trimmed();
-        if (recipeProgramNumber < 0 || recipeProgramNumber > 50
+        if (recipeProgramNumber < 0 || recipeProgramNumber > 999
             || recipePartNumber.size() > 128 || recipePartName.size() > 128
             || recipeProcessNumber.size() > 128 || recipeNote.size() > 128) {
-            error = QStringLiteral("配方信息值超出允许范围。"); return false;
+            error = QStringLiteral("测量方案信息值超出允许范围。"); return false;
         }
     }
-    const QJsonObject imageObject = root.value(QStringLiteral("image")).toObject();
-    if (!imageObject.value(QStringLiteral("path")).isString()
-        || !isJsonInteger(imageObject.value(QStringLiteral("width")))
-        || !isJsonInteger(imageObject.value(QStringLiteral("height")))
-        || !imageObject.value(QStringLiteral("sha256")).isString()) {
-        error = QStringLiteral("工程图像信息格式错误。"); return false;
-    }
-    const QString storedImagePath = imageObject.value(QStringLiteral("path")).toString();
-    const QString storedImageSha256 = imageObject.value(QStringLiteral("sha256")).toString();
-    const QString imageSource = imageObject.value(QStringLiteral("source")).toString(QStringLiteral("local"));
+    QString imagePath;
+    QByteArray currentImageSha256;
+    QImage image;
     int imageCameraIndex = -1;
     int imageExposure = -1;
-    if (imageSource != QStringLiteral("local") && imageSource != QStringLiteral("camera")) {
-        error = QStringLiteral("工程图像来源无效。"); return false;
-    }
-    if (imageSource == QStringLiteral("camera")) {
-        if (!isJsonInteger(imageObject.value(QStringLiteral("cameraIndex")))
-            || !isJsonInteger(imageObject.value(QStringLiteral("exposure")))) {
-            error = QStringLiteral("工程相机图像信息格式错误。"); return false;
+    if (!imageLess) {
+        const QJsonObject imageObject = root.value(QStringLiteral("image")).toObject();
+        if (!imageObject.value(QStringLiteral("path")).isString()
+            || !isJsonInteger(imageObject.value(QStringLiteral("width")))
+            || !isJsonInteger(imageObject.value(QStringLiteral("height")))
+            || !imageObject.value(QStringLiteral("sha256")).isString()) {
+            error = QStringLiteral("工程图像信息格式错误。"); return false;
         }
-        imageCameraIndex = imageObject.value(QStringLiteral("cameraIndex")).toInt();
-        imageExposure = imageObject.value(QStringLiteral("exposure")).toInt();
-        if (imageCameraIndex < 0 || imageCameraIndex > 2 || imageExposure < 0 || imageExposure > 30000) {
-            error = QStringLiteral("工程相机编号或曝光值无效。"); return false;
+        const QString storedImagePath = imageObject.value(QStringLiteral("path")).toString();
+        const QString storedImageSha256 = imageObject.value(QStringLiteral("sha256")).toString();
+        const QString imageSource = imageObject.value(QStringLiteral("source")).toString(QStringLiteral("local"));
+        if (imageSource != QStringLiteral("local") && imageSource != QStringLiteral("camera")) {
+            error = QStringLiteral("工程图像来源无效。"); return false;
         }
-    }
-    if (storedImagePath.isEmpty()) { error = QStringLiteral("工程缺少图像路径。"); return false; }
-    if (storedImageSha256.size() != 64) { error = QStringLiteral("工程图像校验值无效。"); return false; }
-    const QString imagePath = QFileInfo(QDir(QFileInfo(filePath).absolutePath()).filePath(storedImagePath)).absoluteFilePath();
-    const QByteArray currentImageSha256 = projectFileSha256(imagePath, error);
-    if (currentImageSha256.isEmpty()) return false;
-    if (QString::fromLatin1(currentImageSha256).compare(storedImageSha256, Qt::CaseInsensitive) != 0) {
-        error = QStringLiteral("工程引用的图像内容已变化，当前工程保持不变。"); return false;
-    }
-    QImage image;
-    if (!image.load(imagePath)) { error = QStringLiteral("无法读取工程图像：%1").arg(imagePath); return false; }
-    if (image.width() != imageObject.value(QStringLiteral("width")).toInt()
-        || image.height() != imageObject.value(QStringLiteral("height")).toInt()) {
-        error = QStringLiteral("工程图像尺寸与保存时不一致，当前工程保持不变。"); return false;
+        if (imageSource == QStringLiteral("camera")) {
+            if (!isJsonInteger(imageObject.value(QStringLiteral("cameraIndex")))
+                || !isJsonInteger(imageObject.value(QStringLiteral("exposure")))) {
+                error = QStringLiteral("工程相机图像信息格式错误。"); return false;
+            }
+            imageCameraIndex = imageObject.value(QStringLiteral("cameraIndex")).toInt();
+            imageExposure = imageObject.value(QStringLiteral("exposure")).toInt();
+            if (imageCameraIndex < 0 || imageCameraIndex > 2 || imageExposure < 0 || imageExposure > 30000) {
+                error = QStringLiteral("工程相机编号或曝光值无效。"); return false;
+            }
+        }
+        if (storedImagePath.isEmpty()) { error = QStringLiteral("工程缺少图像路径。"); return false; }
+        if (storedImageSha256.size() != 64) { error = QStringLiteral("工程图像校验值无效。"); return false; }
+        imagePath = QFileInfo(QDir(QFileInfo(filePath).absolutePath()).filePath(storedImagePath)).absoluteFilePath();
+        currentImageSha256 = projectFileSha256(imagePath, error);
+        if (currentImageSha256.isEmpty()) return false;
+        if (QString::fromLatin1(currentImageSha256).compare(storedImageSha256, Qt::CaseInsensitive) != 0) {
+            error = QStringLiteral("工程引用的图像内容已变化，当前工程保持不变。"); return false;
+        }
+        if (!image.load(imagePath)) { error = QStringLiteral("无法读取工程图像：%1").arg(imagePath); return false; }
+        if (image.width() != imageObject.value(QStringLiteral("width")).toInt()
+            || image.height() != imageObject.value(QStringLiteral("height")).toInt()) {
+            error = QStringLiteral("工程图像尺寸与保存时不一致，当前工程保持不变。"); return false;
+        }
     }
 
     const QJsonArray featureArray = root.value(QStringLiteral("features")).toArray();
@@ -4201,12 +4355,27 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
         }
         features.append(feature); featureIds.insert(feature.id);
     }
-    if (!m_canvas->validateFeatureSnapshots(features, image.size(), error)) return false;
+    if (imageLess && !features.isEmpty()) {
+        error = QStringLiteral("无图像测量方案不能包含图形。"); return false;
+    }
+    if (!imageLess && !m_canvas->validateFeatureSnapshots(features, image.size(), error)) return false;
 
     QVector<ProjectFrame> frames;
     int currentFrameId = 1;
     int nextFrameId = 2;
-    if (projectVersion == 1) {
+    if (imageLess) {
+        if (!root.value(QStringLiteral("frames")).isArray()
+            || !root.value(QStringLiteral("frames")).toArray().isEmpty()
+            || !isJsonInteger(root.value(QStringLiteral("currentFrameId")))
+            || !isJsonInteger(root.value(QStringLiteral("nextFrameId")))
+            || root.value(QStringLiteral("currentFrameId")).toInt(-1) != 0
+            || root.value(QStringLiteral("nextFrameId")).toInt(-1) != 1) {
+            error = QStringLiteral("无图像测量方案的帧信息无效。"); return false;
+        }
+        currentFrameId = 0;
+        nextFrameId = 1;
+    }
+    else if (projectVersion == 1) {
         ProjectFrame frame;
         frame.id = 1; frame.filePath = imagePath;
         frame.fileSha256 = QString::fromLatin1(currentImageSha256);
@@ -4317,6 +4486,9 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
 
     const QJsonArray recordArray = root.value(QStringLiteral("records")).toArray();
     if (recordArray.size() > 10000) { error = QStringLiteral("工程测量记录超过10000。"); return false; }
+    if (imageLess && recordArray.isEmpty()) {
+        error = QStringLiteral("无图像测量方案至少需要一条传感器测量记录。"); return false;
+    }
     QVector<MeasurementRecord> records;
     QSet<int> sequences;
     int nextSequence = 1;
@@ -4324,7 +4496,7 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
         if (!value.isObject()) { error = QStringLiteral("测量记录格式错误。"); return false; }
         const QJsonObject object = value.toObject();
         if (!isJsonInteger(object.value(QStringLiteral("sequence")))
-            || (projectVersion == 2 && (!isJsonInteger(object.value(QStringLiteral("frameId")))
+            || (projectVersion >= 2 && (!isJsonInteger(object.value(QStringLiteral("frameId")))
                 || !isJsonInteger(object.value(QStringLiteral("secondaryFrameId")))))
             || !isJsonInteger(object.value(QStringLiteral("geometryId")))
             || !isJsonInteger(object.value(QStringLiteral("secondaryGeometryId")))
@@ -4547,16 +4719,18 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
                     || !lightCurtain.value(QStringLiteral("sampledAtUtc")).isString()) {
                     error = QStringLiteral("测量记录%1的光幕样本字段无效。").arg(record.sequence); return false;
                 }
-                record.devicePosition.hasLightCurtainSample = true;
-                record.devicePosition.lightCurtainRawOut1 = lightCurtain.value(QStringLiteral("rawValue")).toDouble();
-                record.devicePosition.lightCurtainDiameter = lightCurtain.value(QStringLiteral("compensatedDiameter")).toDouble();
-                record.devicePosition.lightCurtainSampledAtUtc = lightCurtain.value(QStringLiteral("sampledAtUtc")).toString();
-                if (!std::isfinite(record.devicePosition.lightCurtainRawOut1)
-                    || !std::isfinite(record.devicePosition.lightCurtainDiameter)
-                    || !QDateTime::fromString(record.devicePosition.lightCurtainSampledAtUtc,
+                const double rawValue = lightCurtain.value(QStringLiteral("rawValue")).toDouble();
+                const double compensatedDiameter = lightCurtain.value(QStringLiteral("compensatedDiameter")).toDouble();
+                const QString sampledAtUtc = lightCurtain.value(QStringLiteral("sampledAtUtc")).toString();
+                if (!std::isfinite(rawValue)
+                    || !std::isfinite(compensatedDiameter)
+                    || !QDateTime::fromString(sampledAtUtc,
                         Qt::ISODateWithMs).isValid()) {
                     error = QStringLiteral("测量记录%1的光幕样本值无效。").arg(record.sequence); return false;
                 }
+                // Version 2 projects could contain a configuration-time light-curtain
+                // reading. Validate the legacy field, then discard it: production
+                // measurement must acquire a fresh sample at the recorded axis-5 point.
             }
             else if (sensorStatus != QStringLiteral("none")) {
                 error = QStringLiteral("测量记录%1的光幕样本状态无效。").arg(record.sequence); return false;
@@ -4643,7 +4817,11 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
         };
         if (record.sequence <= 0 || record.sequence == INT_MAX || sequences.contains(record.sequence)
             || record.featureNumber.trimmed().isEmpty()
-            || record.frameId <= 0 || (record.secondaryGeometryId > 0 && record.secondaryFrameId <= 0)
+            || (imageLess ? record.frameId != 0 : record.frameId <= 0)
+            || (record.secondaryGeometryId > 0 && record.secondaryFrameId <= 0)
+            || (imageLess && (measurementRequiresImage(record.type)
+                || record.geometryId != -1 || record.secondaryFrameId != 0
+                || record.secondaryGeometryId != -1))
             || record.geometryId < -1 || record.secondaryGeometryId < -1
             || m_measurementType->findText(record.type) < 0 || record.lower > record.upper
             || !std::isfinite(record.nominal) || !std::isfinite(record.lower) || !std::isfinite(record.upper)
@@ -4666,7 +4844,8 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
             || (axialScanType && ((lowerAxialOffset.isUndefined() != upperAxialOffset.isUndefined())
                 || (!lowerAxialOffset.isUndefined()
                     && (record.lowerAxialOffsetPulse <= 0 || record.upperAxialOffsetPulse <= 0))))
-            || (record.type != QStringLiteral("长度") && !lengthCalibration.isUndefined())
+            || (record.type != QStringLiteral("长度") && record.type != QStringLiteral("圆弧半径")
+                && !lengthCalibration.isUndefined())
             || (record.type != QStringLiteral("长度") && !lengthTemplateValue.isUndefined())
             || (record.type != QStringLiteral("长度") && (!crossFrameLength.isUndefined()
                 || !object.value(QStringLiteral("lengthStartPosition")).isUndefined()
@@ -4680,10 +4859,7 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
         for (const auto& axis : record.devicePosition.axes) actualAxes.append(axis.axis);
         if ((record.devicePosition.collected
                 && (actualAxes != expectedAxes || record.devicePosition.cameraIndex != expectedCamera
-                    || (record.type == QStringLiteral("直径")
-                        && !record.devicePosition.hasLightCurtainSample)
-                    || (record.type != QStringLiteral("直径")
-                        && record.devicePosition.hasLightCurtainSample)))
+                    || record.devicePosition.hasLightCurtainSample))
             || (!record.devicePosition.collected
                 && (!actualAxes.isEmpty() || record.devicePosition.cameraIndex != -1
                     || record.devicePosition.exposure != -1
@@ -4706,10 +4882,19 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
     m_loadingProject = true;
     cancelRelink();
     m_canvas->setImage(image);
-    setCanvasSourceBadge(m_canvas, QStringLiteral("配方参考图 · 非实时"));
-    if (!m_canvas->restoreFeatures(features, error)) { m_loadingProject = false; return false; }
-    if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint")))
-        hint->hide();
+    setCanvasSourceBadge(m_canvas, imageLess
+        ? QString() : QStringLiteral("测量方案参考图 · 非实时"));
+    if (!imageLess && !m_canvas->restoreFeatures(features, error)) {
+        m_loadingProject = false;
+        return false;
+    }
+    if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint"))) {
+        if (imageLess) {
+            hint->setText(QStringLiteral("无图像测量方案\n当前记录由光幕与设备点位执行"));
+            hint->show();
+        }
+        else hint->hide();
+    }
     m_records = records;
     m_nextRecordSequence = qMax(nextSequence, root.value(QStringLiteral("nextRecordSequence")).toInt(1));
     m_frames = frames;
@@ -4724,9 +4909,8 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
     m_recipePartName->setText(recipePartName);
     m_recipeProcessNumber->setText(recipeProcessNumber);
     m_recipeNote->setText(recipeNote);
-    m_recipeValidationResult->setText(recipeValue.isUndefined()
-        ? QStringLiteral("旧配方未包含配方信息，请填写后检查生成条件。")
-        : QStringLiteral("配方已载入，请检查生成条件。"));
+    m_recipeValidationResult->clear();
+    m_recipeValidationResult->hide();
     m_projectFilePath = QFileInfo(filePath).absoluteFilePath();
     m_loadingProject = false;
     m_projectDirty = false;
@@ -4740,37 +4924,37 @@ void GraphicalProgramEditor::saveProject()
     if (m_projectFilePath.isEmpty()) { saveProjectAs(); return; }
     QString error;
     if (!saveRecipeFile(m_projectFilePath, error)) {
-        QMessageBox::warning(this, QStringLiteral("保存配方失败"), error); return;
+        QMessageBox::warning(this, QStringLiteral("保存测量方案失败"), error); return;
     }
-    statusBar()->showMessage(QStringLiteral("配方已保存：%1").arg(m_projectFilePath), 6000);
+    statusBar()->showMessage(QStringLiteral("测量方案已保存：%1").arg(m_projectFilePath), 6000);
 }
 
 void GraphicalProgramEditor::saveProjectAs()
 {
     const QString initial = m_projectFilePath.isEmpty() ? QString() : m_projectFilePath;
-    QString filePath = QFileDialog::getSaveFileName(this, QStringLiteral("保存测量配方"), initial,
-        QStringLiteral("AxisMeasurement配方 (*.axisproj.json);;JSON文件 (*.json)"));
+    QString filePath = QFileDialog::getSaveFileName(this, QStringLiteral("保存测量方案"), initial,
+        QStringLiteral("AxisMeasurement测量方案 (*.axisproj.json);;JSON文件 (*.json)"));
     if (filePath.isEmpty()) return;
     if (!filePath.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) filePath += QStringLiteral(".axisproj.json");
     QString error;
-    if (!saveRecipeFile(filePath, error)) { QMessageBox::warning(this, QStringLiteral("保存配方失败"), error); return; }
-    statusBar()->showMessage(QStringLiteral("配方已保存：%1").arg(m_projectFilePath), 6000);
+    if (!saveRecipeFile(filePath, error)) { QMessageBox::warning(this, QStringLiteral("保存测量方案失败"), error); return; }
+    statusBar()->showMessage(QStringLiteral("测量方案已保存：%1").arg(m_projectFilePath), 6000);
 }
 
 void GraphicalProgramEditor::openProject()
 {
     if (m_trialRunning || m_ownedAxis > 0 || m_ownedCamera >= 0) {
-        QMessageBox::warning(this, QStringLiteral("不能打开配方"),
+        QMessageBox::warning(this, QStringLiteral("不能打开测量方案"),
             QStringLiteral("请等待试测结束，并停止当前轴运动和相机采集。")); return;
     }
-    if (m_projectDirty && QMessageBox::question(this, QStringLiteral("打开配方"),
-        QStringLiteral("当前配方有未保存修改，继续将丢失这些修改。是否打开其他配方？")) != QMessageBox::Yes) return;
-    const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("打开测量配方"), QString(),
-        QStringLiteral("AxisMeasurement配方 (*.axisproj.json *.json)"));
+    if (m_projectDirty && QMessageBox::question(this, QStringLiteral("打开测量方案"),
+        QStringLiteral("当前测量方案有未保存修改，继续将丢失这些修改。是否打开其他测量方案？")) != QMessageBox::Yes) return;
+    const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("打开测量方案"), QString(),
+        QStringLiteral("AxisMeasurement测量方案 (*.axisproj.json *.json)"));
     if (filePath.isEmpty()) return;
     QString error;
-    if (!loadRecipeFile(filePath, error)) { QMessageBox::warning(this, QStringLiteral("打开配方失败"), error); return; }
-    statusBar()->showMessage(QStringLiteral("配方已载入；历史试测结果已失效，请重新试测。"), 6000);
+    if (!loadRecipeFile(filePath, error)) { QMessageBox::warning(this, QStringLiteral("打开测量方案失败"), error); return; }
+    statusBar()->showMessage(QStringLiteral("测量方案已载入；历史试测结果已失效，请重新试测。"), 6000);
 }
 
 void GraphicalProgramEditor::closeEvent(QCloseEvent* event)
@@ -4795,7 +4979,7 @@ void GraphicalProgramEditor::closeEvent(QCloseEvent* event)
     }
     cancelRelink();
     if (m_projectDirty && QMessageBox::question(this, QStringLiteral("关闭图形化编程"),
-        QStringLiteral("当前配方有未保存修改。是否仍关闭窗口？")) != QMessageBox::Yes) {
+        QStringLiteral("当前测量方案有未保存修改。是否仍关闭窗口？")) != QMessageBox::Yes) {
         event->ignore();
         return;
     }
@@ -4969,7 +5153,7 @@ void GraphicalProgramEditor::openLocalImage()
     }
 
     if (m_projectDirty && QMessageBox::question(this, QStringLiteral("更换图像"),
-        QStringLiteral("当前配方有未保存修改。更换图像将清空记录和图形，是否继续？")) != QMessageBox::Yes)
+        QStringLiteral("当前测量方案有未保存修改。更换图像将清空记录和图形，是否继续？")) != QMessageBox::Yes)
         return;
 
     if (!m_canvas->loadImage(filePath)) {
@@ -5002,7 +5186,8 @@ void GraphicalProgramEditor::openLocalImage()
     m_recipePartName->clear();
     m_recipeProcessNumber->clear();
     m_recipeNote->clear();
-    m_recipeValidationResult->setText(QStringLiteral("填写配方信息后检查记录、ROI、标定和设备点位。"));
+    m_recipeValidationResult->clear();
+    m_recipeValidationResult->hide();
     refreshFrameSelector();
     m_projectFilePath.clear();
     m_projectDirty = true;

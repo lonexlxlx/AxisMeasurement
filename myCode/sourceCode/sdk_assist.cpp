@@ -1021,8 +1021,8 @@ void sdk_assist::on_roundoutPostionRecord_clicked()
     clearInputErrorState({ui.roundoutFeatureNb, ui.roundoutNominalValue,
                           ui.roundoutUpperRelativeLocation,
                           ui.roundoutBottomRelativeLocation});
-	roundoutBottomRelativeLocation_current = ui.roundoutUpperRelativeLocation->text().toInt();
-	roundoutUpperRelativeLocation_current = ui.roundoutBottomRelativeLocation->text().toInt();
+	roundoutUpperRelativeLocation_current = ui.roundoutUpperRelativeLocation->text().toInt();
+	roundoutBottomRelativeLocation_current = ui.roundoutBottomRelativeLocation->text().toInt();
 	if (roundoutBottomRelativeLocation_current >= 0 && roundoutUpperRelativeLocation_current >= 0) {
 		emit roundoutPostionRecord();
 		_sleep(150);

@@ -1,6 +1,9 @@
 // Offline UI checks. The backend below never calls any device SDK.
 // Link editor/canvas objects with /DELAYLOAD:halconcpp.dll; algorithms are not executed.
 #include "graphical_program_editor.h"
+#include "graphical_sensor_measurement.h"
+#include "graphical_program_contract.h"
+#include "graphical_program_registry.h"
 #include <QApplication>
 #include <QPushButton>
 #include <QComboBox>
@@ -15,6 +18,10 @@
 #include <QTabWidget>
 #include <QLabel>
 #include <QTemporaryDir>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <limits>
 #include <algorithm>
 #include <iostream>
@@ -63,6 +70,91 @@ static void testCornerGeometry()
     std::cout << "PASS: robust P90 deviation, corner angle, endpoint reversal, right angle, gap limits, parallel/degenerate/nonfinite rejection, overlays\n";
 }
 
+static void testSensorMeasurementAdapter()
+{
+    const auto diameterContract = GraphicalProgramGeneration::contractForType(QStringLiteral("直径"));
+    require(diameterContract.supported && !diameterContract.requiresImage
+        && diameterContract.axes == QVector<int>({ 5 })
+        && diameterContract.legacyWorksheet == QStringLiteral("zhijing"),
+        "diameter generation contract must use the light curtain axis");
+    const auto holeContract = GraphicalProgramGeneration::contractForType(QStringLiteral("孔径"));
+    require(holeContract.requiresImage && holeContract.requiresCalibration
+        && holeContract.cameraIndex == 1 && holeContract.axes == QVector<int>({ 2, 5 }),
+        "hole generation contract must preserve camera and both motion axes");
+    const auto roundoutContract = GraphicalProgramGeneration::contractForType(QStringLiteral("跳动"));
+    require(roundoutContract.threeSectionScan && roundoutContract.requiresTwoReferences
+        && roundoutContract.legacyWorksheet == QStringLiteral("tiaodong"),
+        "roundout generation contract must preserve sections and references");
+    const QStringList supportedTypes = { QStringLiteral("直径"), QStringLiteral("孔径"),
+        QStringLiteral("圆柱度"), QStringLiteral("跳动"), QStringLiteral("长度"),
+        QStringLiteral("角度"), QStringLiteral("圆弧半径") };
+    for (const QString& type : supportedTypes)
+        require(GraphicalProgramGeneration::contractForType(type).supported,
+            "every visible measurement type must have a generation contract");
+    require(GraphicalProgramGeneration::isReservedProgramNumber(60)
+        && !GraphicalProgramGeneration::isReservedProgramNumber(61),
+        "new graphical programs must not reuse existing source slots");
+    std::cout << "PASS: seven measurement generation contracts and reserved program slots\n";
+    const auto positions = GraphicalSensorMeasurement::axialPositions(1000, 100, 200);
+    require(positions.ok && positions.lower == 900 && positions.middle == 1000 && positions.upper == 1200,
+        "sensor axial offsets must preserve lower/upper meaning");
+    require(!GraphicalSensorMeasurement::axialPositions(1000, 0, 200).ok,
+        "zero sensor offset must be rejected");
+
+    const auto diameter = GraphicalSensorMeasurement::diameterMean({ 10.0, 12.0 });
+    require(diameter.ok && std::abs(diameter.value - 11.0) < 1e-12,
+        "diameter must average compensated samples");
+    require(!GraphicalSensorMeasurement::diameterMean({ 10.0,
+        std::numeric_limits<double>::quiet_NaN() }).ok,
+        "diameter must reject nonfinite samples");
+
+    std::array<QVector<double>, 3> cylinder;
+    for (int section = 0; section < 3; ++section)
+        for (int sample = 0; sample < 15; ++sample)
+            cylinder[section].append(20.0 + section + sample * 0.01);
+    const auto cylindricity = GraphicalSensorMeasurement::cylindricity(cylinder);
+    require(cylindricity.ok && cylindricity.value >= 0,
+        "complete three-section cylindricity samples must be accepted");
+    cylinder[1].clear();
+    require(!GraphicalSensorMeasurement::cylindricity(cylinder).ok,
+        "incomplete cylindricity section must be rejected");
+
+    QVector<double> radii(25, 10.0), distances;
+    QString error;
+    require(GraphicalSensorMeasurement::roundoutDistances(
+        radii, 0, 0, 0, 0, true, distances, error) && distances.size() == radii.size(),
+        "roundout distance conversion must accept a complete revolution");
+    const auto roundout = GraphicalSensorMeasurement::roundoutFromDistances(distances);
+    require(roundout.ok && std::abs(roundout.value) < 1e-9,
+        "constant radius must have zero roundout");
+    require(!GraphicalSensorMeasurement::roundoutFromDistances(QVector<double>(24, 1.0)).ok,
+        "roundout trim must reject insufficient samples");
+    const auto representative = GraphicalSensorMeasurement::representativeRoundout({ 0.3, 0.1, 0.2 });
+    require(representative.ok && std::abs(representative.value - 0.2) < 1e-12,
+        "roundout representative value must be the three-section median");
+
+    require(!GraphicalSensorMeasurement::axisPointAtZ(
+        { 0, 0, 0 }, { 1, 0, 0 }, 10).ok,
+        "degenerate reference axis must be rejected");
+    const auto axisPoint = GraphicalSensorMeasurement::axisPointAtZ(
+        { 1, 2, 3 }, { 0, 0, 2 }, 7);
+    require(axisPoint.ok && axisPoint.x == 1 && axisPoint.y == 2 && axisPoint.z == 7,
+        "reference axis projection must preserve a vertical axis");
+
+    int polls = 0, stops = 0;
+    const auto timeout = GraphicalSensorMeasurement::waitForMotion(
+        [&]() { ++polls; return GraphicalSensorMotionState{ true, true, false, false, QString() }; },
+        [&]() { ++stops; return true; }, []() { return false; }, [](int) {}, 20, 10);
+    require(!timeout.ok && timeout.stopAttempted && timeout.stopSucceeded && stops == 1,
+        "motion timeout must request one successful stop");
+    const auto arrived = GraphicalSensorMeasurement::waitForMotion(
+        []() { return GraphicalSensorMotionState{ true, false, true, false, QString() }; },
+        [&]() { ++stops; return true; }, []() { return false; }, [](int) {}, 20, 10);
+    require(arrived.ok && !arrived.stopAttempted,
+        "confirmed arrival must finish without an extra stop");
+    std::cout << "PASS: sensor axial mapping, diameter/cylindricity/roundout guards, reference axis and motion stop policy\n";
+}
+
 static void testDetectionRecords()
 {
     GraphicalDetectionParameters parameters;
@@ -82,6 +174,20 @@ static void testDetectionRecords()
     editor.setAttribute(Qt::WA_DontShowOnScreen);
     editor.show();
     QTest::qWait(250);
+    const QStringList removedStaticHelp = {
+        QStringLiteral("圆弧半径使用一个ROI"),
+        QStringLiteral("原图左上角为原点"),
+        QStringLiteral("请先开始采集，等待图像稳定"),
+        QStringLiteral("填写测量方案信息后检查记录"),
+        QStringLiteral("检查通过表示测量方案数据"),
+        QStringLiteral("目标是绝对脉冲位置。加减速沿用")
+    };
+    for (const QLabel* label : editor.findChildren<QLabel*>())
+        for (const QString& text : removedStaticHelp)
+            require(!label->text().contains(text), "static instructional copy must stay out of the editor UI");
+    QLabel* recipeResult = editor.findChild<QLabel*>(QStringLiteral("recipeValidationResult"));
+    require(recipeResult && recipeResult->isHidden(),
+        "recipe validation output must stay hidden until it has a result");
     auto button = [&](const QString& name) {
         for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
         throw std::runtime_error("detection button missing");
@@ -189,16 +295,19 @@ static void testDetectionRecords()
         && roundoutReference1->isEnabled() && roundoutReference2->isEnabled(),
         "roundout must expose reference fields");
     auto* programNumber = editor.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"));
-    require(programNumber && programNumber->maximum() == 50,
-        "program number must match the current 0-50 dispatcher range");
+    require(programNumber && programNumber->minimum() == 0 && programNumber->maximum() == 999,
+        "new program number input must allow the graphical generation range");
     programNumber->setValue(12);
     editor.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->setText(QStringLiteral("P-001"));
     editor.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->setText(QStringLiteral("测试零件"));
     editor.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->setText(QStringLiteral("OP10"));
     const QStringList preflightIssues = editor.validateRecipeForExport();
     require(std::any_of(preflightIssues.cbegin(), preflightIssues.cend(), [](const QString& issue) {
+        return issue.contains(QStringLiteral("新程序号须从61开始"));
+    }), "preflight must reject reserved program numbers");
+    require(std::none_of(preflightIssues.cbegin(), preflightIssues.cend(), [](const QString& issue) {
         return issue.contains(QStringLiteral("尚未接入生产程序映射"));
-    }), "preflight must reject measurement types without production mapping");
+    }), "all current measurement types must have a generation mapping contract");
     std::cout << "PASS: detection defaults, invalid thresholds/ranges/nonfinite input, record isolation, draft discard, parameter-only apply, invalidation state, reset semantics\n";
 }
 
@@ -287,7 +396,7 @@ static void testCameraWorkflow()
     editor.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->setText(QStringLiteral("AX-27"));
     editor.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->setText(QStringLiteral("轴类零件"));
     editor.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->setText(QStringLiteral("20"));
-    editor.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->setText(QStringLiteral("离线配方测试"));
+    editor.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->setText(QStringLiteral("离线测量方案测试"));
     QString recipeError;
     require(editor.saveRecipeFile(recipePath, recipeError),
         qPrintable(QStringLiteral("simulated camera recipe save failed: %1").arg(recipeError)));
@@ -309,7 +418,7 @@ static void testCameraWorkflow()
         && reopened.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->text() == QStringLiteral("AX-27")
         && reopened.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->text() == QStringLiteral("轴类零件")
         && reopened.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->text() == QStringLiteral("20")
-        && reopened.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->text() == QStringLiteral("离线配方测试"),
+        && reopened.findChild<QLineEdit*>(QStringLiteral("recipeNote"))->text() == QStringLiteral("离线测量方案测试"),
         "recipe metadata must survive save and reopen");
     const QStringList emptyRecipeIssues = reopened.validateRecipeForExport();
     require(emptyRecipeIssues.contains(QStringLiteral("至少需要一条测量记录。")),
@@ -355,6 +464,174 @@ static void testCameraWorkflow()
     std::cout << "PASS: simulated camera states, start/stop, cached last-frame load, recipe metadata/assets packaging, roundout configuration, preflight and reopen\n";
 }
 
+static void testImageLessSensorPlan()
+{
+    GraphicalProgramEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.show();
+    QTest::qWait(100);
+    auto button = [&](const QString& name) {
+        for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
+        throw std::runtime_error("sensor plan button missing");
+    };
+    auto* type = editor.findChild<QComboBox*>(QStringLiteral("measurementType"));
+    auto* lower = editor.findChild<QSpinBox*>(QStringLiteral("lowerAxialOffsetPulse"));
+    auto* upper = editor.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"));
+    auto* reference1 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"));
+    auto* reference2 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"));
+    require(type && lower && upper && reference1 && reference2,
+        "image-less sensor plan controls missing");
+    type->setCurrentText(QStringLiteral("跳动"));
+    lower->setValue(135);
+    upper->setValue(246);
+    reference1->setText(QStringLiteral("基准A"));
+    reference2->setText(QStringLiteral("基准B"));
+    button(QStringLiteral("新增测量记录"))->click();
+    auto* table = editor.findChild<QTableWidget*>();
+    require(table && table->rowCount() == 1,
+        "image-less sensor record must be configurable without a reference image");
+
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary sensor plan directory missing");
+    const QString planPath = directory.filePath(QStringLiteral("sensor.axisproj.json"));
+    QString error;
+    require(editor.saveRecipeFile(planPath, error),
+        qPrintable(QStringLiteral("image-less sensor plan save failed: %1").arg(error)));
+    require(QFileInfo::exists(planPath)
+        && !QFileInfo::exists(directory.filePath(QStringLiteral("sensor.axisproj.assets"))),
+        "image-less sensor plan must not require an image asset directory");
+
+    GraphicalProgramEditor reopened;
+    reopened.setAttribute(Qt::WA_DontShowOnScreen);
+    require(reopened.loadRecipeFile(planPath, error),
+        qPrintable(QStringLiteral("image-less sensor plan reopen failed: %1").arg(error)));
+    reopened.show();
+    QTest::qWait(100);
+    auto* reopenedCanvas = reopened.findChild<GraphicalCanvas*>();
+    auto* reopenedTable = reopened.findChild<QTableWidget*>();
+    auto* sourceBadge = reopened.findChild<QLabel*>(QStringLiteral("canvasSourceBadge"));
+    auto* emptyHint = reopened.findChild<QLabel*>(QStringLiteral("canvasEmptyHint"));
+    require(reopenedCanvas && !reopenedCanvas->hasImage()
+        && sourceBadge && sourceBadge->isHidden()
+        && emptyHint && !emptyHint->isHidden() && emptyHint->text().contains(QStringLiteral("光幕")),
+        "image-less sensor plan must reopen with a clear sensor-only canvas state");
+    require(reopenedTable && reopenedTable->rowCount() == 1,
+        "image-less sensor record must reopen");
+    reopenedTable->setCurrentCell(0, 0);
+    require(reopened.findChild<QComboBox*>(QStringLiteral("measurementType"))->currentText() == QStringLiteral("跳动")
+        && reopened.findChild<QSpinBox*>(QStringLiteral("lowerAxialOffsetPulse"))->value() == 135
+        && reopened.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"))->value() == 246
+        && reopened.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"))->text() == QStringLiteral("基准A")
+        && reopened.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"))->text() == QStringLiteral("基准B"),
+        "image-less sensor settings must survive save and reopen");
+
+    GraphicalProgramEditor diameterEditor;
+    diameterEditor.setAttribute(Qt::WA_DontShowOnScreen);
+    diameterEditor.setAxisBackend([](int axis) {
+        GraphicalProgramEditor::AxisSnapshot snapshot;
+        snapshot.connected = true;
+        snapshot.available = true;
+        snapshot.valid = true;
+        snapshot.status = 0;
+        snapshot.planned = axis == 5 ? 12340 : 0;
+        snapshot.encoder = axis == 5 ? 12345 : 0;
+        return snapshot;
+    }, [](int, GraphicalProgramEditor::AxisCommand, double, long) {
+        return GraphicalProgramEditor::AxisCommandResult();
+    });
+    diameterEditor.show();
+    QTest::qWait(100);
+    auto* diameterType = diameterEditor.findChild<QComboBox*>(QStringLiteral("measurementType"));
+    require(diameterType, "diameter measurement type missing");
+    diameterType->setCurrentText(QStringLiteral("直径"));
+    for (auto* value : diameterEditor.findChildren<QPushButton*>()) {
+        if (value->text() == QStringLiteral("新增测量记录")) value->click();
+    }
+    auto* diameterTable = diameterEditor.findChild<QTableWidget*>();
+    require(diameterTable && diameterTable->rowCount() == 1,
+        "diameter record must be configurable without a reference image");
+    diameterTable->setCurrentCell(0, 0);
+    QTest::qWait(250);
+    diameterEditor.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"))->setValue(61);
+    diameterEditor.findChild<QLineEdit*>(QStringLiteral("recipePartNumber"))->setText(QStringLiteral("D-61"));
+    diameterEditor.findChild<QLineEdit*>(QStringLiteral("recipePartName"))->setText(QStringLiteral("直径测试件"));
+    diameterEditor.findChild<QLineEdit*>(QStringLiteral("recipeProcessNumber"))->setText(QStringLiteral("OP10"));
+    QPushButton* capturePosition = nullptr;
+    for (auto* value : diameterEditor.findChildren<QPushButton*>()) {
+        if (value->text() == QStringLiteral("记录选中记录的当前设备点位")) capturePosition = value;
+    }
+    require(capturePosition && capturePosition->isEnabled(),
+        "diameter axis position capture must be enabled without a light-curtain sample");
+    capturePosition->click();
+    QTest::qWait(50);
+    require(diameterTable->item(0, 10)->text().contains(QStringLiteral("轴5")),
+        "diameter configuration must capture axis 5");
+
+    const QString diameterPath = directory.filePath(QStringLiteral("diameter.axisproj.json"));
+    require(diameterEditor.saveRecipeFile(diameterPath, error),
+        qPrintable(QStringLiteral("diameter plan save without light-curtain sample failed: %1").arg(error)));
+    QFile diameterFile(diameterPath);
+    require(diameterFile.open(QIODevice::ReadOnly), "diameter plan file missing");
+    const QByteArray diameterJson = diameterFile.readAll();
+    require(diameterJson.contains("\"lightCurtain\"")
+        && diameterJson.contains("\"status\": \"none\"")
+        && !diameterJson.contains("\"rawValue\""),
+        "diameter plan must store the point only, not a stale sensor reading");
+    GraphicalProgramEditor reopenedDiameter;
+    reopenedDiameter.setAttribute(Qt::WA_DontShowOnScreen);
+    require(reopenedDiameter.loadRecipeFile(diameterPath, error),
+        qPrintable(QStringLiteral("diameter plan reopen failed: %1").arg(error)));
+    require(reopenedDiameter.findChild<QSpinBox*>(QStringLiteral("recipeProgramNumber"))->value() == 61,
+        "new graphical program number must survive save and reopen");
+    require(reopenedDiameter.validateRecipeForExport().isEmpty(),
+        "diameter generation preflight must require the axis point, not a stale light-curtain sample");
+    QString packagePath;
+    require(diameterEditor.exportProgramPackage(directory.path(), packagePath, error),
+        qPrintable(QStringLiteral("diameter generation package failed: %1").arg(error)));
+    const QString manifestPath = QDir(packagePath).filePath(QStringLiteral("generation_manifest.json"));
+    const QString definitionPath = QDir(packagePath).filePath(QStringLiteral("measurement.axisproj.json"));
+    require(QFileInfo::exists(manifestPath) && QFileInfo::exists(definitionPath)
+        && !QFileInfo::exists(QDir(packagePath).filePath(QStringLiteral("measurement.axisproj.assets"))),
+        "sensor generation package must contain its definition without image assets");
+    QFile manifestFile(manifestPath);
+    require(manifestFile.open(QIODevice::ReadOnly), "generation manifest missing");
+    const QJsonObject manifest = QJsonDocument::fromJson(manifestFile.readAll()).object();
+    require(manifest.value(QStringLiteral("format")).toString()
+            == QStringLiteral("AxisMeasurement.GraphicalProgramPackage")
+        && manifest.value(QStringLiteral("programNumber")).toInt() == 61
+        && manifest.value(QStringLiteral("records")).toArray().size() == 1,
+        "generation manifest must identify program 61 and its measurement record");
+    GraphicalProgramDescriptor descriptor;
+    require(GraphicalProgramRegistry::loadPackage(packagePath, descriptor, error)
+        && descriptor.programNumber == 61
+        && descriptor.partNumber == QStringLiteral("D-61")
+        && descriptor.recordCount == 1,
+        qPrintable(QStringLiteral("generated package registration failed: %1").arg(error)));
+    QVector<GraphicalProgramDescriptor> registeredPrograms;
+    require(GraphicalProgramRegistry::scan(directory.path(), registeredPrograms, error)
+        && registeredPrograms.size() == 1 && registeredPrograms.first().programNumber == 61,
+        qPrintable(QStringLiteral("generated package scan failed: %1").arg(error)));
+    QString duplicatePath;
+    require(!diameterEditor.exportProgramPackage(directory.path(), duplicatePath, error)
+        && error.contains(QStringLiteral("生成目标已存在")),
+        "generation package must not overwrite an existing program target");
+    QJsonObject tamperedManifest = manifest;
+    QJsonArray tamperedRecords = tamperedManifest.value(QStringLiteral("records")).toArray();
+    QJsonObject tamperedRecord = tamperedRecords.first().toObject();
+    tamperedRecord[QStringLiteral("axes")] = QJsonArray{ 2 };
+    tamperedRecords[0] = tamperedRecord;
+    tamperedManifest[QStringLiteral("records")] = tamperedRecords;
+    QFile tamperedManifestFile(manifestPath);
+    require(tamperedManifestFile.open(QIODevice::WriteOnly | QIODevice::Truncate)
+        && tamperedManifestFile.write(QJsonDocument(tamperedManifest).toJson()) > 0,
+        "tampered manifest fixture write failed");
+    tamperedManifestFile.close();
+    require(!GraphicalProgramRegistry::loadPackage(packagePath, descriptor, error)
+        && error.contains(QStringLiteral("运动轴契约")),
+        "registry must reject a manifest whose device contract disagrees with its measurement type");
+    std::cout << "PASS: image-less sensor plan, collision-safe generation package and registry validation\n";
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -362,8 +639,10 @@ int main(int argc, char** argv)
     if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
     try {
         testCornerGeometry();
+        testSensorMeasurementAdapter();
         testDetectionRecords();
         testCameraWorkflow();
+        testImageLessSensorPlan();
         GraphicalProgramEditor editor;
         editor.setAttribute(Qt::WA_DontShowOnScreen);
         using Command = GraphicalProgramEditor::AxisCommand;
