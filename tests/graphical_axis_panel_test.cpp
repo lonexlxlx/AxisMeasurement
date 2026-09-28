@@ -232,6 +232,127 @@ static GraphicalProgramExecutionPlan makeRunnerPlan()
     return plan;
 }
 
+static void testGraphicalFreshImageAcquisition()
+{
+    unsigned long long serial = 10;
+    int delays = 0;
+    int stops = 0;
+    int copies = 0;
+    GraphicalFreshImageCallbacks callbacks;
+    callbacks.frameSerial = [&]() { return serial; };
+    callbacks.startContinuousCapture = [](int exposure, QString&) { return exposure == 120; };
+    callbacks.stopCapture = [&](QString&) { ++stops; return true; };
+    callbacks.copyStoppedFrame = [&](QImage& image, int& exposure, QString&) {
+        ++copies;
+        image = QImage(8, 8, QImage::Format_Grayscale8);
+        exposure = 118;
+        return true;
+    };
+    callbacks.cancelRequested = []() { return false; };
+    callbacks.delay = [&](int) {
+        if (++delays == 2) ++serial;
+    };
+    const GraphicalProgramRunStepResult fresh =
+        GraphicalFreshImageAcquisition::capture(0, 120, callbacks, 50, 10);
+    require(fresh.ok && fresh.frame.hasImage && fresh.frame.cameraIndex == 0
+        && fresh.frame.exposure == 118 && delays == 2 && stops == 1 && copies == 1,
+        "fresh image acquisition must wait for a newer frame, stop, then copy its snapshot");
+
+    serial = 20;
+    delays = 0;
+    stops = 0;
+    copies = 0;
+    callbacks.delay = [&](int) { ++delays; };
+    const GraphicalProgramRunStepResult timeout =
+        GraphicalFreshImageAcquisition::capture(0, 120, callbacks, 25, 10);
+    require(!timeout.ok && timeout.error.contains(QStringLiteral("新帧超时"))
+        && delays == 3 && stops == 1 && copies == 0,
+        "fresh image timeout must stop capture and must not copy the stale cached frame");
+
+    bool cancelled = false;
+    serial = 30;
+    delays = 0;
+    stops = 0;
+    copies = 0;
+    callbacks.cancelRequested = [&]() { return cancelled; };
+    callbacks.delay = [&](int) { ++delays; cancelled = true; };
+    const GraphicalProgramRunStepResult cancelResult =
+        GraphicalFreshImageAcquisition::capture(0, 120, callbacks, 50, 10);
+    require(!cancelResult.ok && cancelResult.error.contains(QStringLiteral("已取消"))
+        && delays == 1 && stops == 1 && copies == 0,
+        "fresh image cancellation must remain observable until capture stops");
+    std::cout << "PASS: fresh camera frame sequence, timeout/cancel stop and stale-frame rejection\n";
+}
+
+static void testGraphicalAcquisitionDispatcher()
+{
+    GraphicalProgramAcquisitionCallbacks callbacks;
+    QStringList routes;
+    callbacks.captureImage = [&](const GraphicalProgramStep& step,
+        const GraphicalProgramMotionTarget&, QImage& image, QString&) {
+        routes.append(QStringLiteral("image:%1").arg(step.type));
+        image = QImage(8, 8, QImage::Format_Grayscale8);
+        return true;
+    };
+    callbacks.captureCompensatedDiameters = [&](const GraphicalProgramStep& step,
+        const GraphicalProgramMotionTarget&, QVector<double>& samples, QString&) {
+        routes.append(QStringLiteral("diameter:%1").arg(step.type));
+        samples = QVector<double>(15, 20.0);
+        return true;
+    };
+    callbacks.captureRoundoutDistances = [&](const GraphicalProgramStep& step,
+        const GraphicalProgramMotionTarget&, QVector<double>& samples, QString&) {
+        routes.append(QStringLiteral("roundout:%1").arg(step.type));
+        samples = QVector<double>(25, 5.0);
+        return true;
+    };
+
+    const QStringList types = { QStringLiteral("角度"), QStringLiteral("孔径"),
+        QStringLiteral("长度"), QStringLiteral("圆弧半径"), QStringLiteral("直径"),
+        QStringLiteral("圆柱度"), QStringLiteral("跳动") };
+    for (int index = 0; index < types.size(); ++index) {
+        GraphicalProgramStep step;
+        step.sequence = index + 1;
+        step.type = types.at(index);
+        step.contract = GraphicalProgramGeneration::contractForType(step.type);
+        GraphicalProgramMotionTarget target;
+        target.label = QStringLiteral("测量点");
+        target.cameraIndex = step.contract.cameraIndex;
+        target.exposure = step.contract.requiresImage ? 100 : -1;
+        const GraphicalProgramRunStepResult result =
+            GraphicalProgramAcquisitionDispatcher::capture(step, target, callbacks);
+        require(result.ok
+            && (step.contract.requiresImage
+                ? result.frame.hasImage && !result.frame.image.isNull()
+                    && result.frame.cameraIndex == step.contract.cameraIndex
+                : step.type == QStringLiteral("跳动")
+                    ? result.frame.roundoutDistanceSamples.size() == 25
+                    : result.frame.compensatedDiameterSamples.size() == 15),
+            "acquisition dispatcher must produce the runtime input required by every type");
+    }
+    require(routes == QStringList({ QStringLiteral("image:角度"), QStringLiteral("image:孔径"),
+        QStringLiteral("image:长度"), QStringLiteral("image:圆弧半径"),
+        QStringLiteral("diameter:直径"), QStringLiteral("diameter:圆柱度"),
+        QStringLiteral("roundout:跳动") }),
+        "acquisition dispatcher must keep camera, diameter and roundout inputs separated");
+
+    GraphicalProgramStep failedStep;
+    failedStep.sequence = 8;
+    failedStep.type = QStringLiteral("直径");
+    failedStep.contract = GraphicalProgramGeneration::contractForType(failedStep.type);
+    callbacks.captureCompensatedDiameters = [](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget&, QVector<double>&, QString& error) {
+        error = QStringLiteral("simulated light curtain failure");
+        return false;
+    };
+    const GraphicalProgramRunStepResult failed =
+        GraphicalProgramAcquisitionDispatcher::capture(
+            failedStep, GraphicalProgramMotionTarget(), callbacks);
+    require(!failed.ok && failed.error.contains(QStringLiteral("simulated light curtain failure")),
+        "acquisition dispatcher must preserve the first device failure without fake samples");
+    std::cout << "PASS: seven-type runtime acquisition routing and device failure propagation\n";
+}
+
 static void testGraphicalMeasurementDispatcher()
 {
     GraphicalProgramMeasurementCallbacks callbacks;
@@ -309,6 +430,115 @@ static void testGraphicalMeasurementDispatcher()
         && missingSensorResult.error.contains(QStringLiteral("没有有效光幕样本")),
         "sensor dispatch must reject a frame without acquired samples");
     std::cout << "PASS: seven-type runtime calculation dispatch, frame guards and structured results\n";
+}
+
+static GraphicalProgramStep makeRuntimePipelineStep(const QString& type, int sequence)
+{
+    GraphicalProgramStep step;
+    step.sequence = sequence;
+    step.featureNumber = QStringLiteral("P%1").arg(sequence);
+    step.type = type;
+    step.contract = GraphicalProgramGeneration::contractForType(type);
+    step.definition[QStringLiteral("hasTolerance")] = false;
+    QJsonArray axes;
+    for (int axisNumber : step.contract.axes) {
+        QJsonObject axis;
+        axis[QStringLiteral("axis")] = axisNumber;
+        axis[QStringLiteral("encoder")] = 1000.0 + sequence * 100 + axisNumber;
+        axes.append(axis);
+    }
+    QJsonObject position;
+    position[QStringLiteral("status")] = QStringLiteral("collected");
+    position[QStringLiteral("axes")] = axes;
+    position[QStringLiteral("cameraIndex")] = step.contract.cameraIndex;
+    position[QStringLiteral("exposure")] = step.contract.requiresImage ? 100 : -1;
+    step.definition[QStringLiteral("devicePosition")] = position;
+    if (step.contract.threeSectionScan) {
+        step.definition[QStringLiteral("lowerAxialOffsetPulse")] = 100.0;
+        step.definition[QStringLiteral("upperAxialOffsetPulse")] = 150.0;
+    }
+    return step;
+}
+
+static void testGraphicalProgramRuntimePipeline()
+{
+    GraphicalProgramExecutionPlan plan;
+    const QStringList types = { QStringLiteral("角度"), QStringLiteral("孔径"),
+        QStringLiteral("长度"), QStringLiteral("圆弧半径"), QStringLiteral("直径"),
+        QStringLiteral("圆柱度"), QStringLiteral("跳动") };
+    for (int index = 0; index < types.size(); ++index)
+        plan.steps.append(makeRuntimePipelineStep(types.at(index), index + 1));
+
+    GraphicalProgramAcquisitionCallbacks acquisition;
+    acquisition.captureImage = [](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget&, QImage& image, QString&) {
+        image = QImage(8, 8, QImage::Format_Grayscale8);
+        return true;
+    };
+    acquisition.captureCompensatedDiameters = [](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget&, QVector<double>& samples, QString&) {
+        samples = QVector<double>(15, 20.0);
+        return true;
+    };
+    acquisition.captureRoundoutDistances = [](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget&, QVector<double>& samples, QString&) {
+        samples = QVector<double>(25, 5.0);
+        return true;
+    };
+    GraphicalProgramMeasurementCallbacks measurement;
+    measurement.visual = [](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>&,
+        const QVector<GraphicalProgramRuntimeFrame>&) {
+        return GraphicalSensorValueResult::success(double(step.sequence));
+    };
+
+    GraphicalProgramRunnerCallbacks callbacks;
+    int moves = 0;
+    int captures = 0;
+    int stops = 0;
+    callbacks.cancelRequested = []() { return false; };
+    callbacks.validateStep = [](const GraphicalProgramStep& step) {
+        return step.contract.supported
+            ? GraphicalProgramRunStepResult::success()
+            : GraphicalProgramRunStepResult::failure(QStringLiteral("unsupported"));
+    };
+    callbacks.moveToTarget = [&](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget&) {
+        ++moves;
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.captureTarget = [&](const GraphicalProgramStep& step,
+        const GraphicalProgramMotionTarget& target) {
+        ++captures;
+        return GraphicalProgramAcquisitionDispatcher::capture(step, target, acquisition);
+    };
+    callbacks.computeTargets = [&](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>& targets,
+        const QVector<GraphicalProgramRuntimeFrame>& frames) {
+        return GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, measurement);
+    };
+    callbacks.requestStop = [&]() { ++stops; return true; };
+
+    GraphicalProgramRunner runner;
+    const GraphicalProgramRunResult result = runner.execute(plan, callbacks);
+    require(result.ok && result.completedSteps == 7 && result.measurements.size() == 7
+        && moves == 11 && captures == 11 && stops == 0
+        && result.measurements.first().featureNumber == QStringLiteral("P1")
+        && result.measurements.last().featureNumber == QStringLiteral("P7"),
+        "complete simulated seven-type program must preserve per-target acquisition and result order");
+
+    GraphicalProgramExecutionPlan invalidPlan = plan;
+    QJsonObject invalidPosition = invalidPlan.steps[6].definition
+        .value(QStringLiteral("devicePosition")).toObject();
+    invalidPosition[QStringLiteral("status")] = QStringLiteral("uncollected");
+    invalidPlan.steps[6].definition[QStringLiteral("devicePosition")] = invalidPosition;
+    moves = 0;
+    captures = 0;
+    const GraphicalProgramRunResult invalidResult = runner.execute(invalidPlan, callbacks);
+    require(!invalidResult.ok && invalidResult.failedSequence == 7
+        && moves == 0 && captures == 0 && stops == 0,
+        "whole-program preflight must reject a later invalid target before any motion or capture");
+    std::cout << "PASS: complete seven-type simulated move, acquisition, calculation and result pipeline\n";
 }
 
 static void testGraphicalProgramRunnerCore()
@@ -1095,7 +1325,10 @@ int main(int argc, char** argv)
     try {
         testCornerGeometry();
         testSensorMeasurementAdapter();
+        testGraphicalFreshImageAcquisition();
+        testGraphicalAcquisitionDispatcher();
         testGraphicalMeasurementDispatcher();
+        testGraphicalProgramRuntimePipeline();
         testGraphicalProgramRunnerCore();
         testDetectionRecords();
         testCameraWorkflow();

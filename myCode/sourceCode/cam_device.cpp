@@ -79,6 +79,7 @@ void cam_device::openCam()
 			m_objRemoteFeatureControlPtr->GetEnumFeature("TriggerMode")->SetValue("Off");//设置触发方式，on是外触发，off是内触发
 			//自动曝光
 			m_objRemoteFeatureControlPtr->GetEnumFeature("ExposureAuto")->SetValue("Off");
+			isOpenCam = true;
 			cout << "打开相机执行完了" << camNumber << endl;
 		};
 	}
@@ -96,10 +97,10 @@ void cam_device::openCam()
 		emit cameraErrorInf(camInf);
 
 	};
-	isOpenCam = true;
 };
 void cam_device::startCapture()//"Continuous"连续采集；“Single”单帧采集
 {
+	m_lastCaptureStartSucceeded.store(false, std::memory_order_release);
 	try
 	{
 		if (isOpenCam && isOpenStream)
@@ -112,6 +113,7 @@ void cam_device::startCapture()//"Continuous"连续采集；“Single”单帧�
 				m_objStreamPtr->RegisterCaptureCallback(this, NULL);//注册用户采集回调函数（具体作用前面已经说过了）。参数 1 是用户回调对象（this是常值指针，指向当前的这个DH_MER类,通过它可以访问类中的所有成员）；参数 2 是用户私有参数。如果注册了采集回调函数就不能通过外部触发来进行采集了
 				m_objStreamPtr->StartGrab();
 				m_objRemoteFeatureControlPtr->GetCommandFeature("AcquisitionStart")->Execute();//好像每次使用这种GetCommandFeature("....")->Execute()都是要使用两次
+				m_lastCaptureStartSucceeded.store(true, std::memory_order_release);
 			}
 			else
 			{
@@ -142,8 +144,13 @@ void cam_device::startCapture()//"Continuous"连续采集；“Single”单帧�
 };
 void cam_device::stopCapture()
 {
+	m_lastCaptureStopSucceeded.store(false, std::memory_order_release);
 	try
 	{
+		if (!isOpenStream) {
+			m_lastCaptureStopSucceeded.store(true, std::memory_order_release);
+			return;
+		}
 		if (isOpenStream)
 		{
 			//发送停采命令
@@ -153,6 +160,7 @@ void cam_device::stopCapture()
 			{
 				m_objStreamPtr->UnregisterCaptureCallback();
 			};
+			m_lastCaptureStopSucceeded.store(true, std::memory_order_release);
 		};
 	}
 	catch (CGalaxyException& e)//这里是捕捉相机出现的错误并输出
@@ -207,14 +215,32 @@ void cam_device::DoOnImageCaptured(CImageDataPointer& objImageDataPointer, void*
 {
 	imgFormatConvert(objImageDataPointer);
 }
+unsigned long long cam_device::capturedFrameSerial() const noexcept
+{
+	return m_capturedFrameSerial.load(std::memory_order_acquire);
+}
+bool cam_device::lastCaptureStartSucceeded() const noexcept
+{
+	return m_lastCaptureStartSucceeded.load(std::memory_order_acquire);
+}
+bool cam_device::lastCaptureStopSucceeded() const noexcept
+{
+	return m_lastCaptureStopSucceeded.load(std::memory_order_acquire);
+}
+bool cam_device::lastExposureUpdateSucceeded() const noexcept
+{
+	return m_lastExposureUpdateSucceeded.load(std::memory_order_acquire);
+}
 void cam_device::setExposeTime(int newTime)
 {
+	m_lastExposureUpdateSucceeded.store(false, std::memory_order_release);
 	try
 	{
 		if (newTime >= 0 && newTime <= 30000)
 		{
 			exposeTime = newTime;
 			m_objRemoteFeatureControlPtr->GetFloatFeature("ExposureTime")->SetValue(exposeTime);
+			m_lastExposureUpdateSucceeded.store(true, std::memory_order_release);
 			cout << "更新曝光时间执行完了" << exposeTime << endl;
 		};
 	}
@@ -317,6 +343,7 @@ void cam_device::imgFormatConvert(CImageDataPointer objImagePtr)
 			imgExposeTime = int(d);
 			//cout << "照片曝光时间为" << imgExposeTime << endl;
 			memcpy(capturedImg.data, pRGB24Buffer, (m_width) * (m_height) * 3);
+			m_capturedFrameSerial.fetch_add(1, std::memory_order_release);
 		}
 		else
 		{

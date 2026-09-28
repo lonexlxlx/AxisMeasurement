@@ -338,10 +338,20 @@ inline bool buildExecutionStep(const QJsonObject& record, GraphicalProgramStep& 
         if (!validateRuntimeRoiReference(record, *featuresByFrame, step.sequence,
                 QStringLiteral("frameId"), QStringLiteral("geometryId"),
                 QStringLiteral("主"), error)) return false;
+        if (!record.value(QStringLiteral("runtimeRoi")).isObject()
+            && step.type != QStringLiteral("角度")) {
+            error = QStringLiteral("记录%1缺少主ROI运行几何数据。").arg(step.sequence);
+            return false;
+        }
         if (step.contract.requiresSecondRoi
             && !validateRuntimeRoiReference(record, *featuresByFrame, step.sequence,
                 QStringLiteral("secondaryFrameId"), QStringLiteral("secondaryGeometryId"),
                 QStringLiteral("第二"), error)) return false;
+        if (step.contract.requiresSecondRoi
+            && !record.value(QStringLiteral("runtimeSecondaryRoi")).isObject()) {
+            error = QStringLiteral("记录%1缺少第二ROI运行几何数据。").arg(step.sequence);
+            return false;
+        }
     }
     if (crossFrameLength) {
         if (!validateCollectedPosition(record.value(QStringLiteral("lengthStartPosition")).toObject(),

@@ -11,6 +11,7 @@
 #include <cmath>
 #include "graphical_corner_geometry.h"
 #include "graphical_canvas.h"
+#include "graphical_program_runner.h"
 
 struct GraphicalDetectionParameters {
     double smoothing = 2;
@@ -97,6 +98,10 @@ public:
     bool loadRecipeFile(const QString& filePath, QString& error);
     QStringList validateRecipeForExport() const;
     bool exportProgramPackage(const QString& outputRoot, QString& packagePath, QString& error);
+    static GraphicalSensorValueResult runRuntimeVisualMeasurement(
+        const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>& targets,
+        const QVector<GraphicalProgramRuntimeFrame>& frames);
     struct LightCurtainSnapshot {
         bool connected = false;
         bool available = false;
@@ -302,6 +307,7 @@ private:
     };
     bool collectCurrentDevicePosition(const QString& type,
         MeasurementRecord::DevicePosition& position, QString& error) const;
+    QString judgementForRecord(const MeasurementRecord& record) const;
     struct EditHistoryState {
         QVector<GraphicalCanvas::FeatureSnapshot> features;
         QVector<MeasurementRecord> records;

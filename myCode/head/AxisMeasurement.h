@@ -148,6 +148,7 @@ private:
     QHash<int, GraphicalProgramExecutionPlan> m_graphicalExecutionPlans;
     GraphicalProgramRunner m_graphicalProgramRunner;
     bool m_graphicalProgramCancelRequested = false;
+    bool m_graphicalProgramRunnerActive = false;
     struct GraphicalProgramStatistics {
         int measured = 0;
         int ok = 0;

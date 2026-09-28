@@ -4,6 +4,7 @@
 #include <QtWidgets/QMainWindow>
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <atomic>
 
 #include "GalaxyIncludes.h"
 
@@ -32,6 +33,10 @@ public:
 	void setGain(double newGain);
 	void saveImg(string imgPath,int width, int height,int mode);
 	void unInit();//释放所有打开的资源所有相机执行一次即可
+	unsigned long long capturedFrameSerial() const noexcept;
+	bool lastCaptureStartSucceeded() const noexcept;
+	bool lastCaptureStopSucceeded() const noexcept;
+	bool lastExposureUpdateSucceeded() const noexcept;
 
 	gxstring      camSn;//相机Sn号
 	int           camNumber;//相机序号
@@ -68,6 +73,10 @@ public:
 	string m_triggerSource;
 
 private:
+	std::atomic<unsigned long long> m_capturedFrameSerial{ 0 };
+	std::atomic<bool> m_lastCaptureStartSucceeded{ false };
+	std::atomic<bool> m_lastCaptureStopSucceeded{ true };
+	std::atomic<bool> m_lastExposureUpdateSucceeded{ false };
 
 	CGXFeatureControlPointer m_objRemoteFeatureControlPtr; //（远端）设备属性控制器指针
 	CGXFeatureControlPointer m_objFeatureControlPtr; //本地和流属性控制器

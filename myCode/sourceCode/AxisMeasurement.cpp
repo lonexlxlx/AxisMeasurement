@@ -13,9 +13,14 @@
 #include <QPalette>
 #include <QColor>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QSet>
 #include <QStringList>
+#include <QThread>
+
+#include <set>
 
 #include "graphical_axis_backend.h"
 
@@ -43,6 +48,90 @@ QImage cameraFrameToQImage(const cv::Mat& frame)//把OpenCV的cv::Mat转成Ot的
 			QImage::Format_RGBA8888).copy();//最后都调用 .copy()，避免 QImage 只引用 cv::Mat 数据，Mat 释放后图像悬空。
 	}
 	return QImage();
+}
+
+void graphicalProgramDelay(int milliseconds, const std::function<bool()>& cancelRequested)
+{
+	QElapsedTimer timer;
+	timer.start();
+	while (timer.elapsed() < milliseconds && (!cancelRequested || !cancelRequested())) {
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+		if (timer.elapsed() < milliseconds) QThread::msleep(1);
+	}
+}
+
+GraphicalFreshImageCallbacks makeGraphicalFreshImageCallbacks(cam_device* device,
+	int cameraIndex, bool* captureFlag, const std::function<bool()>& cancelRequested)
+{
+	GraphicalFreshImageCallbacks callbacks;
+	callbacks.cancelRequested = cancelRequested;
+	callbacks.delay = [cancelRequested](int milliseconds) {
+		graphicalProgramDelay(milliseconds, cancelRequested);
+	};
+	if (!device || !captureFlag) return callbacks;
+	callbacks.frameSerial = [device]() { return device->capturedFrameSerial(); };
+	callbacks.startContinuousCapture = [device, cameraIndex, captureFlag](int exposure,
+		QString& error) {
+		error.clear();
+		if (!device->isOpenCam || !device->isOpenStream) {
+			error = QStringLiteral("相机%1未连接。").arg(cameraIndex);
+			return false;
+		}
+		if (*captureFlag) {
+			error = QStringLiteral("相机%1已有采集任务。").arg(cameraIndex);
+			return false;
+		}
+		device->setExposeTime(exposure);
+		if (!device->lastExposureUpdateSucceeded()) {
+			error = QStringLiteral("相机%1曝光设置失败。").arg(cameraIndex);
+			return false;
+		}
+		device->m_captureMode = QStringLiteral("continuous");
+		device->startCapture();
+		if (!device->lastCaptureStartSucceeded()) {
+			error = QStringLiteral("相机%1连续采集启动失败。").arg(cameraIndex);
+			return false;
+		}
+		*captureFlag = true;
+		return true;
+	};
+	callbacks.stopCapture = [device, cameraIndex, captureFlag](QString& error) {
+		error.clear();
+		device->stopCapture();
+		*captureFlag = false;
+		if (!device->lastCaptureStopSucceeded()) {
+			error = QStringLiteral("相机%1连续采集停止失败。").arg(cameraIndex);
+			return false;
+		}
+		return true;
+	};
+	callbacks.copyStoppedFrame = [device, cameraIndex, captureFlag](QImage& image,
+		int& exposure, QString& error) {
+		error.clear();
+		if (*captureFlag) {
+			error = QStringLiteral("相机%1仍在采集，拒绝复制共享帧。").arg(cameraIndex);
+			return false;
+		}
+		image = cameraFrameToQImage(device->capturedImg);
+		exposure = device->imgExposeTime;
+		if (image.isNull()) {
+			error = QStringLiteral("相机%1新帧为空或格式不受支持。").arg(cameraIndex);
+			return false;
+		}
+		return true;
+	};
+	return callbacks;
+}
+
+bool stopGraphicalProgramAxes(moveControl* card)
+{
+	if (!card || !card->openControllerFlag) return false;
+	std::set<short> cores;
+	for (short core : card->axisCore) cores.insert(core);
+	bool stopped = true;
+	for (short core : cores)
+		if (GTN_Stop(core, 0xffff, 0xffff) != 0) stopped = false;
+	return stopped;
 }
 }
 
@@ -2406,6 +2495,7 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 	m_graphicalProgramCancelRequested = false;
 	ui.measureCancel->setEnabled(true);
 	ui.programConfirm->setEnabled(false);
+	ui.closeAllDevice->setEnabled(false);
 	GraphicalProgramRunnerCallbacks callbacks;
 	callbacks.stateChanged = [this](GraphicalProgramRunState state, const GraphicalProgramStep* step) {
 		QString text;
@@ -2449,30 +2539,91 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 		if (resultTablePtr) resultTablePtr->setRowCount(0);
 	};
 	callbacks.cancelRequested = [this]() { return m_graphicalProgramCancelRequested; };
-	callbacks.validateStep = [](const GraphicalProgramStep& step) {
-		return step.contract.supported
-			? GraphicalProgramRunStepResult::success()
-			: GraphicalProgramRunStepResult::failure(QStringLiteral("图形化执行步骤类型不受支持。"));
-	};
-	callbacks.moveToStep = [](const GraphicalProgramStep&) {
+	callbacks.validateStep = [this](const GraphicalProgramStep& step) {
+		if (!step.contract.supported)
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("图形化执行步骤类型不受支持。"));
+		if (!moveControlCardPtr || !moveControlCardPtr->openControllerFlag || !allDeviceOpenFlag)
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("图形化自动测量设备尚未全部就绪。"));
+		if (step.contract.requiresImage) {
+			const int camera = step.contract.cameraIndex;
+			if (camera < 0 || camera >= 3 || !cameraPtrList[camera]
+				|| !cameraPtrList[camera]->isOpenCam || !cameraPtrList[camera]->isOpenStream)
+				return GraphicalProgramRunStepResult::failure(
+					QStringLiteral("记录%1所需相机%2未连接。")
+						.arg(step.sequence).arg(camera));
+			for (int index = 0; index < 3; ++index) {
+				if (camCaptureFlag[index] || (m_camThread_ptrList[index]
+					&& m_camThread_ptrList[index]->isRunning()))
+					return GraphicalProgramRunStepResult::failure(
+						QStringLiteral("相机%1正被手动采集占用；整程序未开始运动。")
+							.arg(index));
+			}
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("记录%1的%2实时计算后端尚未接入；整程序未开始运动。")
+					.arg(step.sequence).arg(step.type));
+		}
+		if (step.type == QStringLiteral("直径") || step.type == QStringLiteral("圆柱度"))
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("记录%1的真实光幕采集后端尚未接入；整程序未开始运动。")
+					.arg(step.sequence));
 		return GraphicalProgramRunStepResult::failure(
-			QStringLiteral("图形化运动后端尚未接入，未产生自动测量结果。"));
+			QStringLiteral("记录%1的转台整周采集与基准换算后端尚未接入；整程序未开始运动。")
+				.arg(step.sequence));
 	};
-	callbacks.captureStep = [](const GraphicalProgramStep&) {
-		return GraphicalProgramRunStepResult::failure(
-			QStringLiteral("图形化采集后端尚未接入，未产生自动测量结果。"));
+	callbacks.moveToTarget = [this](const GraphicalProgramStep&,
+		const GraphicalProgramMotionTarget& target) {
+		GraphicalAxisRuntimeCallbacks axisCallbacks = makeGraphicalAxisRuntimeCallbacks(
+			moveControlCardPtr, [this]() { return m_graphicalProgramCancelRequested; });
+		axisCallbacks.delay = [this](int milliseconds) {
+			graphicalProgramDelay(milliseconds,
+				[this]() { return m_graphicalProgramCancelRequested; });
+		};
+		QList<int> axes = target.axisEncoderTargets.keys();
+		std::sort(axes.begin(), axes.end());
+		for (int axis : axes) {
+			const GraphicalSensorMotionResult motion =
+				GraphicalSensorMeasurement::executeAxisMotion(
+					axis, target.axisEncoderTargets.value(axis), axisCallbacks);
+			if (!motion.ok)
+				return GraphicalProgramRunStepResult::failure(motion.error);
+		}
+		return GraphicalProgramRunStepResult::success();
 	};
-	callbacks.computeStep = [](const GraphicalProgramStep&, const GraphicalProgramRuntimeFrame&) {
-		return GraphicalProgramRunStepResult::failure(
-			QStringLiteral("图形化计算后端尚未接入，未产生自动测量结果。"));
+	callbacks.captureTarget = [this](const GraphicalProgramStep& step,
+		const GraphicalProgramMotionTarget& target) {
+		if (!step.contract.requiresImage)
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("%1的真实传感器采集后端尚未接入。")
+					.arg(target.label));
+		const int camera = target.cameraIndex;
+		if (camera < 0 || camera >= 3 || !cameraPtrList[camera])
+			return GraphicalProgramRunStepResult::failure(
+				QStringLiteral("%1的相机通道无效。").arg(target.label));
+		return GraphicalFreshImageAcquisition::capture(camera, target.exposure,
+			makeGraphicalFreshImageCallbacks(cameraPtrList[camera], camera,
+				&camCaptureFlag[camera],
+				[this]() { return m_graphicalProgramCancelRequested; }));
+	};
+	callbacks.computeTargets = [](const GraphicalProgramStep& step,
+		const QVector<GraphicalProgramMotionTarget>& targets,
+		const QVector<GraphicalProgramRuntimeFrame>& frames) {
+		GraphicalProgramMeasurementCallbacks measurement;
+		measurement.visual = [](const GraphicalProgramStep& visualStep,
+			const QVector<GraphicalProgramMotionTarget>& visualTargets,
+			const QVector<GraphicalProgramRuntimeFrame>& visualFrames) {
+			return GraphicalProgramEditor::runRuntimeVisualMeasurement(
+				visualStep, visualTargets, visualFrames);
+		};
+		return GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, measurement);
 	};
 	callbacks.requestStop = [this]() {
-		if (moveControlCardPtr && moveControlCardPtr->openControllerFlag) {
-			moveControlCardPtr->stopMove("urgent", "all");
-		}
-		return true;
+		return stopGraphicalProgramAxes(moveControlCardPtr);
 	};
+	m_graphicalProgramRunnerActive = true;
 	const GraphicalProgramRunResult result = m_graphicalProgramRunner.execute(iterator.value(), callbacks);
+	m_graphicalProgramRunnerActive = false;
 	QVector<GraphicalProgramMeasurementResult> tableResults = result.measurements;
 	if (!result.ok && tableResults.isEmpty() && result.failedSequence > 0) {
 		GraphicalProgramMeasurementResult failedResult;
@@ -2497,15 +2648,19 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 void AxisMeasurement::requestGraphicalProgramStop(const QString& reason)
 {
 	m_graphicalProgramCancelRequested = true;
-	if (moveControlCardPtr && moveControlCardPtr->openControllerFlag)
-		moveControlCardPtr->stopMove("urgent", "all");
-	finishGraphicalProgramRun(false, reason);
+	const bool stopped = stopGraphicalProgramAxes(moveControlCardPtr);
+	if (!stopped)
+		showDeviceInf(reason + QStringLiteral(" 停止命令失败，请使用物理急停。"));
+	if (!m_graphicalProgramRunnerActive)
+		finishGraphicalProgramRun(false, stopped ? reason
+			: reason + QStringLiteral(" 停止命令失败，请使用物理急停。"));
 }
 
 void AxisMeasurement::finishGraphicalProgramRun(bool normalFlag, const QString& message,
 	const QString& judgement)
 {
 	programRunFlag = false;
+	m_graphicalProgramRunnerActive = false;
 	m_graphicalProgramCancelRequested = false;
 	ui.measureResultFlag->setStyleSheet(QStringLiteral(""));
 	const QString resultText = normalFlag
@@ -2528,6 +2683,7 @@ void AxisMeasurement::finishGraphicalProgramRun(bool normalFlag, const QString& 
 	ui.programNumber->setEnabled(true);
 	ui.ManualControl->setEnabled(true);
 	ui.allAxisGoHome->setEnabled(allDeviceOpenFlag);
+	ui.closeAllDevice->setEnabled(allDeviceOpenFlag);
 	ui.autoMoveAdjust->setEnabled(true);
 	showDeviceInf(message);
 	showProgramProcess(message, normalFlag ? 100 : 0);

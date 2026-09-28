@@ -9,6 +9,7 @@
 #include <QString>
 #include <QVector>
 
+#include <algorithm>
 #include <exception>
 #include <functional>
 
@@ -241,6 +242,149 @@ struct GraphicalProgramRunStepResult {
     }
 };
 
+struct GraphicalFreshImageCallbacks {
+    std::function<unsigned long long()> frameSerial;
+    std::function<bool(int, QString&)> startContinuousCapture;
+    std::function<bool(QString&)> stopCapture;
+    std::function<bool(QImage&, int&, QString&)> copyStoppedFrame;
+    std::function<bool()> cancelRequested;
+    std::function<void(int)> delay;
+};
+
+class GraphicalFreshImageAcquisition final
+{
+public:
+    static GraphicalProgramRunStepResult capture(int cameraIndex, int requestedExposure,
+        const GraphicalFreshImageCallbacks& callbacks, int timeoutMs = 2000,
+        int pollIntervalMs = 10)
+    {
+        if (cameraIndex < 0 || requestedExposure < 0 || requestedExposure > 30000
+            || timeoutMs <= 0 || pollIntervalMs <= 0 || !callbacks.frameSerial
+            || !callbacks.startContinuousCapture || !callbacks.stopCapture
+            || !callbacks.copyStoppedFrame || !callbacks.delay) {
+            return GraphicalProgramRunStepResult::failure(
+                QStringLiteral("相机新帧采集参数或回调无效。"));
+        }
+        const unsigned long long baseline = callbacks.frameSerial();
+        QString error;
+        if (!callbacks.startContinuousCapture(requestedExposure, error)) {
+            QString stopError;
+            const bool stopped = callbacks.stopCapture(stopError);
+            QString message = error.isEmpty()
+                ? QStringLiteral("相机连续采集启动失败。") : error;
+            if (!stopped) message += QStringLiteral("；停止失败：%1")
+                .arg(stopError.isEmpty() ? QStringLiteral("后端未返回原因") : stopError);
+            return GraphicalProgramRunStepResult::failure(message);
+        }
+        bool fresh = false;
+        bool cancelled = false;
+        int elapsed = 0;
+        while (true) {
+            cancelled = callbacks.cancelRequested && callbacks.cancelRequested();
+            if (cancelled || callbacks.frameSerial() > baseline) {
+                fresh = !cancelled;
+                break;
+            }
+            if (elapsed >= timeoutMs) break;
+            const int delayMs = std::min(pollIntervalMs, timeoutMs - elapsed);
+            callbacks.delay(delayMs);
+            elapsed += delayMs;
+        }
+        QString stopError;
+        const bool stopped = callbacks.stopCapture(stopError);
+        if (!stopped) {
+            return GraphicalProgramRunStepResult::failure(QStringLiteral("相机停止失败：%1")
+                .arg(stopError.isEmpty() ? QStringLiteral("后端未返回原因") : stopError));
+        }
+        if (cancelled)
+            return GraphicalProgramRunStepResult::failure(QStringLiteral("相机新帧采集已取消。"));
+        if (!fresh)
+            return GraphicalProgramRunStepResult::failure(QStringLiteral("等待相机新帧超时。"));
+
+        GraphicalProgramRuntimeFrame frame;
+        frame.cameraIndex = cameraIndex;
+        if (!callbacks.copyStoppedFrame(frame.image, frame.exposure, error)
+            || frame.image.isNull()) {
+            return GraphicalProgramRunStepResult::failure(error.isEmpty()
+                ? QStringLiteral("相机新帧复制失败。") : error);
+        }
+        frame.hasImage = true;
+        frame.source = QStringLiteral("runtime-fresh-frame");
+        return GraphicalProgramRunStepResult::successWithFrame(frame);
+    }
+};
+
+struct GraphicalProgramAcquisitionCallbacks {
+    std::function<bool(const GraphicalProgramStep&, const GraphicalProgramMotionTarget&,
+        QImage&, QString&)> captureImage;
+    std::function<bool(const GraphicalProgramStep&, const GraphicalProgramMotionTarget&,
+        QVector<double>&, QString&)> captureCompensatedDiameters;
+    std::function<bool(const GraphicalProgramStep&, const GraphicalProgramMotionTarget&,
+        QVector<double>&, QString&)> captureRoundoutDistances;
+};
+
+class GraphicalProgramAcquisitionDispatcher final
+{
+public:
+    static GraphicalProgramRunStepResult capture(const GraphicalProgramStep& step,
+        const GraphicalProgramMotionTarget& target,
+        const GraphicalProgramAcquisitionCallbacks& callbacks)
+    {
+        GraphicalProgramRuntimeFrame frame;
+        frame.cameraIndex = target.cameraIndex;
+        frame.exposure = target.exposure;
+        frame.source = target.label;
+        QString error;
+        if (step.contract.requiresImage) {
+            if (target.cameraIndex != step.contract.cameraIndex
+                || target.exposure < 0 || target.exposure > 30000) {
+                return GraphicalProgramRunStepResult::failure(
+                    QStringLiteral("%1的相机通道或曝光无效。").arg(target.label));
+            }
+            if (!callbacks.captureImage
+                || !callbacks.captureImage(step, target, frame.image, error)
+                || frame.image.isNull()) {
+                return GraphicalProgramRunStepResult::failure(captureError(
+                    target.label, QStringLiteral("图像"), error));
+            }
+            frame.hasImage = true;
+        }
+        else if (step.type == QStringLiteral("直径")
+            || step.type == QStringLiteral("圆柱度")) {
+            if (!callbacks.captureCompensatedDiameters
+                || !callbacks.captureCompensatedDiameters(
+                    step, target, frame.compensatedDiameterSamples, error)
+                || frame.compensatedDiameterSamples.isEmpty()) {
+                return GraphicalProgramRunStepResult::failure(captureError(
+                    target.label, QStringLiteral("光幕直径样本"), error));
+            }
+        }
+        else if (step.type == QStringLiteral("跳动")) {
+            if (!callbacks.captureRoundoutDistances
+                || !callbacks.captureRoundoutDistances(
+                    step, target, frame.roundoutDistanceSamples, error)
+                || frame.roundoutDistanceSamples.isEmpty()) {
+                return GraphicalProgramRunStepResult::failure(captureError(
+                    target.label, QStringLiteral("圆跳动距离样本"), error));
+            }
+        }
+        else {
+            return GraphicalProgramRunStepResult::failure(
+                QStringLiteral("记录%1的%2采集后端尚未接入。")
+                    .arg(step.sequence).arg(step.type));
+        }
+        return GraphicalProgramRunStepResult::successWithFrame(frame);
+    }
+
+private:
+    static QString captureError(const QString& label, const QString& input,
+        const QString& backendError)
+    {
+        return QStringLiteral("%1%2采集失败：%3").arg(label, input,
+            backendError.isEmpty() ? QStringLiteral("后端未返回有效数据") : backendError);
+    }
+};
+
 struct GraphicalProgramMeasurementCallbacks {
     using Measure = std::function<GraphicalSensorValueResult(const GraphicalProgramStep&,
         const QVector<GraphicalProgramMotionTarget>&,
@@ -251,6 +395,17 @@ struct GraphicalProgramMeasurementCallbacks {
 class GraphicalProgramMeasurementDispatcher final
 {
 public:
+    static bool hasCompleteVisualRuntimeInput(const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramRuntimeFrame>& frames)
+    {
+        if (frames.isEmpty()) return false;
+        for (const GraphicalProgramRuntimeFrame& frame : frames) {
+            if (!frame.hasImage || frame.image.isNull()
+                || frame.cameraIndex != step.contract.cameraIndex) return false;
+        }
+        return true;
+    }
+
     static GraphicalProgramRunStepResult compute(const GraphicalProgramStep& step,
         const QVector<GraphicalProgramMotionTarget>& targets,
         const QVector<GraphicalProgramRuntimeFrame>& frames,
@@ -418,7 +573,7 @@ public:
             for (const GraphicalProgramStep& step : plan.steps) {
                 if (isCancelRequested(callbacks)) {
                     return fail(result, callbacks, &step, GraphicalProgramRunState::Cancelled,
-                        QStringLiteral("自动测量已取消。"), true);
+                        QStringLiteral("自动测量已取消。"), false);
                 }
                 const GraphicalProgramRunStepResult validation = callbacks.validateStep(step);
                 if (!validation.ok) {
@@ -426,6 +581,23 @@ public:
                         validation.error.isEmpty()
                             ? QStringLiteral("执行步骤校验失败。") : validation.error,
                         false);
+                }
+                if (hasTargetCallbacks) {
+                    QVector<GraphicalProgramMotionTarget> targets;
+                    QString planningError;
+                    if (!GraphicalProgramRuntimePlanning::buildMotionTargets(
+                            step, targets, planningError)) {
+                        return fail(result, callbacks, &step, GraphicalProgramRunState::Failed,
+                            planningError.isEmpty()
+                                ? QStringLiteral("运行运动目标规划失败。") : planningError,
+                            false);
+                    }
+                }
+            }
+            for (const GraphicalProgramStep& step : plan.steps) {
+                if (isCancelRequested(callbacks)) {
+                    return fail(result, callbacks, &step, GraphicalProgramRunState::Cancelled,
+                        QStringLiteral("自动测量已取消。"), true);
                 }
                 if (hasTargetCallbacks) {
                     QVector<GraphicalProgramMotionTarget> targets;

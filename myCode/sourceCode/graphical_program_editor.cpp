@@ -5,6 +5,7 @@
 #include "graphical_canvas.h"
 #include "sharedFun.h"
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCloseEvent>
@@ -27,6 +28,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <climits>
+#include <limits>
 #include <sstream>
 #include <algorithm>
 /*工具栏、左右下面板、记录表、试测调度、HALCON 算法*/
@@ -451,7 +453,7 @@ LineTrialResult runSingleRoiAngleTrial(const QImage& source,
             result.edges = result.cornerEdges[pair.firstEdge].contour;
             result.edges.addPath(result.cornerEdges[pair.secondEdge].contour);
             result.fitted = cornerPairOverlay(result.cornerEdges[pair.firstEdge], result.cornerEdges[pair.secondEdge], pair, supplementary);
-            result.status = QStringLiteral("单ROI试测完成（唯一相邻边对，未判定）\n") + result.diagnostic;
+            result.status = QStringLiteral("单ROI试测完成（唯一相邻边对）\n") + result.diagnostic;
         }
         else result.status = QStringLiteral("待选择候选边对：在测量配置中选择目标，尚未输出角度。\n") + result.diagnostic;
     }
@@ -637,7 +639,7 @@ CrossFrameLengthTrialResult runCrossFrameLengthTrial(const QImage& startImage,
             .arg(result.pixelTermMm, 0, 'f', 4).arg(result.movementMm, 0, 'f', 4);
         return result;
     }
-    result.status = QStringLiteral("跨图长度试测完成（未判定）：起点行=%1 px，终点行=%2 px，像素项=%3 mm，轴5补偿位移=%4 mm")
+    result.status = QStringLiteral("跨图长度试测完成：起点行=%1 px，终点行=%2 px，像素项=%3 mm，轴5补偿位移=%4 mm")
         .arg(result.startRow, 0, 'f', 3).arg(result.endRow, 0, 'f', 3)
         .arg(result.pixelTermMm, 0, 'f', 4).arg(result.movementMm, 0, 'f', 4);
     return result;
@@ -870,7 +872,7 @@ LinearTrialResult runSingleRoiTemplateLengthTrial(const QImage& source,
         const double connectorX = (firstMidpoint.x() + secondMidpoint.x()) / 2.0;
         result.fitted.moveTo(connectorX, firstMidpoint.y());
         result.fitted.lineTo(connectorX, secondMidpoint.y());
-        result.status = QStringLiteral("单ROI模板长度试测完成（未判定）；模板分数=%1（最高分匹配）；%2；边1=%3°，边2=%4°，方向差=%5°；%6")
+        result.status = QStringLiteral("单ROI模板长度试测完成；模板分数=%1（最高分匹配）；%2；边1=%3°，边2=%4°，方向差=%5°；%6")
             .arg(result.templateScore, 0, 'f', 4).arg(edgeSelection).arg(firstAngle, 0, 'f', 3)
             .arg(secondAngle, 0, 'f', 3).arg(directionDifference, 0, 'f', 3)
             .arg(candidates.diagnostic);
@@ -1078,7 +1080,7 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
         const double midpointDistance = QLineF(midpoint0, midpoint1).length();
         const double firstLineLength = QLineF(begin0, end0).length();
         const double secondLineLength = QLineF(begin1, end1).length();
-        result.status = QStringLiteral("孔径试测完成（ROI灰度定位内孔上下边，原算法四组跨边距离取最大值，未判定）"
+        result.status = QStringLiteral("孔径试测完成（ROI灰度定位内孔上下边，原算法四组跨边距离取最大值）"
             "；定位=%1，上下行=%2/%3，对比=%4/%5；四组距离=%6/%7/%8/%9 px，取第%10组；中点距=%11 px；拟合线长=%12/%13 px")
             .arg(darkHole ? QStringLiteral("暗孔") : QStringLiteral("亮孔"))
             .arg(topY, 0, 'f', 1)
@@ -1158,6 +1160,9 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
 #include <QScrollArea>
 #include <QFrame>
 #include <QEvent>
+#include <QPainter>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QCoreApplication>
@@ -1165,6 +1170,29 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
 // Temporary offline layout preview; restore false after the user's feedback.
 namespace {
 constexpr bool kGraphicalAxisLayoutPreview = false;
+
+class JudgementColorDelegate final : public QStyledItemDelegate {
+public:
+    explicit JudgementColorDelegate(QObject* parent = nullptr)
+        : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+        const QModelIndex& index) const override
+    {
+        QStyleOptionViewItem adjusted(option);
+        initStyleOption(&adjusted, index);
+        if (adjusted.state.testFlag(QStyle::State_Selected)) {
+            painter->fillRect(adjusted.rect, adjusted.palette.brush(QPalette::Highlight));
+            adjusted.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver
+                | QStyle::State_HasFocus);
+            adjusted.features &= ~QStyleOptionViewItem::Alternate;
+            adjusted.backgroundBrush = Qt::NoBrush;
+        }
+        const QWidget* widget = option.widget;
+        QStyle* style = widget ? widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &adjusted, painter, widget);
+    }
+};
 
 QVector<int> deviceAxesForMeasurement(const QString& type)
 {
@@ -1733,6 +1761,131 @@ bool GraphicalProgramEditor::collectCurrentDevicePosition(const QString& type,
     }
     position = next;
     return true;
+}
+
+GraphicalSensorValueResult GraphicalProgramEditor::runRuntimeVisualMeasurement(
+    const GraphicalProgramStep& step,
+    const QVector<GraphicalProgramMotionTarget>& targets,
+    const QVector<GraphicalProgramRuntimeFrame>& frames)
+{
+    if (frames.isEmpty() || frames.first().image.isNull())
+        return GraphicalSensorValueResult::failure(QStringLiteral("视觉运行帧为空。"));
+
+    const auto roiFromJson = [](const QJsonObject& object,
+        GraphicalCanvas::MeasurementRoi& roi) {
+        const QString type = object.value(QStringLiteral("type")).toString();
+        const QJsonArray points = object.value(QStringLiteral("points")).toArray();
+        const double width = object.value(QStringLiteral("width")).toDouble(0);
+        const double height = object.value(QStringLiteral("height")).toDouble(0);
+        if (type.isEmpty() || points.isEmpty() || !std::isfinite(width)
+            || !std::isfinite(height) || width <= 0 || height <= 0) return false;
+        roi = GraphicalCanvas::MeasurementRoi();
+        for (const QJsonValue& value : points) {
+            const QJsonArray point = value.toArray();
+            if (point.size() != 2 || !std::isfinite(point.at(0).toDouble())
+                || !std::isfinite(point.at(1).toDouble())) return false;
+            roi.corners.append(QPointF(point.at(0).toDouble(), point.at(1).toDouble()));
+        }
+        const double rotation = object.value(QStringLiteral("rotation")).toDouble();
+        roi.axisAligned = qAbs(rotation / 90.0 - qRound(rotation / 90.0)) <= 1e-8;
+        if (type == QStringLiteral("圆")) {
+            if (roi.corners.size() != 1) return false;
+            roi.isCircle = true;
+            roi.center = roi.corners.first();
+            roi.radius = qMax(width, height) * 0.5;
+        }
+        return roi.isCircle || roi.corners.size() == 4;
+    };
+    const auto parametersFromDefinition = [](const QJsonObject& definition) {
+        GraphicalDetectionParameters parameters;
+        const QJsonObject input = definition.value(QStringLiteral("detection")).toObject();
+        if (!input.isEmpty()) {
+            parameters.smoothing = input.value(QStringLiteral("smoothing")).toDouble(parameters.smoothing);
+            parameters.lowThreshold = input.value(QStringLiteral("lowThreshold")).toDouble(parameters.lowThreshold);
+            parameters.highThreshold = input.value(QStringLiteral("highThreshold")).toDouble(parameters.highThreshold);
+            parameters.minLength = input.value(QStringLiteral("minLength")).toDouble(parameters.minLength);
+            parameters.maxLength = input.value(QStringLiteral("maxLength")).toDouble(parameters.maxLength);
+            parameters.mergeDistance = input.value(QStringLiteral("mergeDistance")).toDouble(parameters.mergeDistance);
+            parameters.cornerMaxDeviation = input.value(QStringLiteral("cornerMaxDeviation")).toDouble(parameters.cornerMaxDeviation);
+            parameters.cornerMaxGap = input.value(QStringLiteral("cornerMaxGap")).toDouble(parameters.cornerMaxGap);
+        }
+        return parameters;
+    };
+    const GraphicalDetectionParameters parameters = parametersFromDefinition(step.definition);
+    GraphicalCanvas::MeasurementRoi firstRoi;
+    if (step.definition.value(QStringLiteral("crossFrameLength")).toBool(false))
+        return GraphicalSensorValueResult::failure(QStringLiteral("跨图长度的轴5补偿换算后端尚未接入。"));
+    if (!roiFromJson(step.definition.value(QStringLiteral("runtimeRoi")).toObject(), firstRoi))
+        return GraphicalSensorValueResult::failure(QStringLiteral("记录%1主ROI运行几何无效。").arg(step.sequence));
+
+    if (step.type == QStringLiteral("角度")) {
+        const bool singleRoi = step.definition.value(QStringLiteral("singleRoiAngle")).toBool(false);
+        GraphicalCanvas::MeasurementRoi secondRoi;
+        if (!singleRoi && !roiFromJson(step.definition.value(QStringLiteral("runtimeSecondaryRoi")).toObject(), secondRoi))
+            return GraphicalSensorValueResult::failure(QStringLiteral("记录%1第二ROI运行几何无效。").arg(step.sequence));
+        const LineTrialResult result = singleRoi
+            ? runSingleRoiAngleTrial(frames.first().image, firstRoi,
+                step.definition.value(QStringLiteral("supplementaryAngle")).toBool(false), parameters)
+            : runTwoRoiAngleTrial(frames.first().image, firstRoi, secondRoi,
+                step.definition.value(QStringLiteral("supplementaryAngle")).toBool(false), parameters);
+        return result.angle >= 0 ? GraphicalSensorValueResult::success(result.angle)
+            : GraphicalSensorValueResult::failure(result.status);
+    }
+    if (step.type == QStringLiteral("孔径")) {
+        const double calibration = step.definition.value(QStringLiteral("holeCalibrationMmPerPixel")).toDouble(0);
+        const HoleTrialResult result = runHoleDiameterTrial(frames.first().image, firstRoi, calibration);
+        return result.diameterMm > 0 ? GraphicalSensorValueResult::success(result.diameterMm)
+            : GraphicalSensorValueResult::failure(result.status);
+    }
+    if (step.type == QStringLiteral("圆弧半径")) {
+        const ArcTrialResult result = runArcTrial(frames.first().image, firstRoi, parameters);
+        const double calibration = step.definition.value(QStringLiteral("lengthCalibrationMmPerPixel")).toDouble(0);
+        return result.radius > 0 && std::isfinite(calibration) && calibration > 0
+            ? GraphicalSensorValueResult::success(result.radius * calibration)
+            : GraphicalSensorValueResult::failure(result.status.isEmpty()
+                ? QStringLiteral("圆弧半径标定无效。") : result.status);
+    }
+    if (step.type == QStringLiteral("长度")) {
+        if (targets.size() != 1 || frames.size() != 1)
+            return GraphicalSensorValueResult::failure(
+                QStringLiteral("长度运行目标或图像数量无效。"));
+        const QJsonObject model = step.definition.value(QStringLiteral("lengthTemplate")).toObject();
+        const QByteArray serialized = QByteArray::fromBase64(
+            model.value(QStringLiteral("data")).toString().toLatin1());
+        const LinearTrialResult result = runSingleRoiTemplateLengthTrial(frames.first().image,
+            firstRoi, step.definition.value(QStringLiteral("lengthCalibrationMmPerPixel")).toDouble(0),
+            parameters, serialized, model.value(QStringLiteral("referenceRow")).toDouble(),
+            model.value(QStringLiteral("referenceColumn")).toDouble(),
+            model.value(QStringLiteral("referenceAngle")).toDouble());
+        return result.distanceMm > 0 ? GraphicalSensorValueResult::success(result.distanceMm)
+            : GraphicalSensorValueResult::failure(result.status);
+    }
+    return GraphicalSensorValueResult::failure(QStringLiteral("记录%1视觉类型不受支持。")
+        .arg(step.sequence));
+}
+
+QString GraphicalProgramEditor::judgementForRecord(const MeasurementRecord& record) const
+{
+    double measuredValue = std::numeric_limits<double>::quiet_NaN();
+    if (record.trialAngle >= 0)
+        measuredValue = record.trialAngle;
+    else if (record.trialLinearMm >= 0)
+        measuredValue = record.trialLinearMm;
+    else if (record.pixelRadius >= 0)
+        measuredValue = record.pixelRadius * record.lengthCalibration;
+
+    if (record.trialStatus.contains(QStringLiteral("测量失败"))
+        || record.trialStatus.contains(QStringLiteral("失败［"))
+        || record.trialStatus.contains(QStringLiteral("HALCON许可不可用")))
+        return QStringLiteral("错误");
+
+    if (!record.hasTolerance || !std::isfinite(measuredValue))
+        return QStringLiteral("未判定");
+
+    const double lowLimit = record.nominal + record.lower;
+    const double highLimit = record.nominal + record.upper;
+    return measuredValue >= lowLimit && measuredValue <= highLimit
+        ? QStringLiteral("OK") : QStringLiteral("NG");
 }
 
 void GraphicalProgramEditor::clearSelectedDevicePosition()
@@ -2687,6 +2840,7 @@ void GraphicalProgramEditor::buildInterface()
     m_stepTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_stepTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_stepTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_stepTable->setItemDelegateForColumn(9, new JudgementColorDelegate(m_stepTable));
     m_stepTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     connect(m_stepTable, &QTableWidget::currentCellChanged, this,
         [this](int row, int, int, int) { loadMeasurementRecord(row); });
@@ -3175,16 +3329,71 @@ void GraphicalProgramEditor::saveMeasurementRecord(bool update)////新增或者�
     record.nominal = m_nominal->value();
     record.lower = m_lowerDeviation->value();
     record.upper = m_upperDeviation->value();
-    if (update && record.type == m_records[row].type)
-        record.devicePosition = m_records[row].devicePosition;
+    bool trialResultPreserved = false;
+    if (update && record.type == m_records[row].type) {
+        const MeasurementRecord& previous = m_records[row];
+        record.devicePosition = previous.devicePosition;
+        const auto sameDetectionParameters = [](const GraphicalDetectionParameters& left,
+            const GraphicalDetectionParameters& right) {
+            return left.smoothing == right.smoothing
+                && left.lowThreshold == right.lowThreshold
+                && left.highThreshold == right.highThreshold
+                && left.minLength == right.minLength
+                && left.maxLength == right.maxLength
+                && left.mergeDistance == right.mergeDistance
+                && left.cornerMaxDeviation == right.cornerMaxDeviation
+                && left.cornerMaxGap == right.cornerMaxGap;
+        };
+        const bool trialInputsUnchanged = record.frameId == previous.frameId
+            && record.geometryId == previous.geometryId
+            && record.secondaryFrameId == previous.secondaryFrameId
+            && record.secondaryGeometryId == previous.secondaryGeometryId
+            && record.holeUniformCount == previous.holeUniformCount
+            && record.holeCalibration == previous.holeCalibration
+            && record.lengthCalibration == previous.lengthCalibration
+            && record.lowerAxialOffsetPulse == previous.lowerAxialOffsetPulse
+            && record.upperAxialOffsetPulse == previous.upperAxialOffsetPulse
+            && record.roundoutReference1 == previous.roundoutReference1
+            && record.roundoutReference2 == previous.roundoutReference2
+            && record.crossFrameLength == previous.crossFrameLength
+            && record.useSupplementaryAngle == previous.useSupplementaryAngle
+            && record.singleRoiAngle == previous.singleRoiAngle
+            && sameDetectionParameters(record.detection, previous.detection);
+        if (trialInputsUnchanged) {
+            record.pixelRadius = previous.pixelRadius;
+            record.trialAngle = previous.trialAngle;
+            record.trialLinearMm = previous.trialLinearMm;
+            record.trialStatus = previous.trialStatus;
+            record.detectedEdges = previous.detectedEdges;
+            record.fittedArc = previous.fittedArc;
+            record.cornerEdges = previous.cornerEdges;
+            record.cornerPairs = previous.cornerPairs;
+            record.selectedCornerPair = previous.selectedCornerPair;
+            record.candidateSelectionAuditMode = previous.candidateSelectionAuditMode;
+            record.candidateSelectionAuditFirst = previous.candidateSelectionAuditFirst;
+            record.candidateSelectionAuditSecond = previous.candidateSelectionAuditSecond;
+            record.cornerDiagnostic = previous.cornerDiagnostic;
+            record.crossStartDetectedEdges = previous.crossStartDetectedEdges;
+            record.crossStartFittedLine = previous.crossStartFittedLine;
+            record.crossEndDetectedEdges = previous.crossEndDetectedEdges;
+            record.crossEndFittedLine = previous.crossEndFittedLine;
+            trialResultPreserved = previous.trialAngle >= 0
+                || previous.trialLinearMm >= 0 || previous.pixelRadius >= 0;
+        }
+    }
     if (update) m_records[row] = record;
     else m_records.append(record);
     m_projectDirty = true;
     refreshMeasurementRecords();
     m_stepTable->setCurrentCell(update ? row : m_records.size() - 1, 0);
     const bool pointCollected = m_records[update ? row : m_records.size() - 1].devicePosition.collected;
-    statusBar()->showMessage(QStringLiteral("记录 %1 已配置；算法未执行，点位%2，工程尚未保存。")
-        .arg(record.sequence).arg(pointCollected ? QStringLiteral("已保留") : QStringLiteral("未采集")));
+    const int savedRow = update ? row : m_records.size() - 1;
+    statusBar()->showMessage(trialResultPreserved
+        ? QStringLiteral("记录 %1 已配置；试测结果已保留，判定=%2，点位%3，工程尚未保存。")
+            .arg(record.sequence).arg(judgementForRecord(m_records[savedRow]))
+            .arg(pointCollected ? QStringLiteral("已保留") : QStringLiteral("未采集"))
+        : QStringLiteral("记录 %1 已配置；算法未执行，点位%2，工程尚未保存。")
+            .arg(record.sequence).arg(pointCollected ? QStringLiteral("已保留") : QStringLiteral("未采集")));
 }
 
 void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到表格；同时检查关联图形有没有被删掉（删了就标"关联已删除"并清空试测结果）。
@@ -3317,15 +3526,18 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
                     .arg(record.devicePosition.lightCurtainDiameter, 0, 'f', 4);
             deviceSummary = parts.join(QStringLiteral("；"));
         }
+        const QString judgementText = judgementForRecord(record);
         const QStringList cells = QStringList() << QString::number(record.sequence)
             << record.featureNumber << record.type << association
             << (record.hasTolerance ? QString::number(record.nominal, 'f', 4) : QStringLiteral("未设置"))
             << (record.hasTolerance ? QString::number(record.lower, 'f', 4) : QStringLiteral("—"))
             << (record.hasTolerance ? QString::number(record.upper, 'f', 4) : QStringLiteral("—"))
             << unit << (record.trialAngle >= 0 ? QStringLiteral("%1 °").arg(record.trialAngle, 0, 'f', 4)
-                : record.trialLinearMm > 0 ? QStringLiteral("%1 mm").arg(record.trialLinearMm, 0, 'f', 4)
-                : record.pixelRadius > 0 ? QStringLiteral("%1 px").arg(record.pixelRadius, 0, 'f', 4) : QStringLiteral("—"))
-            << QStringLiteral("未判定") << deviceSummary << record.trialStatus.section('\n', 0, 0);
+                : record.trialLinearMm >= 0 ? QStringLiteral("%1 mm").arg(record.trialLinearMm, 0, 'f', 4)
+                : record.pixelRadius >= 0
+                    ? QStringLiteral("%1 mm").arg(record.pixelRadius * record.lengthCalibration, 0, 'f', 4)
+                    : QStringLiteral("—"))
+            << judgementText << deviceSummary << record.trialStatus.section('\n', 0, 0);
         for (int column = 0; column < cells.size(); ++column) {
             QTableWidgetItem* cell = new QTableWidgetItem(cells[column]);
             cell->setToolTip(column == 11 ? record.trialStatus : cells[column]);
@@ -3335,9 +3547,9 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
                 if (status == QStringLiteral("OK"))
                     statusColor = QColor("#166534"); // 合格：绿色
                 else if (status == QStringLiteral("错误"))
-                    statusColor = QColor("#B91C1C"); // 不合格：红色
+                    statusColor = QColor("#B91C1C"); // 错误：红色
                 else if (status == QStringLiteral("NG"))
-                    statusColor = QColor("#B45309"); // 异常：橙色
+                    statusColor = QColor("#B45309"); // 不合格：橙色
                 cell->setForeground(QBrush(statusColor));
             }
             m_stepTable->setItem(row, column, cell);
@@ -3378,8 +3590,9 @@ void GraphicalProgramEditor::loadMeasurementRecord(int row)
     m_stepTable->setCurrentCell(row, 0);
     m_stepTable->selectRow(row);
     showRecordDetection(row);
-    statusBar()->showMessage(QStringLiteral("记录 %1 / 特征 %2：%3；未判定，点位%4。")
+    statusBar()->showMessage(QStringLiteral("记录 %1 / 特征 %2：%3；判定=%4，点位%5。")
         .arg(record.sequence).arg(record.featureNumber).arg(record.trialStatus)
+        .arg(judgementForRecord(record))
         .arg(record.devicePosition.collected ? QStringLiteral("已采集") : QStringLiteral("未采集")));
     refreshDevicePositionPanel();
 }
@@ -3463,7 +3676,7 @@ void GraphicalProgramEditor::chooseCornerCandidate(int index)
     record.detectedEdges = record.cornerEdges[pair.firstEdge].contour;
     record.detectedEdges.addPath(record.cornerEdges[pair.secondEdge].contour);
     record.fittedArc = cornerPairOverlay(record.cornerEdges[pair.firstEdge], record.cornerEdges[pair.secondEdge], pair, record.useSupplementaryAngle);
-    record.trialStatus = QStringLiteral("单ROI试测完成（已选择边%1 + 边%2，未判定）\n%3")
+    record.trialStatus = QStringLiteral("单ROI试测完成（已选择边%1 + 边%2）\n%3")
         .arg(record.cornerEdges[pair.firstEdge].candidateId).arg(record.cornerEdges[pair.secondEdge].candidateId).arg(record.cornerDiagnostic);
     m_projectDirty = true;
     refreshMeasurementRecords();
@@ -3591,12 +3804,12 @@ void GraphicalProgramEditor::trialSelectedRecord()
     for (QToolBar* toolbar : findChildren<QToolBar*>())
         if (toolbar->objectName() != QStringLiteral("graphicalAxisSafetyBar")) toolbar->setEnabled(false);
     statusBar()->showMessage(holeTrial
-        ? QStringLiteral("正在由孔径ROI自动定位上下测量区，并按原软件流程计算孔径；不作合格判定。")
+        ? QStringLiteral("正在由孔径ROI自动定位上下测量区，并按原软件流程计算孔径；完成后刷新判定栏。")
         : crossFrameLengthTrial ? QStringLiteral("正在拟合跨图长度的起点边和终点边，并合成像素项与轴5补偿位移。")
-        : lengthTrial ? QStringLiteral("正在执行单ROI模板长度试测：匹配完整特征，自动定位并拟合两条目标边；不作合格判定。")
+        : lengthTrial ? QStringLiteral("正在执行单ROI模板长度试测：匹配完整特征，自动定位并拟合两条目标边；完成后刷新判定栏。")
         : single ? QStringLiteral("正在后台提取单ROI相邻边对；多候选时需选择目标边对。") : angleTrial
-        ? QStringLiteral("正在后台分别拟合 ROI 1 和 ROI 2 的目标直线并计算夹角；不作合格判定。")
-        : QStringLiteral("正在后台计算圆弧半径；使用列表中已提交的记录，未标定、不作合格判定。"));
+        ? QStringLiteral("正在后台分别拟合 ROI 1 和 ROI 2 的目标直线并计算夹角；完成后刷新判定栏。")
+        : QStringLiteral("正在后台计算圆弧半径；使用列表中已提交的记录，完成后刷新判定栏。"));
     const QImage source = m_canvas->sourceImage();
     const GraphicalDetectionParameters parameters = m_records[row].detection;
     if (holeTrial) {
@@ -3618,9 +3831,11 @@ void GraphicalProgramEditor::trialSelectedRecord()
             refreshMeasurementRecords();
             m_stepTable->setCurrentCell(row, 0);
             showRecordDetection(row);
+            const QString judgement = row < m_records.size()
+                ? judgementForRecord(m_records[row]) : QStringLiteral("未判定");
             statusBar()->showMessage(result->status + (result->diameterMm > 0
-                ? QStringLiteral("：%1 px × 标定 = %2 mm；未判定")
-                    .arg(result->diameterPixels, 0, 'f', 3).arg(result->diameterMm, 0, 'f', 4)
+                ? QStringLiteral("：%1 px × 标定 = %2 mm；判定=%3")
+                    .arg(result->diameterPixels, 0, 'f', 3).arg(result->diameterMm, 0, 'f', 4).arg(judgement)
                 : QString()));
         });
         connect(worker, &QThread::finished, worker, &QObject::deleteLater);
@@ -3651,8 +3866,11 @@ void GraphicalProgramEditor::trialSelectedRecord()
                 refreshMeasurementRecords();
                 m_stepTable->setCurrentCell(row, 0);
                 showRecordDetection(row);
+                const QString judgement = row < m_records.size()
+                    ? judgementForRecord(m_records[row]) : QStringLiteral("未判定");
                 statusBar()->showMessage(result->status + (result->distanceMm > 0
-                    ? QStringLiteral("；跨图长度=%1 mm").arg(result->distanceMm, 0, 'f', 4)
+                    ? QStringLiteral("；跨图长度=%1 mm；判定=%2")
+                        .arg(result->distanceMm, 0, 'f', 4).arg(judgement)
                     : QString()));
             });
             connect(worker, &QThread::finished, worker, &QObject::deleteLater);
@@ -3689,9 +3907,11 @@ void GraphicalProgramEditor::trialSelectedRecord()
             refreshMeasurementRecords();
             m_stepTable->setCurrentCell(row, 0);
             showRecordDetection(row);
+            const QString judgement = row < m_records.size()
+                ? judgementForRecord(m_records[row]) : QStringLiteral("未判定");
             statusBar()->showMessage(result->status + (result->distanceMm > 0
-                ? QStringLiteral("：%1 px × 标定 = %2 mm；未判定")
-                    .arg(result->distancePixels, 0, 'f', 3).arg(result->distanceMm, 0, 'f', 4)
+                ? QStringLiteral("：%1 px × 标定 = %2 mm；判定=%3")
+                    .arg(result->distancePixels, 0, 'f', 3).arg(result->distanceMm, 0, 'f', 4).arg(judgement)
                 : QString()));
         });
         connect(worker, &QThread::finished, worker, &QObject::deleteLater);
@@ -3729,8 +3949,10 @@ void GraphicalProgramEditor::trialSelectedRecord()
             refreshMeasurementRecords();
             m_stepTable->setCurrentCell(row, 0);
             showRecordDetection(row);
+            const QString judgement = row < m_records.size()
+                ? judgementForRecord(m_records[row]) : QStringLiteral("未判定");
             statusBar()->showMessage(result->status + (result->angle >= 0
-                ? QStringLiteral("：角度 %1°；未判定").arg(result->angle, 0, 'f', 4) : QString()));
+                ? QStringLiteral("：角度 %1°；判定=%2").arg(result->angle, 0, 'f', 4).arg(judgement) : QString()));
         });
         connect(worker, &QThread::finished, worker, &QObject::deleteLater);
         worker->start();
@@ -3751,8 +3973,14 @@ void GraphicalProgramEditor::trialSelectedRecord()
         refreshMeasurementRecords();
         m_stepTable->setCurrentCell(row, 0);
         showRecordDetection(row);
-        statusBar()->showMessage(result->status + (result->radius > 0
-            ? QStringLiteral("：半径 %1 px；未判定").arg(result->radius, 0, 'f', 4) : QString()));
+        const QString judgement = row < m_records.size()
+            ? judgementForRecord(m_records[row]) : QStringLiteral("未判定");
+        statusBar()->showMessage(result->status + (result->radius >= 0 && row < m_records.size()
+            ? QStringLiteral("：半径 %1 px × 标定 = %2 mm；判定=%3")
+                .arg(result->radius, 0, 'f', 4)
+                .arg(result->radius * m_records[row].lengthCalibration, 0, 'f', 4)
+                .arg(judgement)
+            : QString()));
     });
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
     worker->start();
@@ -4017,6 +4245,35 @@ bool GraphicalProgramEditor::exportProgramPackage(const QString& outputRoot,
         item[QStringLiteral("requiresTemplate")] = contract.requiresTemplate;
         item[QStringLiteral("threeSectionScan")] = contract.threeSectionScan;
         item[QStringLiteral("requiresTwoReferences")] = contract.requiresTwoReferences;
+        const auto runtimeRoiJson = [](const ProjectFrame& frame, int geometryId) {
+            QJsonObject roi;
+            for (const auto& feature : frame.features) {
+                if (feature.id != geometryId) continue;
+                roi[QStringLiteral("type")] = feature.type;
+                roi[QStringLiteral("rotation")] = feature.rotation;
+                roi[QStringLiteral("width")] = feature.size.width();
+                roi[QStringLiteral("height")] = feature.size.height();
+                QJsonArray points;
+                for (const QPointF& point : feature.points) {
+                    QJsonArray coordinates;
+                    coordinates.append(point.x());
+                    coordinates.append(point.y());
+                    points.append(coordinates);
+                }
+                roi[QStringLiteral("points")] = points;
+                break;
+            }
+            return roi;
+        };
+        for (const ProjectFrame& frame : m_frames) {
+            if (frame.id == record.frameId && record.geometryId > 0) {
+                item[QStringLiteral("runtimeRoi")] = runtimeRoiJson(frame, record.geometryId);
+            }
+            if (frame.id == record.secondaryFrameId && record.secondaryGeometryId > 0) {
+                item[QStringLiteral("runtimeSecondaryRoi")] = runtimeRoiJson(
+                    frame, record.secondaryGeometryId);
+            }
+        }
         records.append(item);
     }
     manifest[QStringLiteral("records")] = records;
@@ -4307,6 +4564,33 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         else selection[QStringLiteral("mode")] = QStringLiteral("none");
         selection[QStringLiteral("requiresRetest")] = true;
         object[QStringLiteral("candidateSelection")] = selection;
+        const auto runtimeRoiJson = [](const ProjectFrame& frame, int geometryId) {
+            QJsonObject roi;
+            for (const auto& feature : frame.features) {
+                if (feature.id != geometryId) continue;
+                roi[QStringLiteral("type")] = feature.type;
+                roi[QStringLiteral("rotation")] = feature.rotation;
+                roi[QStringLiteral("width")] = feature.size.width();
+                roi[QStringLiteral("height")] = feature.size.height();
+                QJsonArray points;
+                for (const QPointF& point : feature.points) {
+                    QJsonArray coordinates;
+                    coordinates.append(point.x());
+                    coordinates.append(point.y());
+                    points.append(coordinates);
+                }
+                roi[QStringLiteral("points")] = points;
+                break;
+            }
+            return roi;
+        };
+        for (const ProjectFrame& frame : m_frames) {
+            if (frame.id == record.frameId && record.geometryId > 0)
+                object[QStringLiteral("runtimeRoi")] = runtimeRoiJson(frame, record.geometryId);
+            if (frame.id == record.secondaryFrameId && record.secondaryGeometryId > 0)
+                object[QStringLiteral("runtimeSecondaryRoi")] = runtimeRoiJson(
+                    frame, record.secondaryGeometryId);
+        }
         QJsonObject devicePosition;
         const QVector<int> expectedAxes = deviceAxesForMeasurement(record.type);
         const int expectedCamera = deviceCameraForMeasurement(record.type);
