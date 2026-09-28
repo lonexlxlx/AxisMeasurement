@@ -232,6 +232,79 @@ static GraphicalProgramExecutionPlan makeRunnerPlan()
     return plan;
 }
 
+static void testGraphicalMeasurementDispatcher()
+{
+    GraphicalProgramMeasurementCallbacks callbacks;
+    QStringList routes;
+    callbacks.visual = [&](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>&,
+        const QVector<GraphicalProgramRuntimeFrame>&) {
+        routes.append(QStringLiteral("visual:%1").arg(step.type));
+        return GraphicalSensorValueResult::success(12.5);
+    };
+    callbacks.diameter = [&](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>&,
+        const QVector<GraphicalProgramRuntimeFrame>&) {
+        routes.append(QStringLiteral("diameter:%1").arg(step.type));
+        return GraphicalSensorValueResult::success(20.1);
+    };
+    callbacks.cylindricity = [&](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>&,
+        const QVector<GraphicalProgramRuntimeFrame>&) {
+        routes.append(QStringLiteral("cylindricity:%1").arg(step.type));
+        return GraphicalSensorValueResult::success(0.02);
+    };
+    callbacks.roundout = [&](const GraphicalProgramStep& step,
+        const QVector<GraphicalProgramMotionTarget>&,
+        const QVector<GraphicalProgramRuntimeFrame>&) {
+        routes.append(QStringLiteral("roundout:%1").arg(step.type));
+        return GraphicalSensorValueResult::success(0.03);
+    };
+
+    const QStringList types = { QStringLiteral("角度"), QStringLiteral("孔径"),
+        QStringLiteral("长度"), QStringLiteral("圆弧半径"), QStringLiteral("直径"),
+        QStringLiteral("圆柱度"), QStringLiteral("跳动") };
+    for (int index = 0; index < types.size(); ++index) {
+        GraphicalProgramStep step;
+        step.sequence = index + 1;
+        step.featureNumber = QStringLiteral("D%1").arg(index + 1);
+        step.type = types.at(index);
+        step.contract = GraphicalProgramGeneration::contractForType(step.type);
+        QVector<GraphicalProgramMotionTarget> targets(step.contract.threeSectionScan ? 3 : 1);
+        QVector<GraphicalProgramRuntimeFrame> frames(targets.size());
+        if (step.contract.requiresImage) {
+            frames[0].hasImage = true;
+            frames[0].image = QImage(8, 8, QImage::Format_Grayscale8);
+            frames[0].cameraIndex = step.contract.cameraIndex;
+        }
+        const GraphicalProgramRunStepResult result =
+            GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, callbacks);
+        require(result.ok && result.measurements.size() == 1
+            && result.measurements.first().featureNumber == step.featureNumber
+            && result.measurements.first().type == step.type
+            && result.measurements.first().unit
+                == (step.type == QStringLiteral("角度") ? QStringLiteral("deg") : QStringLiteral("mm")),
+            "dispatcher must route every supported type into one structured result");
+    }
+    require(routes == QStringList({ QStringLiteral("visual:角度"), QStringLiteral("visual:孔径"),
+        QStringLiteral("visual:长度"), QStringLiteral("visual:圆弧半径"),
+        QStringLiteral("diameter:直径"), QStringLiteral("cylindricity:圆柱度"),
+        QStringLiteral("roundout:跳动") }),
+        "dispatcher must keep visual and sensor calculation backends separated");
+
+    GraphicalProgramStep invalidVisual;
+    invalidVisual.sequence = 8;
+    invalidVisual.type = QStringLiteral("角度");
+    invalidVisual.contract = GraphicalProgramGeneration::contractForType(invalidVisual.type);
+    const GraphicalProgramRunStepResult invalidResult =
+        GraphicalProgramMeasurementDispatcher::compute(invalidVisual,
+            QVector<GraphicalProgramMotionTarget>(1),
+            QVector<GraphicalProgramRuntimeFrame>(1), callbacks);
+    require(!invalidResult.ok && invalidResult.error.contains(QStringLiteral("图像或相机通道无效")),
+        "visual dispatch must reject a missing runtime image before calling the algorithm");
+    std::cout << "PASS: seven-type runtime calculation dispatch, frame guards and structured results\n";
+}
+
 static void testGraphicalProgramRunnerCore()
 {
     const GraphicalProgramExecutionPlan plan = makeRunnerPlan();
@@ -1016,6 +1089,7 @@ int main(int argc, char** argv)
     try {
         testCornerGeometry();
         testSensorMeasurementAdapter();
+        testGraphicalMeasurementDispatcher();
         testGraphicalProgramRunnerCore();
         testDetectionRecords();
         testCameraWorkflow();
