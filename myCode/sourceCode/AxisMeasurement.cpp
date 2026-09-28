@@ -4026,14 +4026,15 @@ void AxisMeasurement::restructureMainLayout()
 
 	//========== 关键数值仪表盘化：等宽字体 Consolas + 语义色 ==========
 	//（布局修复：字号适配容器高度，光幕组布局区已同步加高，数值完整显示不裁切）
-	QFont liveValueFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕实时数值
-	ui.lsCurrentValue->setFont(liveValueFont);
-	ui.lsCurrentValue->setAlignment(Qt::AlignCenter);
+	// 与“测量点位”保持相同的常规标签样式，避免实时值被单独放大。
+	ui.lsCurrentValue->setFont(ui.lsPosition->font());
+	ui.lsCurrentValue->setPalette(ui.lsPosition->palette());
+	ui.lsCurrentValue->setAlignment(ui.lsPosition->alignment());
 	ui.lsCurrentValue->setStyleSheet(QStringLiteral(""));
 
-	QFont diameterFont(QStringLiteral("Consolas"), 18, QFont::Bold);//直径
-	ui.lsDiameter->setFont(diameterFont);
-	ui.lsDiameter->setAlignment(Qt::AlignCenter);
+	ui.lsDiameter->setFont(ui.lsPosition->font());
+	ui.lsDiameter->setPalette(ui.lsPosition->palette());
+	ui.lsDiameter->setAlignment(ui.lsPosition->alignment());
 	ui.lsDiameter->setStyleSheet(QStringLiteral(""));
 
 	QFont channelFont(QStringLiteral("Consolas"), 20, QFont::Bold);//光幕 4 通道 + 补偿前

@@ -3332,11 +3332,11 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
             if (column == 9) { // 只为“判定”列着色，不推导或改变判定结果。
                 const QString status = cells[column].trimmed();
                 QColor statusColor("#64748B"); // 未判定/未知：灰色
-                if (status == QStringLiteral("合格"))
+                if (status == QStringLiteral("OK"))
                     statusColor = QColor("#166534"); // 合格：绿色
-                else if (status == QStringLiteral("不合格"))
+                else if (status == QStringLiteral("错误"))
                     statusColor = QColor("#B91C1C"); // 不合格：红色
-                else if (status == QStringLiteral("判定异常"))
+                else if (status == QStringLiteral("NG"))
                     statusColor = QColor("#B45309"); // 异常：橙色
                 cell->setForeground(QBrush(statusColor));
             }
