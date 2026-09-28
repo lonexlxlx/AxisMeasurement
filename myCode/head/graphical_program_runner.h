@@ -29,6 +29,8 @@ struct GraphicalProgramRuntimeFrame {
     int cameraIndex = -1;
     int exposure = -1;
     QString source;
+    QVector<double> compensatedDiameterSamples;
+    QVector<double> roundoutDistanceSamples;
 };
 
 struct GraphicalProgramMotionTarget {
@@ -244,9 +246,6 @@ struct GraphicalProgramMeasurementCallbacks {
         const QVector<GraphicalProgramMotionTarget>&,
         const QVector<GraphicalProgramRuntimeFrame>&)>;
     Measure visual;
-    Measure diameter;
-    Measure cylindricity;
-    Measure roundout;
 };
 
 class GraphicalProgramMeasurementDispatcher final
@@ -275,20 +274,46 @@ public:
             }
         }
 
-        GraphicalProgramMeasurementCallbacks::Measure measure;
-        if (step.type == QStringLiteral("直径")) measure = callbacks.diameter;
-        else if (step.type == QStringLiteral("圆柱度")) measure = callbacks.cylindricity;
-        else if (step.type == QStringLiteral("跳动")) measure = callbacks.roundout;
+        GraphicalSensorValueResult value;
+        if (step.type == QStringLiteral("直径")) {
+            value = GraphicalSensorMeasurement::diameterMean(
+                frames.first().compensatedDiameterSamples);
+        }
+        else if (step.type == QStringLiteral("圆柱度")) {
+            std::array<QVector<double>, 3> sections;
+            for (int index = 0; index < 3; ++index)
+                sections[index] = frames.at(index).compensatedDiameterSamples;
+            value = GraphicalSensorMeasurement::cylindricity(sections);
+        }
+        else if (step.type == QStringLiteral("跳动")) {
+            std::array<double, 3> sectionResults{};
+            for (int index = 0; index < 3; ++index) {
+                const GraphicalSensorValueResult section =
+                    GraphicalSensorMeasurement::roundoutFromDistances(
+                        frames.at(index).roundoutDistanceSamples);
+                if (!section.ok) {
+                    return GraphicalProgramRunStepResult::failure(
+                        QStringLiteral("圆跳动第%1截面计算失败：%2")
+                            .arg(index + 1).arg(section.error));
+                }
+                sectionResults[index] = section.value;
+            }
+            value = GraphicalSensorMeasurement::representativeRoundout(sectionResults);
+        }
         else if (step.type == QStringLiteral("角度") || step.type == QStringLiteral("孔径")
             || step.type == QStringLiteral("长度") || step.type == QStringLiteral("圆弧半径")) {
-            measure = callbacks.visual;
+            if (!callbacks.visual) {
+                return GraphicalProgramRunStepResult::failure(
+                    QStringLiteral("记录%1的%2计算后端尚未接入。")
+                        .arg(step.sequence).arg(step.type));
+            }
+            value = callbacks.visual(step, targets, frames);
         }
-        if (!measure) {
+        else {
             return GraphicalProgramRunStepResult::failure(
                 QStringLiteral("记录%1的%2计算后端尚未接入。")
                     .arg(step.sequence).arg(step.type));
         }
-        const GraphicalSensorValueResult value = measure(step, targets, frames);
         if (!value.ok || !std::isfinite(value.value)) {
             return GraphicalProgramRunStepResult::failure(value.error.isEmpty()
                 ? QStringLiteral("记录%1的%2计算未返回有效值。")

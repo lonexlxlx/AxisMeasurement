@@ -309,6 +309,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
       <AdditionalDependencies>GxIAPICPPEx.lib;LS9_IF.lib;gts.lib;opencv_world470.lib;halconcpp.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -359,6 +360,9 @@
   <Target Name="CopyRuntimeThemeQss" AfterTargets="Build">
     <MakeDir Directories="$(OutDir)config" />
     <Copy SourceFiles="$(ProjectDir)config\theme.qss" DestinationFiles="$(OutDir)config\theme.qss" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="VerifyReleaseProgramDatabase" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Error Condition="!Exists('$(OutDir)$(TargetName).pdb')" Text="Release构建缺少主程序PDB：$(OutDir)$(TargetName).pdb" />
   </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

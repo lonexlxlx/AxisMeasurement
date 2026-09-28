@@ -242,24 +242,6 @@ static void testGraphicalMeasurementDispatcher()
         routes.append(QStringLiteral("visual:%1").arg(step.type));
         return GraphicalSensorValueResult::success(12.5);
     };
-    callbacks.diameter = [&](const GraphicalProgramStep& step,
-        const QVector<GraphicalProgramMotionTarget>&,
-        const QVector<GraphicalProgramRuntimeFrame>&) {
-        routes.append(QStringLiteral("diameter:%1").arg(step.type));
-        return GraphicalSensorValueResult::success(20.1);
-    };
-    callbacks.cylindricity = [&](const GraphicalProgramStep& step,
-        const QVector<GraphicalProgramMotionTarget>&,
-        const QVector<GraphicalProgramRuntimeFrame>&) {
-        routes.append(QStringLiteral("cylindricity:%1").arg(step.type));
-        return GraphicalSensorValueResult::success(0.02);
-    };
-    callbacks.roundout = [&](const GraphicalProgramStep& step,
-        const QVector<GraphicalProgramMotionTarget>&,
-        const QVector<GraphicalProgramRuntimeFrame>&) {
-        routes.append(QStringLiteral("roundout:%1").arg(step.type));
-        return GraphicalSensorValueResult::success(0.03);
-    };
 
     const QStringList types = { QStringLiteral("角度"), QStringLiteral("孔径"),
         QStringLiteral("长度"), QStringLiteral("圆弧半径"), QStringLiteral("直径"),
@@ -277,6 +259,20 @@ static void testGraphicalMeasurementDispatcher()
             frames[0].image = QImage(8, 8, QImage::Format_Grayscale8);
             frames[0].cameraIndex = step.contract.cameraIndex;
         }
+        else if (step.type == QStringLiteral("直径")) {
+            frames[0].compensatedDiameterSamples = { 20.0, 22.0 };
+        }
+        else if (step.type == QStringLiteral("圆柱度")) {
+            for (int section = 0; section < frames.size(); ++section) {
+                for (int sample = 0; sample < 15; ++sample)
+                    frames[section].compensatedDiameterSamples.append(
+                        20.0 + section * 0.1 + sample * 0.001);
+            }
+        }
+        else if (step.type == QStringLiteral("跳动")) {
+            for (GraphicalProgramRuntimeFrame& frame : frames)
+                frame.roundoutDistanceSamples = QVector<double>(25, 5.0);
+        }
         const GraphicalProgramRunStepResult result =
             GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, callbacks);
         require(result.ok && result.measurements.size() == 1
@@ -287,10 +283,8 @@ static void testGraphicalMeasurementDispatcher()
             "dispatcher must route every supported type into one structured result");
     }
     require(routes == QStringList({ QStringLiteral("visual:角度"), QStringLiteral("visual:孔径"),
-        QStringLiteral("visual:长度"), QStringLiteral("visual:圆弧半径"),
-        QStringLiteral("diameter:直径"), QStringLiteral("cylindricity:圆柱度"),
-        QStringLiteral("roundout:跳动") }),
-        "dispatcher must keep visual and sensor calculation backends separated");
+        QStringLiteral("visual:长度"), QStringLiteral("visual:圆弧半径") }),
+        "dispatcher must route only image measurements through the visual algorithm backend");
 
     GraphicalProgramStep invalidVisual;
     invalidVisual.sequence = 8;
@@ -302,6 +296,18 @@ static void testGraphicalMeasurementDispatcher()
             QVector<GraphicalProgramRuntimeFrame>(1), callbacks);
     require(!invalidResult.ok && invalidResult.error.contains(QStringLiteral("图像或相机通道无效")),
         "visual dispatch must reject a missing runtime image before calling the algorithm");
+
+    GraphicalProgramStep missingSensor;
+    missingSensor.sequence = 9;
+    missingSensor.type = QStringLiteral("直径");
+    missingSensor.contract = GraphicalProgramGeneration::contractForType(missingSensor.type);
+    const GraphicalProgramRunStepResult missingSensorResult =
+        GraphicalProgramMeasurementDispatcher::compute(missingSensor,
+            QVector<GraphicalProgramMotionTarget>(1),
+            QVector<GraphicalProgramRuntimeFrame>(1), callbacks);
+    require(!missingSensorResult.ok
+        && missingSensorResult.error.contains(QStringLiteral("没有有效光幕样本")),
+        "sensor dispatch must reject a frame without acquired samples");
     std::cout << "PASS: seven-type runtime calculation dispatch, frame guards and structured results\n";
 }
 
