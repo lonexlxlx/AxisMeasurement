@@ -20,6 +20,7 @@
 #include <QGraphicsOpacityEffect>//P2-12：警示边框闪烁效果
 #include <QFrame>//P2-12：急停警示边框层
 #include <QResizeEvent>//P2-10：窗口缩放事件
+#include <QHash>
 
 #include <iostream>
 
@@ -89,6 +90,8 @@
 #include "GalaxyIncludes.h"
 #include "logIn.h"
 #include "graphical_program_editor.h"
+#include "graphical_program_registry.h"
+#include "graphical_program_runner.h"
 #include "roughnessFun.h"
 #include"sharedFun.h"
 //HalconCpp测试
@@ -133,6 +136,24 @@ private:
     void enableStartupMotionControls();
 
     bool motionControlReady() const;
+    bool isGraphicalProgramNumber(int programNumber) const;
+    bool refreshGraphicalProgramList(QString& error);
+    void startGraphicalProgramMeasurement();
+    void requestGraphicalProgramStop(const QString& reason);
+    void finishGraphicalProgramRun(bool normalFlag, const QString& message,
+        const QString& judgement = QString());
+    void updateGraphicalProgramStatistics(const GraphicalProgramRunResult& result);
+    QString graphicalProgramPartLabel(int programNumber) const;
+    void appendGraphicalProgramResultRows(const QVector<GraphicalProgramMeasurementResult>& results);
+    QHash<int, GraphicalProgramExecutionPlan> m_graphicalExecutionPlans;
+    GraphicalProgramRunner m_graphicalProgramRunner;
+    bool m_graphicalProgramCancelRequested = false;
+    struct GraphicalProgramStatistics {
+        int measured = 0;
+        int ok = 0;
+        int ng = 0;
+    };
+    QHash<int, GraphicalProgramStatistics> m_graphicalProgramStatistics;
 
     //P2-9/10 布局重构：12 个分组框收纳 + QSplitter 窗口自适应
     void restructureMainLayout();//把 .ui 的绝对定位布局重组为 Splitter + TabWidget（只动容器，不动控件本身）

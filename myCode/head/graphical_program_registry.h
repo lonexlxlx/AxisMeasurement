@@ -29,6 +29,19 @@ struct GraphicalProgramDescriptor {
     int recordCount = 0;
 };
 
+struct GraphicalProgramStep {
+    int sequence = 0;
+    QString featureNumber;
+    QString type;
+    GraphicalProgramContract contract;
+    QJsonObject definition;
+};
+
+struct GraphicalProgramExecutionPlan {
+    GraphicalProgramDescriptor descriptor;
+    QVector<GraphicalProgramStep> steps;
+};
+
 namespace GraphicalProgramRegistry {
 
 inline bool isJsonInteger(const QJsonValue& value)
@@ -105,6 +118,253 @@ inline bool contractMatches(const QJsonObject& manifestRecord,
         error = QStringLiteral("程序包记录%1的运动轴契约与测量类型不一致。").arg(sequence);
         return false;
     }
+    return true;
+}
+
+inline bool finiteNumber(const QJsonValue& value, double* result = nullptr)
+{
+    if (!value.isDouble() || !std::isfinite(value.toDouble())) return false;
+    if (result) *result = value.toDouble();
+    return true;
+}
+
+inline bool validateCollectedPosition(const QJsonObject& position,
+    const GraphicalProgramContract& contract, int sequence, const QString& label, QString& error)
+{
+    if (position.value(QStringLiteral("status")).toString() != QStringLiteral("collected")
+        || position.value(QStringLiteral("source")).toString() != QStringLiteral("hardware")
+        || position.value(QStringLiteral("unit")).toString() != QStringLiteral("pulse")
+        || !position.value(QStringLiteral("axes")).isArray()
+        || !isJsonInteger(position.value(QStringLiteral("cameraIndex")))
+        || !isJsonInteger(position.value(QStringLiteral("exposure")))) {
+        error = QStringLiteral("记录%1的%2未包含完整硬件点位。").arg(sequence).arg(label);
+        return false;
+    }
+    QVector<int> axes;
+    for (const QJsonValue& value : position.value(QStringLiteral("axes")).toArray()) {
+        if (!value.isObject()) {
+            error = QStringLiteral("记录%1的%2轴点位无效。").arg(sequence).arg(label);
+            return false;
+        }
+        const QJsonObject axis = value.toObject();
+        if (!isJsonInteger(axis.value(QStringLiteral("axis")))
+            || !finiteNumber(axis.value(QStringLiteral("planned")))
+            || !finiteNumber(axis.value(QStringLiteral("encoder")))) {
+            error = QStringLiteral("记录%1的%2轴点位无效。").arg(sequence).arg(label);
+            return false;
+        }
+        axes.append(axis.value(QStringLiteral("axis")).toInt());
+    }
+    const int cameraIndex = position.value(QStringLiteral("cameraIndex")).toInt();
+    const int exposure = position.value(QStringLiteral("exposure")).toInt();
+    if (axes != contract.axes || cameraIndex != contract.cameraIndex
+        || (cameraIndex < 0 ? exposure != -1 : (exposure < 0 || exposure > 30000))) {
+        error = QStringLiteral("记录%1的%2与设备契约不一致。").arg(sequence).arg(label);
+        return false;
+    }
+    return true;
+}
+
+inline bool validateRuntimeFeature(const QJsonObject& feature, int frameId, QSet<int>& ids, QString& error)
+{
+    if (!isJsonInteger(feature.value(QStringLiteral("id")))
+        || !feature.value(QStringLiteral("type")).isString()
+        || !finiteNumber(feature.value(QStringLiteral("width")))
+        || !finiteNumber(feature.value(QStringLiteral("height")))
+        || !feature.value(QStringLiteral("points")).isArray()) {
+        error = QStringLiteral("执行计划帧%1包含无效ROI几何。").arg(frameId);
+        return false;
+    }
+    const int id = feature.value(QStringLiteral("id")).toInt();
+    if (id <= 0 || feature.value(QStringLiteral("type")).toString().trimmed().isEmpty()
+        || feature.value(QStringLiteral("width")).toDouble() < 0
+        || feature.value(QStringLiteral("height")).toDouble() < 0
+        || ids.contains(id)) {
+        error = QStringLiteral("执行计划帧%1包含重复或无效ROI。").arg(frameId);
+        return false;
+    }
+    const QJsonArray points = feature.value(QStringLiteral("points")).toArray();
+    if (points.isEmpty()) {
+        error = QStringLiteral("执行计划帧%1的ROI%2缺少坐标。").arg(frameId).arg(id);
+        return false;
+    }
+    for (const QJsonValue& pointValue : points) {
+        if (!pointValue.isArray()) {
+            error = QStringLiteral("执行计划帧%1的ROI%2坐标无效。").arg(frameId).arg(id);
+            return false;
+        }
+        const QJsonArray point = pointValue.toArray();
+        if (point.size() != 2 || !finiteNumber(point.at(0)) || !finiteNumber(point.at(1))) {
+            error = QStringLiteral("执行计划帧%1的ROI%2坐标无效。").arg(frameId).arg(id);
+            return false;
+        }
+    }
+    ids.insert(id);
+    return true;
+}
+
+inline bool buildFrameFeatureIndex(const QJsonObject& definition,
+    QHash<int, QSet<int>>& featuresByFrame, QString& error)
+{
+    featuresByFrame.clear();
+    if (!definition.value(QStringLiteral("frames")).isArray()) {
+        error = QStringLiteral("测量定义缺少运行帧列表。");
+        return false;
+    }
+    const QJsonArray frames = definition.value(QStringLiteral("frames")).toArray();
+    for (const QJsonValue& value : frames) {
+        if (!value.isObject()) {
+            error = QStringLiteral("测量定义包含无效运行帧。");
+            return false;
+        }
+        const QJsonObject frame = value.toObject();
+        if (!isJsonInteger(frame.value(QStringLiteral("id")))
+            || !finiteNumber(frame.value(QStringLiteral("width")))
+            || !finiteNumber(frame.value(QStringLiteral("height")))
+            || !frame.value(QStringLiteral("features")).isArray()) {
+            error = QStringLiteral("测量定义运行帧字段无效。");
+            return false;
+        }
+        const int frameId = frame.value(QStringLiteral("id")).toInt();
+        if (frameId <= 0 || frame.value(QStringLiteral("width")).toDouble() <= 0
+            || frame.value(QStringLiteral("height")).toDouble() <= 0
+            || featuresByFrame.contains(frameId)) {
+            error = QStringLiteral("测量定义运行帧重复或尺寸无效。");
+            return false;
+        }
+        QSet<int> featureIds;
+        for (const QJsonValue& featureValue : frame.value(QStringLiteral("features")).toArray()) {
+            if (!featureValue.isObject()
+                || !validateRuntimeFeature(featureValue.toObject(), frameId, featureIds, error)) {
+                return false;
+            }
+        }
+        featuresByFrame.insert(frameId, featureIds);
+    }
+    return true;
+}
+
+inline bool validateRuntimeRoiReference(const QJsonObject& record,
+    const QHash<int, QSet<int>>& featuresByFrame, int sequence,
+    const QString& frameField, const QString& geometryField,
+    const QString& label, QString& error)
+{
+    if (!isJsonInteger(record.value(frameField)) || !isJsonInteger(record.value(geometryField))) {
+        error = QStringLiteral("记录%1的%2运行ROI字段无效。").arg(sequence).arg(label);
+        return false;
+    }
+    const int frameId = record.value(frameField).toInt();
+    const int geometryId = record.value(geometryField).toInt();
+    if (frameId <= 0 || geometryId <= 0
+        || !featuresByFrame.contains(frameId)
+        || !featuresByFrame.value(frameId).contains(geometryId)) {
+        error = QStringLiteral("记录%1的%2运行ROI不存在或已失效。").arg(sequence).arg(label);
+        return false;
+    }
+    return true;
+}
+
+inline bool buildExecutionStep(const QJsonObject& record, GraphicalProgramStep& step,
+    QString& error, const QHash<int, QSet<int>>* featuresByFrame = nullptr)
+{
+    error.clear();
+    if (!isJsonInteger(record.value(QStringLiteral("sequence")))
+        || !record.value(QStringLiteral("featureNumber")).isString()
+        || !record.value(QStringLiteral("type")).isString()) {
+        error = QStringLiteral("执行记录标识字段无效。");
+        return false;
+    }
+    step = GraphicalProgramStep();
+    step.sequence = record.value(QStringLiteral("sequence")).toInt();
+    step.featureNumber = record.value(QStringLiteral("featureNumber")).toString();
+    step.type = record.value(QStringLiteral("type")).toString();
+    const bool crossFrameLength = record.value(QStringLiteral("crossFrameLength")).toBool(false);
+    const bool singleRoiAngle = record.value(QStringLiteral("singleRoiAngle")).toBool(false);
+    step.contract = GraphicalProgramGeneration::contractForType(
+        step.type, crossFrameLength, singleRoiAngle);
+    if (step.sequence <= 0 || step.featureNumber.isEmpty() || !step.contract.supported) {
+        error = QStringLiteral("执行记录序号、特征号或类型无效。");
+        return false;
+    }
+    if (!record.value(QStringLiteral("hasTolerance")).isBool()
+        || !finiteNumber(record.value(QStringLiteral("nominal")))
+        || !finiteNumber(record.value(QStringLiteral("lower")))
+        || !finiteNumber(record.value(QStringLiteral("upper")))) {
+        error = QStringLiteral("记录%1的公差字段无效。").arg(step.sequence);
+        return false;
+    }
+    if (record.value(QStringLiteral("hasTolerance")).toBool()
+        && record.value(QStringLiteral("lower")).toDouble()
+            > record.value(QStringLiteral("upper")).toDouble()) {
+        error = QStringLiteral("记录%1的下偏差大于上偏差。").arg(step.sequence);
+        return false;
+    }
+    if (step.type == QStringLiteral("孔径")) {
+        double calibration = 0;
+        if (!isJsonInteger(record.value(QStringLiteral("holeUniformCount")))
+            || record.value(QStringLiteral("holeUniformCount")).toInt() <= 0
+            || !finiteNumber(record.value(QStringLiteral("holeCalibrationMmPerPixel")), &calibration)
+            || calibration <= 0) {
+            error = QStringLiteral("记录%1的孔径参数无效。").arg(step.sequence);
+            return false;
+        }
+    }
+    if (step.type == QStringLiteral("长度") || step.type == QStringLiteral("圆弧半径")) {
+        double calibration = 0;
+        if (!finiteNumber(record.value(QStringLiteral("lengthCalibrationMmPerPixel")), &calibration)
+            || calibration <= 0) {
+            error = QStringLiteral("记录%1的远心标定无效。").arg(step.sequence);
+            return false;
+        }
+    }
+    if (step.contract.threeSectionScan) {
+        double lowerOffset = 0, upperOffset = 0;
+        if (!finiteNumber(record.value(QStringLiteral("lowerAxialOffsetPulse")), &lowerOffset)
+            || !finiteNumber(record.value(QStringLiteral("upperAxialOffsetPulse")), &upperOffset)
+            || lowerOffset <= 0 || upperOffset <= 0) {
+            error = QStringLiteral("记录%1的三截面偏移无效。").arg(step.sequence);
+            return false;
+        }
+    }
+    if (step.contract.requiresTwoReferences) {
+        const QString first = record.value(QStringLiteral("roundoutReference1")).toString().trimmed();
+        const QString second = record.value(QStringLiteral("roundoutReference2")).toString().trimmed();
+        if (first.isEmpty() || second.isEmpty() || first.compare(second, Qt::CaseInsensitive) == 0) {
+            error = QStringLiteral("记录%1的两个跳动基准无效。").arg(step.sequence);
+            return false;
+        }
+    }
+    if (step.contract.requiresImage && featuresByFrame) {
+        if (!validateRuntimeRoiReference(record, *featuresByFrame, step.sequence,
+                QStringLiteral("frameId"), QStringLiteral("geometryId"),
+                QStringLiteral("主"), error)) return false;
+        if (step.contract.requiresSecondRoi
+            && !validateRuntimeRoiReference(record, *featuresByFrame, step.sequence,
+                QStringLiteral("secondaryFrameId"), QStringLiteral("secondaryGeometryId"),
+                QStringLiteral("第二"), error)) return false;
+    }
+    if (crossFrameLength) {
+        if (!validateCollectedPosition(record.value(QStringLiteral("lengthStartPosition")).toObject(),
+                step.contract, step.sequence, QStringLiteral("起点"), error)
+            || !validateCollectedPosition(record.value(QStringLiteral("lengthEndPosition")).toObject(),
+                step.contract, step.sequence, QStringLiteral("终点"), error)) return false;
+    }
+    else {
+        if (!record.value(QStringLiteral("devicePosition")).isObject()
+            || !validateCollectedPosition(record.value(QStringLiteral("devicePosition")).toObject(),
+                step.contract, step.sequence, QStringLiteral("设备点位"), error)) return false;
+        if (step.contract.requiresTemplate) {
+            const QJsonObject model = record.value(QStringLiteral("lengthTemplate")).toObject();
+            if (model.value(QStringLiteral("status")).toString() != QStringLiteral("trained")
+                || model.value(QStringLiteral("encoding")).toString()
+                    != QStringLiteral("halcon-shape-model-base64")
+                || model.value(QStringLiteral("data")).toString().isEmpty()) {
+                error = QStringLiteral("记录%1缺少长度模板。").arg(step.sequence);
+                return false;
+            }
+        }
+    }
+    step.definition = record;
     return true;
 }
 
@@ -312,6 +572,55 @@ inline bool scan(const QString& rootPath, QVector<GraphicalProgramDescriptor>& p
     std::sort(programs.begin(), programs.end(), [](const auto& left, const auto& right) {
         return left.programNumber < right.programNumber;
     });
+    return true;
+}
+
+inline bool loadExecutionPlan(const QString& packageDirectory,
+    GraphicalProgramExecutionPlan& plan, QString& error)
+{
+    plan = GraphicalProgramExecutionPlan();
+    if (!loadPackage(packageDirectory, plan.descriptor, error)) return false;
+    QFile definitionFile(plan.descriptor.definitionPath);
+    if (!definitionFile.open(QIODevice::ReadOnly) || definitionFile.size() > 20 * 1024 * 1024) {
+        error = definitionFile.isOpen() ? QStringLiteral("测量定义超过20 MB限制。")
+            : QStringLiteral("无法打开测量定义：%1").arg(definitionFile.errorString());
+        plan = GraphicalProgramExecutionPlan();
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(definitionFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        error = QStringLiteral("测量定义JSON无效：%1").arg(parseError.errorString());
+        plan = GraphicalProgramExecutionPlan();
+        return false;
+    }
+    QHash<int, QSet<int>> featuresByFrame;
+    if (!buildFrameFeatureIndex(document.object(), featuresByFrame, error)) {
+        plan = GraphicalProgramExecutionPlan();
+        return false;
+    }
+    const QJsonArray records = document.object().value(QStringLiteral("records")).toArray();
+    for (const QJsonValue& value : records) {
+        if (!value.isObject()) {
+            error = QStringLiteral("执行计划包含无效记录。");
+            plan = GraphicalProgramExecutionPlan();
+            return false;
+        }
+        GraphicalProgramStep step;
+        if (!buildExecutionStep(value.toObject(), step, error, &featuresByFrame)) {
+            plan = GraphicalProgramExecutionPlan();
+            return false;
+        }
+        plan.steps.append(step);
+    }
+    std::sort(plan.steps.begin(), plan.steps.end(), [](const auto& left, const auto& right) {
+        return left.sequence < right.sequence;
+    });
+    if (plan.steps.size() != plan.descriptor.recordCount) {
+        error = QStringLiteral("执行计划记录数量与程序包不一致。");
+        plan = GraphicalProgramExecutionPlan();
+        return false;
+    }
     return true;
 }
 

@@ -88,6 +88,7 @@ public:
 
 signals:
     void featureAdded(int featureId, const QString& featureName, const QString& featureType);
+    void editAboutToChange();
     void featuresChanged();
     void selectedFeatureChanged(int featureId);
     void featureGeometryChanged(int featureId);
@@ -147,6 +148,8 @@ private:
     QVector<QPointF> m_arcPoints;
     QGraphicsItem* m_draggedFeatureItem = nullptr;
     QPointF m_lastFeatureDragScenePosition;
+    QPoint m_interactiveEditPressPosition;
+    bool m_interactiveEditHistoryStarted = false;
     int m_nextFeatureId = 1;
     bool m_resizeRatioLocked = true;
     bool m_dragRatioLocked = true;

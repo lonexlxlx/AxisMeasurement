@@ -1,9 +1,91 @@
 #pragma once
 
 #include "graphical_program_editor.h"
+#include "graphical_sensor_measurement.h"
 #include "moveControl.h"
+#include <QThread>
 #include <cmath>
+#include <limits>
 #include <set>
+#include <utility>
+
+inline GraphicalAxisRuntimeCallbacks makeGraphicalAxisRuntimeCallbacks(moveControl* card,
+    std::function<bool()> cancelRequested)
+{
+    GraphicalAxisRuntimeCallbacks callbacks;
+    const auto validAxis = [](int axis) { return axis >= 1 && axis <= 8; };
+    callbacks.readStartState = [card, validAxis](int axis) {
+        GraphicalAxisRuntimeState state;
+        if (!card || !card->openControllerFlag || !validAxis(axis)) {
+            state.error = QStringLiteral("控制卡未连接或轴号无效。");
+            return state;
+        }
+        const short core = card->axisCore[axis - 1];
+        short code = GTN_GetSts(core, axis, &state.status);
+        if (!code) code = GTN_GetAxisEncPos(core, axis, &state.position);
+        state.valid = !code && std::isfinite(state.position);
+        if (!state.valid) state.error = QStringLiteral("轴%1状态读取失败（SDK %2）。").arg(axis).arg(code);
+        return state;
+    };
+    callbacks.issueAbsoluteMove = [card, validAxis](int axis, qint64 target, QString& error) {
+        error.clear();
+        if (!card || !card->openControllerFlag || !validAxis(axis)) {
+            error = QStringLiteral("控制卡未连接或轴号无效。");
+            return false;
+        }
+        const int index = axis - 1;
+        const short core = card->axisCore[index];
+        const long mask = 1L << index;
+        TTrapPrm parameters = card->trapAuto[index];
+        const double speed = card->trapLowVelAuto[index];
+        if (target < std::numeric_limits<long>::min() || target > std::numeric_limits<long>::max()
+            || !std::isfinite(parameters.acc) || !std::isfinite(parameters.dec)
+            || parameters.acc <= 0 || parameters.dec <= 0
+            || !std::isfinite(speed) || speed <= 0) {
+            error = QStringLiteral("轴%1自动运动参数无效。").arg(axis);
+            return false;
+        }
+        short code = GTN_PrfTrap(core, axis);
+        if (!code) code = GTN_SetTrapPrm(core, axis, &parameters);
+        if (!code) code = GTN_SetPos(core, axis, long(target));
+        if (!code) code = GTN_SetVel(core, axis, speed);
+        if (!code) code = GTN_Update(core, mask);
+        if (code) error = QStringLiteral("轴%1绝对目标下发失败（SDK %2）。").arg(axis).arg(code);
+        return code == 0;
+    };
+    callbacks.queryMotion = [card, validAxis](int axis, qint64 target) {
+        GraphicalSensorMotionState state;
+        if (!card || !card->openControllerFlag || !validAxis(axis)) {
+            state.error = QStringLiteral("控制卡断开或轴号无效。");
+            return state;
+        }
+        long status = 0;
+        double encoder = 0;
+        const short core = card->axisCore[axis - 1];
+        short code = GTN_GetSts(core, axis, &status);
+        if (!code) code = GTN_GetAxisEncPos(core, axis, &encoder);
+        if (code || !std::isfinite(encoder)) {
+            state.error = QStringLiteral("轴%1到位状态读取失败（SDK %2）。").arg(axis).arg(code);
+            return state;
+        }
+        state.valid = true;
+        state.fault = status & 0x192;
+        state.moving = status & 0x400;
+        state.arrived = !state.moving
+            && std::abs(encoder - double(target)) <= card->pBand[axis - 1];
+        if (state.fault) state.error = QStringLiteral("轴%1运动中出现报警或停止输入。").arg(axis);
+        return state;
+    };
+    callbacks.stopAxis = [card, validAxis](int axis) {
+        if (!card || !card->openControllerFlag || !validAxis(axis)) return false;
+        return GTN_Stop(card->axisCore[axis - 1], 1L << (axis - 1), 0xffff) == 0;
+    };
+    callbacks.cancelRequested = std::move(cancelRequested);
+    callbacks.delay = [](int milliseconds) {
+        QThread::msleep(static_cast<unsigned long>(milliseconds));
+    };
+    return callbacks;
+}
 
 // Uses the existing connection, explicit axis addresses and local SDK return values.
 // The supplied readiness predicate is evaluated on every command, not just on opening.

@@ -146,6 +146,9 @@
     <ClInclude Include="myCode\head\graphical_program_registry.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </ClInclude>
+    <ClInclude Include="myCode\head\graphical_program_runner.h">
+      <Filter>Form Files\Header Files\myCode</Filter>
+    </ClInclude>
     <QtMoc Include="myCode\head\program_20.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </QtMoc>

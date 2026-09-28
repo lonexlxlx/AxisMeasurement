@@ -1286,6 +1286,104 @@ void GraphicalProgramEditor::setCameraBackend(CameraReader reader, CameraCommand
     refreshCameraPanel();
 }
 
+void GraphicalProgramEditor::setProgramPackageGeneratedHandler(std::function<void()> handler)
+{
+    m_programPackageGeneratedHandler = std::move(handler);
+}
+
+GraphicalProgramEditor::EditHistoryState GraphicalProgramEditor::captureEditHistoryState() const
+{
+    EditHistoryState state;
+    state.features = m_canvas ? m_canvas->featureSnapshots() : QVector<GraphicalCanvas::FeatureSnapshot>();
+    state.records = m_records;
+    state.nextRecordSequence = m_nextRecordSequence;
+    state.frameId = m_currentFrameId;
+    const int selectedRow = m_stepTable ? m_stepTable->currentRow() : -1;
+    if (selectedRow >= 0 && selectedRow < m_records.size())
+        state.selectedRecordSequence = m_records.at(selectedRow).sequence;
+    return state;
+}
+
+bool GraphicalProgramEditor::restoreEditHistoryState(const EditHistoryState& state)
+{
+    QString error;
+    if (state.frameId > 0 && state.frameId != m_currentFrameId
+        && !activateFrame(state.frameId, error)) {
+        statusBar()->showMessage(QStringLiteral("撤销/重做切换图像失败：%1").arg(error), 6000);
+        return false;
+    }
+    if (m_canvas && !m_canvas->restoreFeatures(state.features, error)) {
+        statusBar()->showMessage(QStringLiteral("撤销/重做恢复失败：%1").arg(error), 6000);
+        return false;
+    }
+    m_records = state.records;
+    m_nextRecordSequence = state.nextRecordSequence;
+    m_relinkSequence = -1;
+    m_relinkSlot = 1;
+    m_selectedFeatureId = -1;
+    if (m_canvas) m_canvas->setDetectionOverlay(QPainterPath(), QPainterPath());
+    refreshFeatureList();
+    refreshMeasurementRecords();
+    if (m_stepTable && m_stepTable->rowCount() > 0) {
+        int selectedRow = 0;
+        for (int row = 0; row < m_records.size(); ++row)
+            if (m_records.at(row).sequence == state.selectedRecordSequence) {
+                selectedRow = row;
+                break;
+            }
+        m_stepTable->setCurrentCell(selectedRow, 0);
+        loadMeasurementRecord(selectedRow);
+    }
+    m_projectDirty = true;
+    return true;
+}
+
+void GraphicalProgramEditor::pushEditHistoryState()
+{
+    if (m_loadingProject || m_trialRunning || !m_canvas) return;
+    m_undoStack.append(captureEditHistoryState());
+    if (m_undoStack.size() > 50) m_undoStack.remove(0);
+    m_redoStack.clear();
+    updateEditHistoryActions();
+}
+
+void GraphicalProgramEditor::clearEditHistory()
+{
+    m_undoStack.clear();
+    m_redoStack.clear();
+    updateEditHistoryActions();
+}
+
+void GraphicalProgramEditor::updateEditHistoryActions()
+{
+    if (m_undoAction) m_undoAction->setEnabled(!m_undoStack.isEmpty());
+    if (m_redoAction) m_redoAction->setEnabled(!m_redoStack.isEmpty());
+}
+
+void GraphicalProgramEditor::undoEdit()
+{
+    if (m_undoStack.isEmpty()) return;
+    const EditHistoryState current = captureEditHistoryState();
+    const EditHistoryState previous = m_undoStack.last();
+    if (!restoreEditHistoryState(previous)) return;
+    m_undoStack.removeLast();
+    m_redoStack.append(current);
+    updateEditHistoryActions();
+    statusBar()->showMessage(QStringLiteral("已撤销上一步编辑。"), 3000);
+}
+
+void GraphicalProgramEditor::redoEdit()
+{
+    if (m_redoStack.isEmpty()) return;
+    const EditHistoryState current = captureEditHistoryState();
+    const EditHistoryState next = m_redoStack.last();
+    if (!restoreEditHistoryState(next)) return;
+    m_redoStack.removeLast();
+    m_undoStack.append(current);
+    updateEditHistoryActions();
+    statusBar()->showMessage(QStringLiteral("已重做上一步编辑。"), 3000);
+}
+
 bool GraphicalProgramEditor::saveRecipeFile(const QString& filePath, QString& error)
 {
     if (!writeProject(filePath, error)) return false;
@@ -1474,6 +1572,7 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
     refreshFrameSelector();
     m_projectFilePath.clear();
     m_projectDirty = true;
+    clearEditHistory();
     refreshFeatureList();
     refreshMeasurementRecords();
     m_canvas->fitImageInView();
@@ -1865,6 +1964,10 @@ void GraphicalProgramEditor::buildInterface()
     QAction* undoAction = toolBar->addAction(QStringLiteral("撤销"));
     QAction* redoAction = toolBar->addAction(QStringLiteral("重做"));
     QAction* deleteAction = toolBar->addAction(QStringLiteral("删除"));
+    m_undoAction = undoAction;
+    m_redoAction = redoAction;
+    m_undoAction->setShortcut(QKeySequence::Undo);
+    m_redoAction->setShortcut(QKeySequence::Redo);
 
     //图标资源已注册在 AxisMeasurement.qrc（:/AxisMeasurement/config/icons/）
     const struct { QAction* action; const char* icon; const char* key; const char* tip; } toolbarInfo[] = {
@@ -1879,8 +1982,8 @@ void GraphicalProgramEditor::buildInterface()
         { circleAction, "circle", "C", "圆 (C)：拖动画圆，下拉可选绘制模式" },
         { arcAction, "arc", "A", "圆弧 (A)：依次点击起点、弧上点、终点" },
         { fitAction, "fit", "F", "适合窗口 (F)：图像缩放到充满画布" },
-        { undoAction, "undo", nullptr, "撤销（尚未接入）" },
-        { redoAction, "redo", nullptr, "重做（尚未接入）" },
+        { undoAction, "undo", nullptr, "撤销" },
+        { redoAction, "redo", nullptr, "重做" },
         { deleteAction, "delete", nullptr, "删除选中图形" },
     };
     for (const auto& info : toolbarInfo) {
@@ -1893,11 +1996,9 @@ void GraphicalProgramEditor::buildInterface()
         }
     }
 
-    const QList<QAction*> futureActions = {
-        undoAction, redoAction//撤销、重做是占位按钮
-    };
-    for (QAction* action : futureActions)
-        action->setEnabled(false);//创建后功能并未做
+    updateEditHistoryActions();
+    connect(m_undoAction, &QAction::triggered, this, &GraphicalProgramEditor::undoEdit);
+    connect(m_redoAction, &QAction::triggered, this, &GraphicalProgramEditor::redoEdit);
 
     QActionGroup* drawingToolGroup = new QActionGroup(this);//设置了上面的工具栏的功能
     drawingToolGroup->setExclusive(true);//设置单选切换
@@ -2040,10 +2141,16 @@ void GraphicalProgramEditor::buildInterface()
     });
     connect(m_applySize, &QPushButton::clicked, this, [this]() {
         QString error;
+        const EditHistoryState before = captureEditHistoryState();
         if (!m_canvas->resizeFeature(m_selectedFeatureId, m_primarySize->value(),
             m_secondarySize->value(), error)) {
             QMessageBox::warning(this, QStringLiteral("未应用尺寸"), error);
+            return;
         }
+        m_undoStack.append(before);
+        if (m_undoStack.size() > 50) m_undoStack.remove(0);
+        m_redoStack.clear();
+        updateEditHistoryActions();
     });
     m_rotationLabel = new QLabel(QStringLiteral("旋转角："), featurePropertyPage);
     m_rotationAngle = new QDoubleSpinBox(featurePropertyPage);
@@ -2059,8 +2166,15 @@ void GraphicalProgramEditor::buildInterface()
     featurePropertyLayout->addRow(m_applyRotation);
     connect(m_applyRotation, &QPushButton::clicked, this, [this]() {
         QString error;
-        if (!m_canvas->rotateFeature(m_selectedFeatureId, m_rotationAngle->value(), error))
+        const EditHistoryState before = captureEditHistoryState();
+        if (!m_canvas->rotateFeature(m_selectedFeatureId, m_rotationAngle->value(), error)) {
             QMessageBox::warning(this, QStringLiteral("未应用角度"), error);
+            return;
+        }
+        m_undoStack.append(before);
+        if (m_undoStack.size() > 50) m_undoStack.remove(0);
+        m_redoStack.clear();
+        updateEditHistoryActions();
     });
     const int featureTab = propertyTabs->addTab(featurePropertyPage, QStringLiteral("特征属性"));
     propertyTabs->setTabToolTip(featureTab, QStringLiteral("特征属性"));
@@ -2319,6 +2433,7 @@ void GraphicalProgramEditor::buildInterface()
         const int row = m_stepTable->currentRow();
         if (row < 0 || row >= m_records.size()) return;
         if (QMessageBox::question(this, QStringLiteral("删除记录"), QStringLiteral("仅删除选中测量记录，保留画布图形？")) != QMessageBox::Yes) return;
+        pushEditHistoryState();
         m_records.removeAt(row);
         m_projectDirty = true;
         refreshMeasurementRecords();
@@ -2476,7 +2591,12 @@ void GraphicalProgramEditor::buildInterface()
     recipeLayout->addLayout(recipeForm);
     QPushButton* validateRecipe = new QPushButton(QStringLiteral("检查生成条件"), recipePage);
     validateRecipe->setObjectName(QStringLiteral("validateRecipeButton"));
-    recipeLayout->addWidget(validateRecipe);
+    QPushButton* generatePackage = new QPushButton(QStringLiteral("生成程序包"), recipePage);
+    generatePackage->setObjectName(QStringLiteral("generateProgramPackageButton"));
+    QHBoxLayout* recipeActionRow = new QHBoxLayout;
+    recipeActionRow->addWidget(validateRecipe);
+    recipeActionRow->addWidget(generatePackage);
+    recipeLayout->addLayout(recipeActionRow);
     m_recipeValidationResult = new QLabel(recipePage);
     m_recipeValidationResult->setObjectName(QStringLiteral("recipeValidationResult"));
     m_recipeValidationResult->setWordWrap(true);
@@ -2517,6 +2637,20 @@ void GraphicalProgramEditor::buildInterface()
                 .arg(issues.size()).arg(lines.join(QLatin1Char('\n'))));
             statusBar()->showMessage(QStringLiteral("生成条件检查未通过：%1项问题。").arg(issues.size()), 6000);
         }
+    });
+    connect(generatePackage, &QPushButton::clicked, this, [this]() {
+        QString packagePath;
+        QString error;
+        m_recipeValidationResult->show();
+        if (!exportProgramPackage(QCoreApplication::applicationDirPath(), packagePath, error)) {
+            m_recipeValidationResult->setText(error);
+            QMessageBox::warning(this, QStringLiteral("生成程序包失败"), error);
+            statusBar()->showMessage(QStringLiteral("生成程序包失败。"), 6000);
+            return;
+        }
+        m_recipeValidationResult->setText(QStringLiteral("程序包已生成：%1").arg(packagePath));
+        if (m_programPackageGeneratedHandler) m_programPackageGeneratedHandler();
+        statusBar()->showMessage(QStringLiteral("程序包已生成，主窗口程序列表已刷新。"), 8000);
     });
     propertyTabs->setMinimumWidth(400);
 
@@ -2653,6 +2787,8 @@ void GraphicalProgramEditor::buildInterface()
         if (m_canvas->hasSelectedFeatures()) m_canvas->deleteSelectedFeatures();
         else statusBar()->showMessage(QStringLiteral("请先在画布中选中要删除的图形。"), 3000);
     });
+    connect(m_canvas, &GraphicalCanvas::editAboutToChange,
+        this, &GraphicalProgramEditor::pushEditHistoryState);
     connect(m_canvas, &GraphicalCanvas::featuresChanged, this, &GraphicalProgramEditor::refreshFeatureList);
     connect(m_canvas, &GraphicalCanvas::featuresChanged, this, &GraphicalProgramEditor::refreshMeasurementRecords);
     connect(m_canvas, &GraphicalCanvas::featuresChanged, this, [this]() {
@@ -2764,6 +2900,7 @@ void GraphicalProgramEditor::buildInterface()
                             return;
                         }
                     }
+                    pushEditHistoryState();
                     if (completedSlot == 2) {
                         m_records[row].secondaryGeometryId = featureId;
                         m_records[row].secondaryFrameId = m_currentFrameId;
@@ -2923,6 +3060,7 @@ void GraphicalProgramEditor::applyDetectionParameters()
     const auto parameters = detectionInputs();
     const QString error = parameters.validationError();
     if (!error.isEmpty()) { m_detectionDiagnostic->setText(error + QStringLiteral("原记录保持不变。")); return; }
+    pushEditHistoryState();
     auto& record = m_records[row];
     record.detection = parameters;
     record.clearTrial(QStringLiteral("未执行（检测参数已更新，旧结果失效）"));
@@ -2992,6 +3130,7 @@ void GraphicalProgramEditor::saveMeasurementRecord(bool update)////新增或者�
         || m_measurementType->currentText() == QStringLiteral("圆弧半径"))) {
         QMessageBox::warning(this, QStringLiteral("未记录"), parameterError); return;
     }
+    pushEditHistoryState();
     MeasurementRecord record;
     record.detection = parameters;
     record.sequence = update ? m_records[row].sequence : m_nextRecordSequence++;
@@ -3314,6 +3453,7 @@ void GraphicalProgramEditor::chooseCornerCandidate(int index)
     if (!record.singleRoiAngle || selected < 0 || selected >= record.cornerPairs.size()) {
         showRecordDetection(row); return;
     }
+    pushEditHistoryState();
     const auto& pair = record.cornerPairs[selected];
     record.selectedCornerPair = selected;
     record.candidateSelectionAuditMode = QStringLiteral("manual");
@@ -4932,6 +5072,7 @@ bool GraphicalProgramEditor::readProject(const QString& filePath, QString& error
     m_projectFilePath = QFileInfo(filePath).absoluteFilePath();
     m_loadingProject = false;
     m_projectDirty = false;
+    clearEditHistory();
     refreshFrameSelector(); refreshFeatureList(); refreshMeasurementRecords();
     m_canvas->fitImageInView();
     return true;
@@ -5098,8 +5239,11 @@ void GraphicalProgramEditor::addLocalFrame()
     m_frames.append(frame);
     m_projectDirty = true;
     QString error;
-    if (!activateFrame(frame.id, error))
+    if (!activateFrame(frame.id, error)) {
         QMessageBox::warning(this, QStringLiteral("添加帧失败"), error);
+        return;
+    }
+    clearEditHistory();
 }
 
 void GraphicalProgramEditor::removeCurrentFrame()
@@ -5147,6 +5291,7 @@ void GraphicalProgramEditor::removeCurrentFrame()
         QMessageBox::warning(this, QStringLiteral("切换图像失败"), error);
         return;
     }
+    clearEditHistory();
     statusBar()->showMessage(QStringLiteral("已从工程移除端点图像%1；磁盘原文件未删除。")
         .arg(removedFrameId), 5000);
 }
@@ -5209,6 +5354,7 @@ void GraphicalProgramEditor::openLocalImage()
     refreshFrameSelector();
     m_projectFilePath.clear();
     m_projectDirty = true;
+    clearEditHistory();
     refreshMeasurementRecords();
     statusBar()->showMessage(QStringLiteral("图像已打开：%1 × %2 像素")
         .arg(m_canvas->sourceImage().width())

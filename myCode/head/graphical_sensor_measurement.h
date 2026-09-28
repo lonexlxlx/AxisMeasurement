@@ -62,9 +62,94 @@ struct GraphicalSensorMotionResult {
     QString error;
 };
 
+struct GraphicalAxisStartDecision {
+    bool ok = false;
+    QString error;
+};
+
+struct GraphicalAxisRuntimeState {
+    bool valid = false;
+    long status = 0;
+    double position = 0;
+    QString error;
+};
+
+struct GraphicalAxisRuntimeCallbacks {
+    std::function<GraphicalAxisRuntimeState(int)> readStartState;
+    std::function<bool(int, qint64, QString&)> issueAbsoluteMove;
+    std::function<GraphicalSensorMotionState(int, qint64)> queryMotion;
+    std::function<bool(int)> stopAxis;
+    std::function<bool()> cancelRequested;
+    std::function<void(int)> delay;
+};
+
 class GraphicalSensorMeasurement final
 {
 public:
+    static GraphicalAxisStartDecision validateAxisMotionStart(int axis, long status,
+        double currentPosition, qint64 targetPosition)
+    {
+        GraphicalAxisStartDecision result;
+        if (axis < 1 || axis > 8 || !std::isfinite(currentPosition)) {
+            result.error = QStringLiteral("轴号或当前位置无效。");
+            return result;
+        }
+        if (status & 0x192) {
+            result.error = QStringLiteral("轴%1存在报警或停止输入，拒绝运动。").arg(axis);
+            return result;
+        }
+        if (!(status & 0x200)) {
+            result.error = QStringLiteral("轴%1未使能，拒绝运动。").arg(axis);
+            return result;
+        }
+        if (status & 0x400) {
+            result.error = QStringLiteral("轴%1仍在运动，拒绝重复下发目标。").arg(axis);
+            return result;
+        }
+        const bool positive = targetPosition > currentPosition;
+        const bool negative = targetPosition < currentPosition;
+        if ((positive && (status & 0x20)) || (negative && (status & 0x40))) {
+            result.error = QStringLiteral("轴%1目标方向限位已触发，拒绝运动。").arg(axis);
+            return result;
+        }
+        result.ok = true;
+        return result;
+    }
+
+    static GraphicalSensorMotionResult executeAxisMotion(int axis, qint64 target,
+        const GraphicalAxisRuntimeCallbacks& callbacks, int timeoutMs = 30000,
+        int pollIntervalMs = 20)
+    {
+        GraphicalSensorMotionResult result;
+        if (!callbacks.readStartState || !callbacks.issueAbsoluteMove
+            || !callbacks.queryMotion || !callbacks.stopAxis || !callbacks.delay) {
+            result.error = QStringLiteral("轴运动运行回调不完整。");
+            return result;
+        }
+        const GraphicalAxisRuntimeState start = callbacks.readStartState(axis);
+        if (!start.valid) {
+            result.error = start.error.isEmpty()
+                ? QStringLiteral("无法读取轴%1启动状态。").arg(axis) : start.error;
+            return result;
+        }
+        const GraphicalAxisStartDecision decision = validateAxisMotionStart(
+            axis, start.status, start.position, target);
+        if (!decision.ok) { result.error = decision.error; return result; }
+        QString commandError;
+        if (!callbacks.issueAbsoluteMove(axis, target, commandError)) {
+            result.stopAttempted = true;
+            result.stopSucceeded = callbacks.stopAxis(axis);
+            result.error = commandError.isEmpty()
+                ? QStringLiteral("轴%1目标下发失败。").arg(axis) : commandError;
+            if (!result.stopSucceeded) result.error += QStringLiteral("；停止命令失败");
+            return result;
+        }
+        return waitForMotion(
+            [&]() { return callbacks.queryMotion(axis, target); },
+            [&]() { return callbacks.stopAxis(axis); }, callbacks.cancelRequested,
+            callbacks.delay, timeoutMs, pollIntervalMs);
+    }
+
     // 中间点位加减两个独立偏移，避免旧记录路径中上下偏移变量对调。
     static GraphicalSensorAxialPositions axialPositions(qint64 middle,
         qint64 lowerOffset, qint64 upperOffset)
@@ -101,6 +186,36 @@ public:
         if (!std::isfinite(value) || value <= 0)
             return GraphicalSensorValueResult::failure(QStringLiteral("直径平均值无效。"));
         return GraphicalSensorValueResult::success(value);
+    }
+
+    static GraphicalSensorValueResult acquireDiameter(
+        const std::function<bool(double&, QString&)>& readRawOut1,
+        const std::function<double(double)>& compensate,
+        int sampleCount = 2)
+    {
+        if (!readRawOut1 || !compensate || sampleCount <= 0 || sampleCount > 100)
+            return GraphicalSensorValueResult::failure(
+                QStringLiteral("直径采集回调或采样次数无效。"));
+        QVector<double> samples;
+        samples.reserve(sampleCount);
+        for (int index = 0; index < sampleCount; ++index) {
+            double rawValue = 0;
+            QString error;
+            if (!readRawOut1(rawValue, error))
+                return GraphicalSensorValueResult::failure(
+                    QStringLiteral("直径第%1次光幕读取失败：%2")
+                        .arg(index + 1).arg(error.isEmpty()
+                            ? QStringLiteral("设备未返回有效值") : error));
+            if (!std::isfinite(rawValue) || rawValue <= 0)
+                return GraphicalSensorValueResult::failure(
+                    QStringLiteral("直径第%1次光幕原始值无效。").arg(index + 1));
+            const double compensated = compensate(rawValue);
+            if (!std::isfinite(compensated) || compensated <= 0)
+                return GraphicalSensorValueResult::failure(
+                    QStringLiteral("直径第%1次补偿结果无效。").arg(index + 1));
+            samples.append(compensated);
+        }
+        return diameterMean(samples);
     }
 
     // 保留旧程序的计算语义：合并三个截面，排序后忽略最高14个直径，

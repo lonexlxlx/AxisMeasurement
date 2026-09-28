@@ -803,7 +803,14 @@ bool GraphicalCanvas::validateFeatureSnapshots(const QVector<FeatureSnapshot>& s
 
 bool GraphicalCanvas::restoreFeatures(const QVector<FeatureSnapshot>& snapshots, QString& error)
 {
-    if (!m_imageItem) { error = QStringLiteral("工程图像尚未载入。"); return false; }
+    if (!m_imageItem) {
+        if (snapshots.isEmpty()) {
+            emit featuresChanged();
+            return true;
+        }
+        error = QStringLiteral("工程图像尚未载入。");
+        return false;
+    }
     if (!validateFeatureSnapshots(snapshots, m_sourceImage.size(), error)) return false;
 
     const QList<QGraphicsItem*> existing = m_scene->items();
@@ -870,6 +877,7 @@ void GraphicalCanvas::deleteFeatureById(int featureId)
     if (!item)
         return;
 
+    emit editAboutToChange();
     m_scene->removeItem(item);
     delete item;
     emit featuresChanged();
@@ -887,9 +895,14 @@ void GraphicalCanvas::deleteSelectedFeatures()
 {
     const QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();
     bool removed = false;
+    bool notified = false;
     for (QGraphicsItem* item : selectedItems) {
         if (item == m_imageItem)
             continue;
+        if (!notified) {
+            emit editAboutToChange();
+            notified = true;
+        }
         m_scene->removeItem(item);
         delete item;
         removed = true;
@@ -1031,15 +1044,18 @@ void GraphicalCanvas::finishPreview(const QPointF& imagePoint, const QPoint& vie
         if (m_circleRadiusGuide && m_circleRadiusGuide->parentItem() == previewCircle)
             clearCircleRadiusGuide();
         previewCircle->setPen(makeCanvasPen(QColor(0, 255, 120)));
+        emit editAboutToChange();
         registerFeature(completedItem, QStringLiteral("圆"));
         refreshCircleRadiusGuide();
     }
     else if (m_drawingTool == DrawingTool::Rectangle) {
         static_cast<QGraphicsRectItem*>(completedItem)->setPen(makeCanvasPen(QColor(0, 210, 255)));
+        emit editAboutToChange();
         registerFeature(completedItem, QStringLiteral("矩形"));
     }
     else if (m_drawingTool == DrawingTool::Line) {
         static_cast<QGraphicsLineItem*>(completedItem)->setPen(makeCanvasPen(QColor(255, 100, 80)));
+        emit editAboutToChange();
         registerFeature(completedItem, QStringLiteral("直线"));
     }
 }
@@ -1289,6 +1305,7 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
                 arcItem->setData(3, m_arcPoints.at(0));
                 arcItem->setData(4, m_arcPoints.at(1));
                 arcItem->setData(5, imagePoint);
+                emit editAboutToChange();
                 registerFeature(arcItem, QStringLiteral("圆弧"));
                 cancelArcDraft();
                 emit canvasMessage(QStringLiteral("圆弧已创建"));
@@ -1310,6 +1327,8 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
             m_rotationStartAngle = featureRotationAngle(m_rotateFeatureId);
             m_resizeFeatureId = -1;
             m_draggedFeatureItem = nullptr;
+            m_interactiveEditPressPosition = event->pos();
+            m_interactiveEditHistoryStarted = false;
             viewport()->setCursor(Qt::ClosedHandCursor);
             emit canvasMessage(QStringLiteral("旋转中：绕中心拖动，Esc恢复本次旋转前角度"));
             event->accept(); return;
@@ -1338,6 +1357,8 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
             m_resizePressLocal = handleItem->mapFromScene(mapToScene(event->pos()));
             m_dragRatioLocked = m_resizeRatioLocked;
             m_draggedFeatureItem = nullptr;
+            m_interactiveEditPressPosition = event->pos();
+            m_interactiveEditHistoryStarted = false;
             viewport()->setCursor(Qt::SizeAllCursor);
             event->accept();
             return;
@@ -1349,6 +1370,8 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
             hitFeature->setSelected(true);
             m_draggedFeatureItem = hitFeature;
             m_lastFeatureDragScenePosition = mapToScene(event->pos());
+            m_interactiveEditPressPosition = event->pos();
+            m_interactiveEditHistoryStarted = false;
             event->accept();
             return;
         }
@@ -1364,6 +1387,7 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
         }
 
         if (m_drawingTool == DrawingTool::Point) {//点：单击直接放一个 8px 的小圆点，
+            emit editAboutToChange();
             QGraphicsEllipseItem* pointItem = m_scene->addEllipse(
                 QRectF(-4.0, -4.0, 8.0, 8.0),
                 makeCanvasPen(QColor(255, 80, 200)),
@@ -1395,10 +1419,18 @@ void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
     }
 
     if (m_rotateFeatureId > 0 && (event->buttons() & Qt::LeftButton)) {
+        if (!m_interactiveEditHistoryStarted && event->pos() != m_interactiveEditPressPosition) {
+            emit editAboutToChange();
+            m_interactiveEditHistoryStarted = true;
+        }
         updateHandleRotation(event->pos());
         event->accept(); return;
     }
     if (m_resizeFeatureId > 0 && (event->buttons() & Qt::LeftButton)) {
+        if (!m_interactiveEditHistoryStarted && event->pos() != m_interactiveEditPressPosition) {
+            emit editAboutToChange();
+            m_interactiveEditHistoryStarted = true;
+        }
         updateHandleResize(event->pos());
         event->accept();
         return;
@@ -1408,6 +1440,10 @@ void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
         const QPointF currentScenePosition = mapToScene(event->pos());
         const QPointF delta = currentScenePosition - m_lastFeatureDragScenePosition;
         m_lastFeatureDragScenePosition = currentScenePosition;
+        if (!m_interactiveEditHistoryStarted && !delta.isNull()) {
+            emit editAboutToChange();
+            m_interactiveEditHistoryStarted = true;
+        }
         m_draggedFeatureItem->moveBy(delta.x(), delta.y());
         constrainSelectedFeaturesToImage();
         refreshCircleRadiusGuide();
@@ -1444,13 +1480,21 @@ void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
 void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && m_rotateFeatureId > 0) {
-        updateHandleRotation(event->pos());
+        const bool changed = m_interactiveEditHistoryStarted
+            || event->pos() != m_interactiveEditPressPosition;
+        if (!m_interactiveEditHistoryStarted && changed)
+            emit editAboutToChange();
+        if (changed) updateHandleRotation(event->pos());
         m_rotateFeatureId = -1;
         viewport()->setCursor(m_spacePressed ? Qt::OpenHandCursor : Qt::ArrowCursor);
         event->accept(); return;
     }
     if (event->button() == Qt::LeftButton && m_resizeFeatureId > 0) {
-        updateHandleResize(event->pos());
+        const bool changed = m_interactiveEditHistoryStarted
+            || event->pos() != m_interactiveEditPressPosition;
+        if (!m_interactiveEditHistoryStarted && changed)
+            emit editAboutToChange();
+        if (changed) updateHandleResize(event->pos());
         m_resizeFeatureId = -1;
         viewport()->setCursor(m_spacePressed ? Qt::OpenHandCursor : Qt::ArrowCursor);
         event->accept();
@@ -1467,10 +1511,16 @@ void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
     }
 
     if (event->button() == Qt::LeftButton && m_draggedFeatureItem) {
+        const QPointF currentScenePosition = mapToScene(event->pos());
+        const QPointF delta = currentScenePosition - m_lastFeatureDragScenePosition;
+        const bool changed = m_interactiveEditHistoryStarted || !delta.isNull();
+        if (!m_interactiveEditHistoryStarted && changed)
+            emit editAboutToChange();
+        if (!delta.isNull()) m_draggedFeatureItem->moveBy(delta.x(), delta.y());
         constrainSelectedFeaturesToImage();
         const int featureId = m_draggedFeatureItem->data(0).toInt();
         m_draggedFeatureItem = nullptr;
-        if (featureId > 0)
+        if (changed && featureId > 0)
             emit featureGeometryChanged(featureId);
         event->accept();
         return;
@@ -1486,12 +1536,6 @@ void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton
         && m_drawingTool == DrawingTool::Select) {
         constrainSelectedFeaturesToImage();
-        const QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();
-        for (QGraphicsItem* item : selectedItems) {
-            const int featureId = item->data(0).toInt();
-            if (featureId > 0)
-                emit featureGeometryChanged(featureId);
-        }
     }
 }
 

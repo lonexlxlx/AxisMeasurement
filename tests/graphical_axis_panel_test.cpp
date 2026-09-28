@@ -4,6 +4,8 @@
 #include "graphical_sensor_measurement.h"
 #include "graphical_program_contract.h"
 #include "graphical_program_registry.h"
+#include "graphical_program_runner.h"
+#include <QAction>
 #include <QApplication>
 #include <QPushButton>
 #include <QComboBox>
@@ -72,6 +74,14 @@ static void testCornerGeometry()
 
 static void testSensorMeasurementAdapter()
 {
+    require(GraphicalSensorMeasurement::validateAxisMotionStart(5, 0x200, 1000, 1200).ok,
+        "enabled idle axis must accept a target away from inactive limits");
+    require(!GraphicalSensorMeasurement::validateAxisMotionStart(5, 0x200 | 0x20, 1000, 1200).ok
+        && !GraphicalSensorMeasurement::validateAxisMotionStart(5, 0x200 | 0x40, 1000, 800).ok,
+        "axis start policy must reject motion toward an active directional limit");
+    require(!GraphicalSensorMeasurement::validateAxisMotionStart(5, 0x400, 1000, 1200).ok
+        && !GraphicalSensorMeasurement::validateAxisMotionStart(5, 0, 1000, 1200).ok,
+        "axis start policy must reject a moving or disabled axis");
     const auto diameterContract = GraphicalProgramGeneration::contractForType(QStringLiteral("直径"));
     require(diameterContract.supported && !diameterContract.requiresImage
         && diameterContract.axes == QVector<int>({ 5 })
@@ -107,6 +117,26 @@ static void testSensorMeasurementAdapter()
     require(!GraphicalSensorMeasurement::diameterMean({ 10.0,
         std::numeric_limits<double>::quiet_NaN() }).ok,
         "diameter must reject nonfinite samples");
+    int diameterReads = 0;
+    const auto acquiredDiameter = GraphicalSensorMeasurement::acquireDiameter(
+        [&](double& raw, QString&) {
+            raw = ++diameterReads == 1 ? 9.8 : 10.2;
+            return true;
+        },
+        [](double raw) { return raw + 0.1; });
+    require(acquiredDiameter.ok && diameterReads == 2
+        && std::abs(acquiredDiameter.value - 10.1) < 1e-12,
+        "diameter acquisition must read two current OUT1 values and compensate each sample");
+    const auto failedDiameterRead = GraphicalSensorMeasurement::acquireDiameter(
+        [](double&, QString& error) {
+            error = QStringLiteral("simulated disconnect");
+            return false;
+        },
+        [](double raw) { return raw; });
+    require(!failedDiameterRead.ok
+        && failedDiameterRead.error.contains(QStringLiteral("第1次"))
+        && failedDiameterRead.error.contains(QStringLiteral("simulated disconnect")),
+        "diameter acquisition must preserve the failed sample index and device error");
 
     std::array<QVector<double>, 3> cylinder;
     for (int section = 0; section < 3; ++section)
@@ -152,7 +182,232 @@ static void testSensorMeasurementAdapter()
         [&]() { ++stops; return true; }, []() { return false; }, [](int) {}, 20, 10);
     require(arrived.ok && !arrived.stopAttempted,
         "confirmed arrival must finish without an extra stop");
+    GraphicalAxisRuntimeCallbacks axisCallbacks;
+    axisCallbacks.readStartState = [](int) {
+        return GraphicalAxisRuntimeState{ true, 0x200, 1000, QString() };
+    };
+    axisCallbacks.issueAbsoluteMove = [](int, qint64 target, QString&) { return target == 1200; };
+    int runtimePolls = 0;
+    axisCallbacks.queryMotion = [&](int, qint64) {
+        return ++runtimePolls < 2
+            ? GraphicalSensorMotionState{ true, true, false, false, QString() }
+            : GraphicalSensorMotionState{ true, false, true, false, QString() };
+    };
+    int runtimeStops = 0;
+    axisCallbacks.stopAxis = [&](int) { ++runtimeStops; return true; };
+    axisCallbacks.cancelRequested = []() { return false; };
+    axisCallbacks.delay = [](int) {};
+    const auto completedMotion = GraphicalSensorMeasurement::executeAxisMotion(
+        5, 1200, axisCallbacks, 20, 10);
+    require(completedMotion.ok && runtimePolls == 2 && runtimeStops == 0,
+        "axis runtime must issue the target and wait until arrival without stopping");
+    axisCallbacks.issueAbsoluteMove = [](int, qint64, QString& error) {
+        error = QStringLiteral("simulated SDK command failure");
+        return false;
+    };
+    const auto commandFailure = GraphicalSensorMeasurement::executeAxisMotion(
+        5, 1200, axisCallbacks, 20, 10);
+    require(!commandFailure.ok && commandFailure.stopAttempted && runtimeStops == 1
+        && commandFailure.error.contains(QStringLiteral("simulated SDK")),
+        "axis runtime must stop after a target command failure");
     std::cout << "PASS: sensor axial mapping, diameter/cylindricity/roundout guards, reference axis and motion stop policy\n";
+}
+
+static GraphicalProgramExecutionPlan makeRunnerPlan()
+{
+    GraphicalProgramExecutionPlan plan;
+    plan.descriptor.programNumber = 61;
+    for (int index = 0; index < 2; ++index) {
+        GraphicalProgramStep step;
+        step.sequence = index + 1;
+        step.featureNumber = QStringLiteral("F%1").arg(index + 1);
+        step.type = QStringLiteral("直径");
+        step.contract = GraphicalProgramGeneration::contractForType(step.type);
+        step.definition[QStringLiteral("hasTolerance")] = true;
+        step.definition[QStringLiteral("nominal")] = 10.0;
+        step.definition[QStringLiteral("lower")] = -0.1;
+        step.definition[QStringLiteral("upper")] = 0.1;
+        plan.steps.append(step);
+    }
+    return plan;
+}
+
+static void testGraphicalProgramRunnerCore()
+{
+    const GraphicalProgramExecutionPlan plan = makeRunnerPlan();
+    GraphicalProgramRunner runner;
+    QVector<GraphicalProgramRunState> states;
+    QStringList order;
+    int clears = 0;
+    int stops = 0;
+    GraphicalProgramRunnerCallbacks callbacks;
+    callbacks.stateChanged = [&](GraphicalProgramRunState state, const GraphicalProgramStep* step) {
+        states.append(state);
+        if (step) order.append(QStringLiteral("%1:%2").arg(int(state)).arg(step->sequence));
+    };
+    callbacks.clearPreviousResults = [&]() { ++clears; };
+    callbacks.cancelRequested = []() { return false; };
+    callbacks.validateStep = [](const GraphicalProgramStep& step) {
+        return step.sequence > 0 && step.contract.supported
+            ? GraphicalProgramRunStepResult::success()
+            : GraphicalProgramRunStepResult::failure(QStringLiteral("bad step"));
+    };
+    callbacks.moveToStep = [](const GraphicalProgramStep&) {
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.captureStep = [](const GraphicalProgramStep& step) {
+        GraphicalProgramRuntimeFrame frame;
+        frame.hasImage = true;
+        frame.cameraIndex = 0;
+        frame.exposure = step.sequence;
+        frame.source = QStringLiteral("simulated-current-frame");
+        return GraphicalProgramRunStepResult::successWithFrame(frame);
+    };
+    int computedExposureSum = 0;
+    callbacks.computeStep = [&](const GraphicalProgramStep&,
+        const GraphicalProgramRuntimeFrame& frame) {
+        require(frame.hasImage && frame.cameraIndex == 0
+            && frame.source == QStringLiteral("simulated-current-frame"),
+            "runner compute callback must receive the captured frame metadata");
+        computedExposureSum += frame.exposure;
+        GraphicalProgramMeasurementResult measurement =
+            GraphicalProgramMeasurementResult::fromStepValue(plan.steps.at(frame.exposure - 1),
+                frame.exposure == 1 ? 10.02 : 10.20,
+                GraphicalProgramMeasurementResult::unitForType(QStringLiteral("直径")));
+        return GraphicalProgramRunStepResult::successWithMeasurements(
+            QVector<GraphicalProgramMeasurementResult>{ measurement });
+    };
+    callbacks.requestStop = [&]() { ++stops; return true; };
+    const GraphicalProgramRunResult ok = runner.execute(plan, callbacks);
+    require(ok.ok && ok.completedSteps == 2 && ok.finalState == GraphicalProgramRunState::Complete
+        && clears == 1 && stops == 0 && computedExposureSum == 3
+        && ok.measurements.size() == 2
+        && ok.measurements.at(0).judgement == QStringLiteral("OK")
+        && ok.measurements.at(1).judgement == QStringLiteral("NG")
+        && ok.overallJudgement() == QStringLiteral("NG")
+        && ok.ngMeasurementCount() == 1
+        && ok.measurements.at(0).unit == QStringLiteral("mm")
+        && runner.state() == GraphicalProgramRunState::Complete,
+        "runner must execute all simulated steps and retain structured measurement results");
+    require(states.contains(GraphicalProgramRunState::Loading)
+        && states.contains(GraphicalProgramRunState::Moving)
+        && states.contains(GraphicalProgramRunState::Capturing)
+        && states.contains(GraphicalProgramRunState::Computing),
+        "runner must expose loading/moving/capturing/computing states");
+    GraphicalProgramRunResult mixedResult = ok;
+    mixedResult.measurements[1].error = QStringLiteral("simulated result error");
+    require(mixedResult.overallJudgement() == QStringLiteral("错误"),
+        "result errors must take precedence over an earlier NG judgement");
+    GraphicalProgramRunResult unjudgedResult = ok;
+    unjudgedResult.measurements[0].judgement = QStringLiteral("未判定");
+    unjudgedResult.measurements[1].judgement = QStringLiteral("OK");
+    require(unjudgedResult.overallJudgement() == QStringLiteral("未判定"),
+        "a successful run without complete tolerance judgements must stay unjudged");
+
+    bool cancel = false;
+    callbacks.computeStep = [&](const GraphicalProgramStep& step,
+        const GraphicalProgramRuntimeFrame&) {
+        if (step.sequence == 1) cancel = true;
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.cancelRequested = [&]() { return cancel; };
+    const int stopsBeforeCancel = stops;
+    const GraphicalProgramRunResult cancelled = runner.execute(plan, callbacks);
+    require(!cancelled.ok && cancelled.finalState == GraphicalProgramRunState::Cancelled
+        && cancelled.completedSteps == 1 && cancelled.stopAttempted
+        && stops == stopsBeforeCancel + 1,
+        "runner cancellation must stop once and skip later steps");
+
+    callbacks.cancelRequested = []() { return false; };
+    callbacks.computeStep = [](const GraphicalProgramStep&, const GraphicalProgramRuntimeFrame&) {
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.captureStep = [](const GraphicalProgramStep& step) {
+        return step.sequence == 2
+            ? GraphicalProgramRunStepResult::failure(QStringLiteral("simulated capture failure"))
+            : GraphicalProgramRunStepResult::success();
+    };
+    const int stopsBeforeFailure = stops;
+    const GraphicalProgramRunResult failed = runner.execute(plan, callbacks);
+    require(!failed.ok && failed.finalState == GraphicalProgramRunState::Failed
+        && failed.completedSteps == 1 && failed.stopAttempted
+        && stops == stopsBeforeFailure + 1
+        && failed.failedSequence == 2
+        && failed.failedFeatureNumber == QStringLiteral("F2")
+        && failed.failedType == QStringLiteral("直径")
+        && failed.overallJudgement() == QStringLiteral("错误")
+        && failed.error.contains(QStringLiteral("simulated capture failure")),
+        "runner failure must stop once and preserve the first failure message");
+
+    GraphicalProgramExecutionPlan threeSectionPlan;
+    GraphicalProgramStep threeSectionStep = plan.steps.first();
+    threeSectionStep.contract.threeSectionScan = true;
+    QJsonObject axis5;
+    axis5[QStringLiteral("axis")] = 5;
+    axis5[QStringLiteral("encoder")] = 1000.0;
+    QJsonArray axes;
+    axes.append(axis5);
+    QJsonObject devicePosition;
+    devicePosition[QStringLiteral("status")] = QStringLiteral("collected");
+    devicePosition[QStringLiteral("axes")] = axes;
+    devicePosition[QStringLiteral("cameraIndex")] = 1;
+    devicePosition[QStringLiteral("exposure")] = 120;
+    threeSectionStep.definition[QStringLiteral("devicePosition")] = devicePosition;
+    threeSectionStep.definition[QStringLiteral("lowerAxialOffsetPulse")] = 100.0;
+    threeSectionStep.definition[QStringLiteral("upperAxialOffsetPulse")] = 150.0;
+    threeSectionPlan.steps.append(threeSectionStep);
+
+    QStringList targetOrder;
+    callbacks.moveToTarget = [&](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget& target) {
+        targetOrder.append(QStringLiteral("move:%1").arg(target.label));
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.captureTarget = [&](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget& target) {
+        targetOrder.append(QStringLiteral("capture:%1").arg(target.label));
+        GraphicalProgramRuntimeFrame frame;
+        frame.source = target.label;
+        return GraphicalProgramRunStepResult::successWithFrame(frame);
+    };
+    callbacks.computeTargets = [&](const GraphicalProgramStep&,
+        const QVector<GraphicalProgramMotionTarget>& targets,
+        const QVector<GraphicalProgramRuntimeFrame>& frames) {
+        require(targets.size() == 3 && frames.size() == 3
+            && targets.at(0).axisEncoderTargets.value(5) == 900
+            && targets.at(1).axisEncoderTargets.value(5) == 1000
+            && targets.at(2).axisEncoderTargets.value(5) == 1150
+            && frames.at(0).source == QStringLiteral("下侧截面")
+            && frames.at(1).source == QStringLiteral("中间截面")
+            && frames.at(2).source == QStringLiteral("上侧截面"),
+            "multi-target compute must receive each target and its captured frame in order");
+        return GraphicalProgramRunStepResult::success();
+    };
+    callbacks.cancelRequested = []() { return false; };
+    const GraphicalProgramRunResult threeSection = runner.execute(threeSectionPlan, callbacks);
+    require(threeSection.ok && threeSection.completedSteps == 1
+        && targetOrder == QStringList({
+            QStringLiteral("move:下侧截面"), QStringLiteral("capture:下侧截面"),
+            QStringLiteral("move:中间截面"), QStringLiteral("capture:中间截面"),
+            QStringLiteral("move:上侧截面"), QStringLiteral("capture:上侧截面") }),
+        "multi-target runner must move and capture at each section before continuing");
+
+    targetOrder.clear();
+    callbacks.captureTarget = [&](const GraphicalProgramStep&,
+        const GraphicalProgramMotionTarget& target) {
+        targetOrder.append(QStringLiteral("capture:%1").arg(target.label));
+        return target.label == QStringLiteral("中间截面")
+            ? GraphicalProgramRunStepResult::failure(QStringLiteral("simulated target capture failure"))
+            : GraphicalProgramRunStepResult::success();
+    };
+    const int stopsBeforeTargetFailure = stops;
+    const GraphicalProgramRunResult targetFailed = runner.execute(threeSectionPlan, callbacks);
+    require(!targetFailed.ok && targetFailed.completedSteps == 0
+        && targetFailed.stopAttempted && stops == stopsBeforeTargetFailure + 1
+        && !targetOrder.contains(QStringLiteral("capture:上侧截面"))
+        && targetFailed.error.contains(QStringLiteral("中间截面")),
+        "multi-target capture failure must stop once and skip remaining targets");
+    std::cout << "PASS: unified runner states, result clearing, sequential execution, cancellation and failure stop policy\n";
 }
 
 static void testDetectionRecords()
@@ -188,6 +443,8 @@ static void testDetectionRecords()
     QLabel* recipeResult = editor.findChild<QLabel*>(QStringLiteral("recipeValidationResult"));
     require(recipeResult && recipeResult->isHidden(),
         "recipe validation output must stay hidden until it has a result");
+    require(editor.findChild<QPushButton*>(QStringLiteral("generateProgramPackageButton")),
+        "editor must expose the generation package command");
     auto button = [&](const QString& name) {
         for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
         throw std::runtime_error("detection button missing");
@@ -219,6 +476,23 @@ static void testDetectionRecords()
     enterFeatureNumber(QStringLiteral("F1"));
     minimum->setValue(7);
     button(QStringLiteral("新增测量记录"))->click();
+    auto action = [&](const QString& name) {
+        for (auto* value : editor.findChildren<QAction*>()) if (value->text() == name) return value;
+        throw std::runtime_error("editor action missing");
+    };
+    QAction* undoAction = action(QStringLiteral("撤销"));
+    QAction* redoAction = action(QStringLiteral("重做"));
+    require(undoAction->shortcut() == QKeySequence::Undo
+        && redoAction->shortcut() == QKeySequence::Redo,
+        "undo and redo must expose the standard shortcuts");
+    require(undoAction->isEnabled() && !redoAction->isEnabled(),
+        "undo must become available after adding a measurement record");
+    undoAction->trigger();
+    require(table->rowCount() == 0 && !undoAction->isEnabled() && redoAction->isEnabled(),
+        "undo must remove the added measurement record and enable redo");
+    redoAction->trigger();
+    require(table->rowCount() == 1 && undoAction->isEnabled() && !redoAction->isEnabled(),
+        "redo must restore the measurement record");
     enterFeatureNumber(QStringLiteral("F2"));
     minimum->setValue(13);
     button(QStringLiteral("新增测量记录"))->click();
@@ -241,6 +515,12 @@ static void testDetectionRecords()
     button(QStringLiteral("应用检测参数"))->click();
     require(table->item(0, 1)->text() == QStringLiteral("F1"), "parameter-only apply must preserve feature number");
     require(table->item(0, 11)->text().contains(QStringLiteral("旧结果失效")), "parameter apply must invalidate execution state");
+    undoAction->trigger();
+    require(table->rowCount() == 2 && minimum->value() == 7 && redoAction->isEnabled(),
+        "undo must restore the detection parameters from before apply");
+    redoAction->trigger();
+    require(table->rowCount() == 2 && minimum->value() == 8,
+        "redo must restore the applied detection parameters");
     button(QStringLiteral("恢复默认（未提交）"))->click();
     require(minimum->value() == 20, "reset must display legacy defaults");
     table->setCurrentCell(1, 0);
@@ -308,7 +588,7 @@ static void testDetectionRecords()
     require(std::none_of(preflightIssues.cbegin(), preflightIssues.cend(), [](const QString& issue) {
         return issue.contains(QStringLiteral("尚未接入生产程序映射"));
     }), "all current measurement types must have a generation mapping contract");
-    std::cout << "PASS: detection defaults, invalid thresholds/ranges/nonfinite input, record isolation, draft discard, parameter-only apply, invalidation state, reset semantics\n";
+    std::cout << "PASS: detection records, undo/redo history, parameter isolation and invalidation semantics\n";
 }
 
 static void testCameraWorkflow()
@@ -611,6 +891,102 @@ static void testImageLessSensorPlan()
     require(GraphicalProgramRegistry::scan(directory.path(), registeredPrograms, error)
         && registeredPrograms.size() == 1 && registeredPrograms.first().programNumber == 61,
         qPrintable(QStringLiteral("generated package scan failed: %1").arg(error)));
+    GraphicalProgramExecutionPlan executionPlan;
+    require(GraphicalProgramRegistry::loadExecutionPlan(packagePath, executionPlan, error)
+        && executionPlan.descriptor.programNumber == 61
+        && executionPlan.steps.size() == 1
+        && executionPlan.steps.first().type == QStringLiteral("直径")
+        && executionPlan.steps.first().contract.axes == QVector<int>({ 5 }),
+        qPrintable(QStringLiteral("generated execution plan load failed: %1").arg(error)));
+    QVector<GraphicalProgramMotionTarget> motionTargets;
+    require(GraphicalProgramRuntimePlanning::buildMotionTargets(
+            executionPlan.steps.first(), motionTargets, error)
+        && motionTargets.size() == 1
+        && motionTargets.first().axisEncoderTargets.value(5) == 12345,
+        qPrintable(QStringLiteral("diameter runtime target planning failed: %1").arg(error)));
+    GraphicalProgramStep threeSectionStep = executionPlan.steps.first();
+    threeSectionStep.type = QStringLiteral("圆柱度");
+    threeSectionStep.contract = GraphicalProgramGeneration::contractForType(threeSectionStep.type);
+    threeSectionStep.definition[QStringLiteral("lowerAxialOffsetPulse")] = 100;
+    threeSectionStep.definition[QStringLiteral("upperAxialOffsetPulse")] = 200;
+    require(GraphicalProgramRuntimePlanning::buildMotionTargets(
+            threeSectionStep, motionTargets, error)
+        && motionTargets.size() == 3
+        && motionTargets.at(0).axisEncoderTargets.value(5) == 12245
+        && motionTargets.at(1).axisEncoderTargets.value(5) == 12345
+        && motionTargets.at(2).axisEncoderTargets.value(5) == 12545,
+        qPrintable(QStringLiteral("three-section runtime target planning failed: %1").arg(error)));
+    QStringList dispatchedTargets;
+    require(GraphicalProgramRuntimePlanning::dispatchMotionTargets(motionTargets,
+            [&](const GraphicalProgramMotionTarget& target, QString&) {
+                dispatchedTargets.append(target.label);
+                return true;
+            }, []() { return false; }, error)
+        && dispatchedTargets == QStringList({ QStringLiteral("下侧截面"),
+            QStringLiteral("中间截面"), QStringLiteral("上侧截面") }),
+        qPrintable(QStringLiteral("three-section motion dispatch failed: %1").arg(error)));
+    int failedDispatchCount = 0;
+    require(!GraphicalProgramRuntimePlanning::dispatchMotionTargets(motionTargets,
+            [&](const GraphicalProgramMotionTarget&, QString& targetError) {
+                ++failedDispatchCount;
+                if (failedDispatchCount == 2) {
+                    targetError = QStringLiteral("simulated motion fault");
+                    return false;
+                }
+                return true;
+            }, []() { return false; }, error)
+        && failedDispatchCount == 2
+        && error.contains(QStringLiteral("中间截面"))
+        && error.contains(QStringLiteral("simulated motion fault")),
+        "motion dispatch must stop at the first failed target");
+    QJsonObject incompleteDefinition = executionPlan.steps.first().definition;
+    QJsonObject incompletePosition = incompleteDefinition.value(QStringLiteral("devicePosition")).toObject();
+    incompletePosition[QStringLiteral("status")] = QStringLiteral("uncollected");
+    incompleteDefinition[QStringLiteral("devicePosition")] = incompletePosition;
+    GraphicalProgramStep invalidStep;
+    require(!GraphicalProgramRegistry::buildExecutionStep(incompleteDefinition, invalidStep, error)
+        && error.contains(QStringLiteral("未包含完整硬件点位")),
+        "execution plan must reject a record without a collected hardware point");
+    QHash<int, QSet<int>> visualFeatures;
+    QSet<int> featureIds;
+    featureIds.insert(11);
+    featureIds.insert(12);
+    visualFeatures.insert(1, featureIds);
+    QJsonObject visualRecord;
+    visualRecord[QStringLiteral("sequence")] = 1;
+    visualRecord[QStringLiteral("featureNumber")] = QStringLiteral("A1");
+    visualRecord[QStringLiteral("type")] = QStringLiteral("角度");
+    visualRecord[QStringLiteral("frameId")] = 1;
+    visualRecord[QStringLiteral("geometryId")] = 11;
+    visualRecord[QStringLiteral("secondaryFrameId")] = 1;
+    visualRecord[QStringLiteral("secondaryGeometryId")] = 12;
+    visualRecord[QStringLiteral("hasTolerance")] = false;
+    visualRecord[QStringLiteral("nominal")] = 0.0;
+    visualRecord[QStringLiteral("lower")] = 0.0;
+    visualRecord[QStringLiteral("upper")] = 0.0;
+    QJsonObject axisPosition;
+    axisPosition[QStringLiteral("axis")] = 5;
+    axisPosition[QStringLiteral("planned")] = 123.0;
+    axisPosition[QStringLiteral("encoder")] = 124.0;
+    QJsonObject visualPosition;
+    visualPosition[QStringLiteral("status")] = QStringLiteral("collected");
+    visualPosition[QStringLiteral("source")] = QStringLiteral("hardware");
+    visualPosition[QStringLiteral("unit")] = QStringLiteral("pulse");
+    visualPosition[QStringLiteral("cameraIndex")] = 0;
+    visualPosition[QStringLiteral("exposure")] = 10;
+    visualPosition[QStringLiteral("axes")] = QJsonArray{ axisPosition };
+    visualRecord[QStringLiteral("devicePosition")] = visualPosition;
+    GraphicalProgramStep visualStep;
+    require(GraphicalProgramRegistry::buildExecutionStep(visualRecord, visualStep, error, &visualFeatures)
+        && visualStep.contract.requiresImage && visualStep.contract.requiresSecondRoi,
+        qPrintable(QStringLiteral("visual execution step should accept existing ROIs: %1").arg(error)));
+    QHash<int, QSet<int>> missingSecondRoi;
+    QSet<int> onlyPrimaryFeature;
+    onlyPrimaryFeature.insert(11);
+    missingSecondRoi.insert(1, onlyPrimaryFeature);
+    require(!GraphicalProgramRegistry::buildExecutionStep(visualRecord, visualStep, error, &missingSecondRoi)
+        && error.contains(QStringLiteral("第二运行ROI")),
+        "visual execution step must reject a missing second ROI before dispatch");
     QString duplicatePath;
     require(!diameterEditor.exportProgramPackage(directory.path(), duplicatePath, error)
         && error.contains(QStringLiteral("生成目标已存在")),
@@ -640,6 +1016,7 @@ int main(int argc, char** argv)
     try {
         testCornerGeometry();
         testSensorMeasurementAdapter();
+        testGraphicalProgramRunnerCore();
         testDetectionRecords();
         testCameraWorkflow();
         testImageLessSensorPlan();

@@ -42,6 +42,7 @@ struct GraphicalDetectionParameters {
 class QLabel;
 class QListWidget;
 class QTableWidget;
+class QAction;
 class QDoubleSpinBox;
 class QSpinBox;
 class QCheckBox;
@@ -91,6 +92,7 @@ public:
     using CameraReader = std::function<CameraSnapshot(int)>;
     using CameraCommander = std::function<CameraCommandResult(int, CameraCommand, int)>;
     void setCameraBackend(CameraReader reader, CameraCommander commander);
+    void setProgramPackageGeneratedHandler(std::function<void()> handler);
     bool saveRecipeFile(const QString& filePath, QString& error);
     bool loadRecipeFile(const QString& filePath, QString& error);
     QStringList validateRecipeForExport() const;
@@ -145,6 +147,7 @@ private:
     void refreshDevicePositionPanel();
     CameraReader m_cameraReader;
     CameraCommander m_cameraCommander;
+    std::function<void()> m_programPackageGeneratedHandler;
     LightCurtainReader m_lightCurtainReader;
     QComboBox* m_cameraSelector = nullptr;
     QSpinBox* m_cameraExposure = nullptr;
@@ -299,8 +302,26 @@ private:
     };
     bool collectCurrentDevicePosition(const QString& type,
         MeasurementRecord::DevicePosition& position, QString& error) const;
+    struct EditHistoryState {
+        QVector<GraphicalCanvas::FeatureSnapshot> features;
+        QVector<MeasurementRecord> records;
+        int nextRecordSequence = 1;
+        int frameId = -1;
+        int selectedRecordSequence = -1;
+    };
+    EditHistoryState captureEditHistoryState() const;
+    bool restoreEditHistoryState(const EditHistoryState& state);
+    void pushEditHistoryState();
+    void clearEditHistory();
+    void updateEditHistoryActions();
+    void undoEdit();
+    void redoEdit();
     QVector<MeasurementRecord> m_records;
     int m_nextRecordSequence = 1;
+    QVector<EditHistoryState> m_undoStack;
+    QVector<EditHistoryState> m_redoStack;
+    QAction* m_undoAction = nullptr;
+    QAction* m_redoAction = nullptr;
     QComboBox* m_measurementType = nullptr;
     QComboBox* m_angleResultMode = nullptr;
     QComboBox* m_angleInputMode = nullptr;

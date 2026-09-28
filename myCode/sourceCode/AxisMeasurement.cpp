@@ -12,6 +12,10 @@
 #include <QFont>
 #include <QPalette>
 #include <QColor>
+#include <QDir>
+#include <QFileInfo>
+#include <QSet>
+#include <QStringList>
 
 #include "graphical_axis_backend.h"
 
@@ -56,6 +60,8 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	ui.setupUi(this);
 	for (int index = 0; index < ui.programNumber->count(); ++index)
 		ui.programNumber->setItemData(index, index, Qt::UserRole);
+	QString graphicalProgramError;
+	refreshGraphicalProgramList(graphicalProgramError);
 	//this->setWindowIcon(QIcon("://AxisMeasurement/config/logo.ico")); 
 
 	//P2-9/10/11：布局重构（分组收纳+QSplitter 自适应+数值仪表盘化），必须在任何控件操作之前执行
@@ -73,6 +79,14 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	m_graphicalProgramEditor = new GraphicalProgramEditor(this);
 	m_graphicalProgramEditor->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
 	m_graphicalProgramEditor->setAttribute(Qt::WA_DeleteOnClose, false);
+	m_graphicalProgramEditor->setProgramPackageGeneratedHandler([this]() {
+		QString refreshError;
+		refreshGraphicalProgramList(refreshError);
+		if (!refreshError.isEmpty()) showDeviceInf(refreshError);
+	});
+	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
+		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
+	});
 	m_graphicalProgramEditor->setCameraBackend(
 		[this](int camera) {
 			GraphicalProgramEditor::CameraSnapshot state;
@@ -1240,6 +1254,10 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	//if (cameraPtrList[0]->isOpenCam && cameraPtrList[1]->isOpenCam && cameraPtrList[2]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag && DbOpenFlag)//所有设备均正常打开了
 	{
 		ui.programNumber->setEnabled(true);
+		QString graphicalProgramError;
+		refreshGraphicalProgramList(graphicalProgramError);
+		if (!graphicalProgramError.isEmpty())
+			showDeviceInf(graphicalProgramError);
 		ui.ManualControl->setEnabled(true);
 		ui.axisControl->setEnabled(true);
 		ui.cameraControl->setEnabled(true);
@@ -1355,6 +1373,16 @@ void AxisMeasurement::on_programNumber_currentIndexChanged(int nIndex)
 {
 	const QVariant programData = ui.programNumber->itemData(nIndex, Qt::UserRole);
 	currentProgram = programData.isValid() ? programData.toInt() : nIndex;
+	if (isGraphicalProgramNumber(currentProgram))
+	{
+		showPartNumber(graphicalProgramPartLabel(currentProgram));
+		showProgramProcess(QStringLiteral("图形化程序%1已选择，等待启动。").arg(currentProgram), 0);
+		ui.orginaImg->clear();
+		ui.orginaImg->setText(QStringLiteral("图形化程序包\n自动测量时采集实时帧"));
+		setVisualProperty(ui.frame1, "imageState", "idle");
+		setVisualProperty(ui.orginaImg, "imageState", "idle");
+		return;
+	}
 	showClampingPicture(currentProgram);
 	//cout << "on_programNumber_currentIndexChanged-" << currentProgram << endl;
 	//需要按照下面格式追加子程序相关内容
@@ -1541,6 +1569,11 @@ void AxisMeasurement::on_startAutoMearsurement_clicked()
 		setVisualProperty(ui.frame1, "imageState", "capturing");
 		setVisualProperty(ui.orginaImg, "imageState", "capturing");
 		programRunFlag = true;
+		if (isGraphicalProgramNumber(currentProgram))
+		{
+			startGraphicalProgramMeasurement();
+			return;
+		}
 		switch (currentProgram)
 		{
 	    //需要按照下面格式追加子程序相关内容
@@ -1713,6 +1746,11 @@ void AxisMeasurement::on_urgrentStopMearsure_clicked()
 {
 	//cout << "on_urgrentStopMearsure_clicked" << endl;
 	flashEmergencyBorder();//P2-12：急停触发，全窗口红色边框闪烁警示
+	if (isGraphicalProgramNumber(currentProgram))
+	{
+		requestGraphicalProgramStop(QStringLiteral("图形化自动测量急停。"));
+		return;
+	}
 	switch (currentProgram)
 	{
     //需要按照下面格式追加子程序相关内容
@@ -1963,6 +2001,12 @@ void AxisMeasurement::on_allAxisGoHome_clicked()//一键回原点槽函数
 };
 void AxisMeasurement::on_programConfirm_clicked()//图像质量确认槽函数
 {
+	if (isGraphicalProgramNumber(currentProgram))
+	{
+		ui.programConfirm->setEnabled(false);
+		ui.measureCancel->setEnabled(false);
+		return;
+	}
 	switch (currentProgram)
 	{
 	//需要按照下面格式追加子程序
@@ -2135,6 +2179,11 @@ void AxisMeasurement::on_programConfirm_clicked()//图像质量确认槽函数
 };
 void AxisMeasurement::on_measureCancel_clicked()//检测取消槽函数
 {
+	if (isGraphicalProgramNumber(currentProgram))
+	{
+		requestGraphicalProgramStop(QStringLiteral("图形化自动测量已取消。"));
+		return;
+	}
 	switch (currentProgram)
 	{
 		//需要按照下面格式追加子程序
@@ -2285,6 +2334,279 @@ bool AxisMeasurement::motionControlReady() const
 
 	const_cast<AxisMeasurement*>(this)->showDeviceInf(QStringLiteral("运动控制不可用，请先打开全部设备并确认当前未在测量！"));
 	return false;
+}
+
+bool AxisMeasurement::isGraphicalProgramNumber(int programNumber) const
+{
+	return programNumber >= 61 && m_graphicalExecutionPlans.contains(programNumber);
+}
+
+QString AxisMeasurement::graphicalProgramPartLabel(int programNumber) const
+{
+	const auto iterator = m_graphicalExecutionPlans.constFind(programNumber);
+	if (iterator == m_graphicalExecutionPlans.constEnd())
+		return QStringLiteral("图形化程序%1").arg(programNumber);
+	const GraphicalProgramDescriptor& descriptor = iterator.value().descriptor;
+	const QString part = descriptor.partNumber.trimmed();
+	const QString name = descriptor.partName.trimmed();
+	if (part.isEmpty() && name.isEmpty())
+		return QStringLiteral("图形化程序%1").arg(programNumber);
+	if (name.isEmpty()) return QStringLiteral("图形化%1：%2").arg(programNumber).arg(part);
+	if (part.isEmpty()) return QStringLiteral("图形化%1：%2").arg(programNumber).arg(name);
+	return QStringLiteral("图形化%1：%2 %3").arg(programNumber).arg(part, name);
+}
+
+bool AxisMeasurement::refreshGraphicalProgramList(QString& error)
+{
+	error.clear();
+	const bool signalsBlocked = ui.programNumber->blockSignals(true);
+	for (int index = ui.programNumber->count() - 1; index >= 0; --index) {
+		const QVariant programData = ui.programNumber->itemData(index, Qt::UserRole);
+		const int programNumber = programData.isValid() ? programData.toInt() : -1;
+		if (programNumber >= 61) ui.programNumber->removeItem(index);
+	}
+	m_graphicalExecutionPlans.clear();
+	QDir root(runtimePath(QString()));
+	const QFileInfoList directories = root.entryInfoList(
+		{ QStringLiteral("program_*") }, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+	QSet<int> numbers;
+	QStringList rejected;
+	for (const QFileInfo& directory : directories) {
+		GraphicalProgramExecutionPlan plan;
+		QString loadError;
+		if (!GraphicalProgramRegistry::loadExecutionPlan(directory.absoluteFilePath(), plan, loadError)) {
+			rejected.append(QStringLiteral("%1：%2").arg(directory.fileName(), loadError));
+			continue;
+		}
+		const int programNumber = plan.descriptor.programNumber;
+		if (numbers.contains(programNumber)) {
+			rejected.append(QStringLiteral("%1：程序号重复").arg(directory.fileName()));
+			continue;
+		}
+		numbers.insert(programNumber);
+		m_graphicalExecutionPlans.insert(programNumber, plan);
+		ui.programNumber->addItem(graphicalProgramPartLabel(programNumber), programNumber);
+	}
+	ui.programNumber->blockSignals(signalsBlocked);
+	if (!rejected.isEmpty()) {
+		error = QStringLiteral("部分图形化程序包未加载，已从可运行列表隐藏。");
+		return false;
+	}
+	return true;
+}
+
+void AxisMeasurement::startGraphicalProgramMeasurement()
+{
+	const auto iterator = m_graphicalExecutionPlans.constFind(currentProgram);
+	if (iterator == m_graphicalExecutionPlans.constEnd()) {
+		finishGraphicalProgramRun(false, QStringLiteral("图形化程序%1未通过注册校验。").arg(currentProgram));
+		return;
+	}
+	m_graphicalProgramCancelRequested = false;
+	ui.measureCancel->setEnabled(true);
+	ui.programConfirm->setEnabled(false);
+	GraphicalProgramRunnerCallbacks callbacks;
+	callbacks.stateChanged = [this](GraphicalProgramRunState state, const GraphicalProgramStep* step) {
+		QString text;
+		int progress = 0;
+		switch (state) {
+		case GraphicalProgramRunState::Loading:
+			text = QStringLiteral("图形化程序%1装载中。").arg(currentProgram);
+			progress = 5;
+			break;
+		case GraphicalProgramRunState::Moving:
+			text = QStringLiteral("图形化记录%1移动中。").arg(step ? step->sequence : 0);
+			progress = 25;
+			break;
+		case GraphicalProgramRunState::Capturing:
+			text = QStringLiteral("图形化记录%1采集中。").arg(step ? step->sequence : 0);
+			progress = 50;
+			break;
+		case GraphicalProgramRunState::Computing:
+			text = QStringLiteral("图形化记录%1计算中。").arg(step ? step->sequence : 0);
+			progress = 75;
+			break;
+		case GraphicalProgramRunState::Complete:
+			text = QStringLiteral("图形化程序%1完成。").arg(currentProgram);
+			progress = 100;
+			break;
+		case GraphicalProgramRunState::Cancelled:
+			text = QStringLiteral("图形化程序%1已取消。").arg(currentProgram);
+			progress = 0;
+			break;
+		case GraphicalProgramRunState::Failed:
+			text = QStringLiteral("图形化程序%1失败。").arg(currentProgram);
+			progress = 0;
+			break;
+		default:
+			text = QStringLiteral("图形化程序%1待运行。").arg(currentProgram);
+			break;
+		}
+		showProgramProcess(text, progress);
+	};
+	callbacks.clearPreviousResults = [this]() {
+		if (resultTablePtr) resultTablePtr->setRowCount(0);
+	};
+	callbacks.cancelRequested = [this]() { return m_graphicalProgramCancelRequested; };
+	callbacks.validateStep = [](const GraphicalProgramStep& step) {
+		return step.contract.supported
+			? GraphicalProgramRunStepResult::success()
+			: GraphicalProgramRunStepResult::failure(QStringLiteral("图形化执行步骤类型不受支持。"));
+	};
+	callbacks.moveToStep = [](const GraphicalProgramStep&) {
+		return GraphicalProgramRunStepResult::failure(
+			QStringLiteral("图形化运动后端尚未接入，未产生自动测量结果。"));
+	};
+	callbacks.captureStep = [](const GraphicalProgramStep&) {
+		return GraphicalProgramRunStepResult::failure(
+			QStringLiteral("图形化采集后端尚未接入，未产生自动测量结果。"));
+	};
+	callbacks.computeStep = [](const GraphicalProgramStep&, const GraphicalProgramRuntimeFrame&) {
+		return GraphicalProgramRunStepResult::failure(
+			QStringLiteral("图形化计算后端尚未接入，未产生自动测量结果。"));
+	};
+	callbacks.requestStop = [this]() {
+		if (moveControlCardPtr && moveControlCardPtr->openControllerFlag) {
+			moveControlCardPtr->stopMove("urgent", "all");
+		}
+		return true;
+	};
+	const GraphicalProgramRunResult result = m_graphicalProgramRunner.execute(iterator.value(), callbacks);
+	QVector<GraphicalProgramMeasurementResult> tableResults = result.measurements;
+	if (!result.ok && tableResults.isEmpty() && result.failedSequence > 0) {
+		GraphicalProgramMeasurementResult failedResult;
+		failedResult.featureNumber = result.failedFeatureNumber.isEmpty()
+			? QStringLiteral("记录%1").arg(result.failedSequence)
+			: result.failedFeatureNumber;
+		failedResult.type = result.failedType;
+		failedResult.unit = GraphicalProgramMeasurementResult::unitForType(result.failedType);
+		failedResult.judgement = QStringLiteral("错误");
+		failedResult.time = QDateTime::currentDateTime();
+		failedResult.error = result.error;
+		tableResults.append(failedResult);
+	}
+	appendGraphicalProgramResultRows(tableResults);
+	updateGraphicalProgramStatistics(result);
+	finishGraphicalProgramRun(result.ok, result.ok
+		? QStringLiteral("图形化程序%1运行完成。").arg(currentProgram)
+		: result.error,
+		result.overallJudgement());
+}
+
+void AxisMeasurement::requestGraphicalProgramStop(const QString& reason)
+{
+	m_graphicalProgramCancelRequested = true;
+	if (moveControlCardPtr && moveControlCardPtr->openControllerFlag)
+		moveControlCardPtr->stopMove("urgent", "all");
+	finishGraphicalProgramRun(false, reason);
+}
+
+void AxisMeasurement::finishGraphicalProgramRun(bool normalFlag, const QString& message,
+	const QString& judgement)
+{
+	programRunFlag = false;
+	m_graphicalProgramCancelRequested = false;
+	ui.measureResultFlag->setStyleSheet(QStringLiteral(""));
+	const QString resultText = normalFlag
+		? (judgement.isEmpty() ? QStringLiteral("未判定") : judgement)
+		: QStringLiteral("异常");
+	ui.measureResultFlag->setText(resultText);
+	const char* resultState = !normalFlag || resultText == QStringLiteral("NG")
+		|| resultText == QStringLiteral("错误") ? "ng"
+		: resultText == QStringLiteral("OK") ? "ok" : "idle";
+	setVisualProperty(ui.measureResultFlag, "resultState", resultState);
+	ui.orginaImg->clear();
+	ui.orginaImg->setText(normalFlag
+		? QStringLiteral("图形化自动测量完成")
+		: QStringLiteral("图形化自动测量未完成\n未写入模拟测量结果"));
+	setVisualProperty(ui.frame1, "imageState", normalFlag ? "complete" : "error");
+	setVisualProperty(ui.orginaImg, "imageState", normalFlag ? "complete" : "error");
+	ui.programConfirm->setEnabled(false);
+	ui.measureCancel->setEnabled(false);
+	ui.startAutoMearsurement->setEnabled(true);
+	ui.programNumber->setEnabled(true);
+	ui.ManualControl->setEnabled(true);
+	ui.allAxisGoHome->setEnabled(allDeviceOpenFlag);
+	ui.autoMoveAdjust->setEnabled(true);
+	showDeviceInf(message);
+	showProgramProcess(message, normalFlag ? 100 : 0);
+}
+
+void AxisMeasurement::updateGraphicalProgramStatistics(const GraphicalProgramRunResult& result)
+{
+	if (!result.ok) return;
+	const QString judgement = result.overallJudgement();
+	if (judgement != QStringLiteral("OK") && judgement != QStringLiteral("NG")) {
+		ui.ngFeatureNum->setText(QStringLiteral("--"));
+		ui.programMeasureNum->setText(QStringLiteral("--"));
+		ui.programYield->setText(QStringLiteral("--"));
+		ui.saveMeasureResult->setEnabled(false);
+		ui.clearMeasureResult->setEnabled(true);
+		return;
+	}
+
+	GraphicalProgramStatistics& statistics = m_graphicalProgramStatistics[currentProgram];
+	++statistics.measured;
+	++m_measurePartsNum_all;
+	if (judgement == QStringLiteral("OK")) {
+		++statistics.ok;
+		++m_okPartsNum_all;
+	}
+	else {
+		++statistics.ng;
+		++m_ngPartsNum_all;
+	}
+	const float currentYield = statistics.measured > 0
+		? 100.0f * statistics.ok / statistics.measured : 0.0f;
+	show_programStatistics(judgement, result.ngMeasurementCount(), statistics.measured, currentYield);
+	// The graphical persistence path is not connected yet; do not expose a no-op save command.
+	ui.saveMeasureResult->setEnabled(false);
+	show_Statistics();
+}
+
+void AxisMeasurement::appendGraphicalProgramResultRows(const QVector<GraphicalProgramMeasurementResult>& results)
+{
+	if (!resultTablePtr || results.isEmpty()) return;
+	const auto numberText = [](double value) {
+		return QString::number(value, 'f', 4);
+	};
+	for (const GraphicalProgramMeasurementResult& result : results) {
+		const int row = resultTablePtr->rowCount();
+		resultTablePtr->insertRow(row);
+		const double minLimit = result.nominal + result.lower;
+		const double maxLimit = result.nominal + result.upper;
+		const QString measuredText = result.error.isEmpty()
+			? QStringLiteral("%1 %2").arg(numberText(result.value), result.unit)
+			: result.error;
+		const QString minText = result.hasTolerance ? numberText(minLimit) : QStringLiteral("-");
+		const QString maxText = result.hasTolerance ? numberText(maxLimit) : QStringLiteral("-");
+		const QString nominalText = result.hasTolerance ? numberText(result.nominal) : QStringLiteral("-");
+		const QString lowerText = result.hasTolerance ? numberText(result.lower) : QStringLiteral("-");
+		const QString upperText = result.hasTolerance ? numberText(result.upper) : QStringLiteral("-");
+		const QStringList values = {
+			result.featureNumber,
+			result.type,
+			measuredText,
+			minText,
+			maxText,
+			result.judgement,
+			nominalText,
+			lowerText,
+			upperText
+		};
+		for (int column = 0; column < values.size(); ++column) {
+			auto* item = new QTableWidgetItem(values.at(column));
+			item->setTextAlignment(Qt::AlignCenter);
+			item->setToolTip(QStringLiteral("%1\n%2")
+				.arg(result.time.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+					result.error));
+			if (result.judgement == QStringLiteral("NG") || result.judgement == QStringLiteral("错误"))
+				item->setForeground(QBrush(QColor(180, 35, 24)));
+			else if (result.judgement == QStringLiteral("OK"))
+				item->setForeground(QBrush(QColor(25, 122, 54)));
+			resultTablePtr->setItem(row, column, item);
+		}
+	}
 }
 
 void AxisMeasurement::on_apexMoveDown_pressed()
@@ -2618,6 +2940,7 @@ void AxisMeasurement::on_zeroMeasureNum_clicked()
 	m_okPartsNum_all = 0;//检测的所有零件良品数
 	m_ngPartsNum_all = 0;//检测的所有零件NG数
 	m_yield_all = 0;//检测的所有零件合格率
+	m_graphicalProgramStatistics.clear();
 	show_Statistics();
 	m_program0_Ptr->zeroMeasureNub();
 	m_program1_Ptr->zeroMeasureNub();

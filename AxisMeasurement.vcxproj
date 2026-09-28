@@ -120,6 +120,7 @@
     <ClInclude Include="myCode\head\graphical_sensor_measurement.h" />
     <ClInclude Include="myCode\head\graphical_program_contract.h" />
     <ClInclude Include="myCode\head\graphical_program_registry.h" />
+    <ClInclude Include="myCode\head\graphical_program_runner.h" />
     <ClInclude Include="myCode\head\sharedFun.h" />
   </ItemGroup>
   <ItemGroup>
