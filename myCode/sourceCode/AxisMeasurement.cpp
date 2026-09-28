@@ -58,6 +58,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
+	ui.mainToolBar->hide(); // 空工具栏不承载功能，避免占用菜单栏下方空间
 	for (int index = 0; index < ui.programNumber->count(); ++index)
 		ui.programNumber->setItemData(index, index, Qt::UserRole);
 	QString graphicalProgramError;
@@ -3688,7 +3689,7 @@ void AxisMeasurement::restructureMainLayout()
 	QGridLayout* processGrid = new QGridLayout();
 	processGrid->setContentsMargins(0, 0, 0, 0);
 	processGrid->setSizeConstraint(QLayout::SetMinimumSize);
-	processGrid->setHorizontalSpacing(12);
+	processGrid->setHorizontalSpacing(16);
 	processGrid->setVerticalSpacing(0); // 通过固定控件高度控制行间距
 	processGrid->setRowMinimumHeight(0, 34);
 	processGrid->setRowMinimumHeight(1, 34);
@@ -3699,8 +3700,13 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_40->setMinimumWidth(112);
 	ui.label_31->setMinimumWidth(112);
 	ui.label_21->setMinimumWidth(112);
+	ui.label_40->setContentsMargins(12, 0, 0, 0);
+	ui.label_31->setContentsMargins(12, 0, 0, 0);
+	ui.label_21->setContentsMargins(12, 0, 0, 0);
 	ui.partNub->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.programProcess->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.partNub->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	ui.programProcess->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 	ui.programProcess->setFixedHeight(34);
 	ui.programProgressBar->setMinimumHeight(30);
 	ui.programProgressBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -3726,6 +3732,13 @@ void AxisMeasurement::restructureMainLayout()
 		if (QGridLayout* lightGrid = qobject_cast<QGridLayout*>(lightCurtainPanel->layout())) {
 			lightGrid->setColumnStretch(0, 0);
 			lightGrid->setColumnStretch(1, 1);
+			lightGrid->setHorizontalSpacing(16);
+			ui.label_36->setContentsMargins(12, 0, 0, 0);
+			ui.label_34->setContentsMargins(12, 0, 0, 0);
+			ui.label_28->setContentsMargins(12, 0, 0, 0);
+			ui.lsPosition->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+			ui.lsDiameter->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+			ui.lsCurrentValue->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 		}
 		lightCurtainCardLayout->addWidget(ui.label_32, 0, Qt::AlignHCenter);
 		lightCurtainCardLayout->addWidget(lightCurtainPanel);
@@ -3810,7 +3823,7 @@ void AxisMeasurement::restructureMainLayout()
 	ui.deviceInf->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	topDeviceLayout->addWidget(ui.deviceInf);
 	ui.autoDeviceControl->setMinimumSize(820, 92);
-	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.autoDeviceControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	QScrollArea* autoDeviceScroll = new QScrollArea(ui.autoMeasureUI);
 	autoDeviceScroll->setObjectName(QStringLiteral("autoDeviceControlScroll"));
 	autoDeviceScroll->setWidget(ui.autoDeviceControl);

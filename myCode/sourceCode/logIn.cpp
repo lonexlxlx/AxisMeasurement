@@ -1,6 +1,27 @@
 ﻿#include "logIn.h"
 
+#include <QAction>
 #include <QGraphicsDropShadowEffect>
+#include <QPainter>
+#include <QPixmap>
+
+namespace {
+QIcon passwordVisibilityIcon(bool passwordVisible)
+{
+	QPixmap pixmap(20, 20);
+	pixmap.fill(Qt::transparent);
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing, true);
+	painter.setPen(QPen(QColor(QStringLiteral("#475569")), 1.8, Qt::SolidLine, Qt::RoundCap));
+	painter.setBrush(Qt::NoBrush);
+	painter.drawEllipse(QRectF(3.0, 6.0, 14.0, 8.0));
+	painter.setBrush(QColor(QStringLiteral("#475569")));
+	painter.drawEllipse(QRectF(8.0, 8.0, 4.0, 4.0));
+	if (passwordVisible)
+		painter.drawLine(QPointF(3.0, 3.0), QPointF(17.0, 17.0));
+	return QIcon(pixmap);
+}
+}
 
 QString runtimePath(const QString& relativePath);
 //构造函数析构函数
@@ -20,6 +41,18 @@ logIn::logIn(QWidget* parent)
 	ui.card->setGraphicsEffect(shadow);
 	//右上角关闭按钮：未登录直接退出（主窗未显示，关闭登录窗即退出程序）
 	connect(ui.btnClose, &QPushButton::clicked, this, &logIn::close);
+
+	QAction* passwordVisibilityAction = ui.password->addAction(
+		passwordVisibilityIcon(false), QLineEdit::TrailingPosition);
+	passwordVisibilityAction->setCheckable(true);
+	passwordVisibilityAction->setToolTip(QStringLiteral("显示密码"));
+	connect(passwordVisibilityAction, &QAction::toggled, this,
+		[this, passwordVisibilityAction](bool passwordVisible) {
+			ui.password->setEchoMode(passwordVisible ? QLineEdit::Normal : QLineEdit::Password);
+			passwordVisibilityAction->setIcon(passwordVisibilityIcon(passwordVisible));
+			passwordVisibilityAction->setToolTip(
+				passwordVisible ? QStringLiteral("隐藏密码") : QStringLiteral("显示密码"));
+		});
 };
 logIn::~logIn()
 {
