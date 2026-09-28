@@ -8,6 +8,8 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCloseEvent>
+#include <QBrush>
+#include <QColor>
 #include <QIcon>
 #include <QKeySequence>
 #include <QLabel>
@@ -1154,6 +1156,7 @@ HoleTrialResult runHoleDiameterTrial(const QImage& source,
 #include <QTimer>
 #include <QDateTime>
 #include <QScrollArea>
+#include <QFrame>
 #include <QEvent>
 #include <QStandardPaths>
 #include <QUuid>
@@ -1937,7 +1940,9 @@ void GraphicalProgramEditor::buildInterface()
         button->setPopupMode(QToolButton::MenuButtonPopup);
     }
 
+    menuBar()->setObjectName(QStringLiteral("graphicalEditorMenuBar"));
     QMenu* offlineMenu = menuBar()->addMenu(QStringLiteral("离线调试"));
+    offlineMenu->setObjectName(QStringLiteral("graphicalOfflineMenu"));
     QAction* addFrameAction = offlineMenu->addAction(QStringLiteral("导入端点图…"));
     QAction* removeFrameAction = offlineMenu->addAction(QStringLiteral("移除当前端点图"));
     addFrameAction->setStatusTip(QStringLiteral("使用本地图像模拟另一个相机端点"));
@@ -2519,6 +2524,8 @@ void GraphicalProgramEditor::buildInterface()
     leftSplitter->setObjectName(QStringLiteral("graphicalAxisFeatureSplitter"));
     leftSplitter->setMinimumWidth(300);
     QScrollArea* axisScroll = new QScrollArea(leftSplitter);
+    axisScroll->setObjectName(QStringLiteral("graphicalAxisScroll"));
+    axisScroll->setFrameShape(QFrame::NoFrame);
     axisScroll->setWidgetResizable(true);
     axisScroll->setWidget(buildAxisPanel());
     leftSplitter->addWidget(axisScroll);
@@ -3183,6 +3190,17 @@ void GraphicalProgramEditor::refreshMeasurementRecords()//把 m_records 刷到�
         for (int column = 0; column < cells.size(); ++column) {
             QTableWidgetItem* cell = new QTableWidgetItem(cells[column]);
             cell->setToolTip(column == 11 ? record.trialStatus : cells[column]);
+            if (column == 9) { // 只为“判定”列着色，不推导或改变判定结果。
+                const QString status = cells[column].trimmed();
+                QColor statusColor("#64748B"); // 未判定/未知：灰色
+                if (status == QStringLiteral("合格"))
+                    statusColor = QColor("#166534"); // 合格：绿色
+                else if (status == QStringLiteral("不合格"))
+                    statusColor = QColor("#B91C1C"); // 不合格：红色
+                else if (status == QStringLiteral("判定异常"))
+                    statusColor = QColor("#B45309"); // 异常：橙色
+                cell->setForeground(QBrush(statusColor));
+            }
             m_stepTable->setItem(row, column, cell);
         }
     }

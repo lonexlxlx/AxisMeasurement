@@ -177,19 +177,33 @@ QSplitter::handle:pressed { background: #2563EB; }
 QWidget#graphicalProgramEditorPage {
     background: #F3F4F6;
 }
-QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard {
+/* 滚动区与轴控制卡片共用一块圆角白底；右侧滚动条预留区不再露出第二层背景。 */
+QMainWindow#graphicalProgramEditor QSplitter#graphicalAxisFeatureSplitter > QScrollArea {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
     border-radius: 6px;
-    margin-top: 12px;
-    padding: 8px 6px 6px 6px;
+    margin: 0px;
+    padding: 0px;
+}
+QMainWindow#graphicalProgramEditor QSplitter#graphicalAxisFeatureSplitter > QScrollArea > QWidget#qt_scrollarea_viewport {
+    background: #FFFFFF;
+    border: none;
+    margin: 0px;
+    padding: 0px;
+}
+QWidget#graphicalProgramEditorPage QGroupBox#graphicalAxisControlCard {
+    background: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    margin-top: 0px;
+    padding: 24px 6px 6px 6px;
 }
 QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup {
     background: #FFFFFF;
     border: 1px solid #E3E8EF;
     border-radius: 8px;
     margin-top: 0px;
-    padding: 28px 10px 8px 10px;
+    padding: 24px 10px 8px 10px;
 }
 QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup::title {
     subcontrol-origin: padding;
@@ -199,7 +213,7 @@ QWidget#graphicalProgramEditorPage QGroupBox#cameraGroup::title {
     padding: 0 6px;
     color: #2563EB;
     background: transparent;
-    font-size: 10pt;
+    font-size: 11pt;
     font-weight: 600;
 }
 QWidget#graphicalProgramEditorPage QLabel#cameraState {
@@ -838,6 +852,58 @@ QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::item:disabled {
     background: transparent;
 }
 QMainWindow#AxisMeasurementClass QMenu#measureModeSelect::separator {
+    height: 1px;
+    background: #E8EDF3;
+    margin: 4px 8px;
+}
+/* 图形化编辑器“离线调试”菜单与主窗口“模式”菜单保持同一视觉规格。 */
+QMainWindow#graphicalProgramEditor QMenuBar#graphicalEditorMenuBar {
+    color: #334155;
+    background: #FFFFFF;
+    border-bottom: 1px solid #E3E8EF;
+    padding: 2px 6px;
+}
+QMainWindow#graphicalProgramEditor QMenuBar#graphicalEditorMenuBar::item {
+    color: #334155;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QMainWindow#graphicalProgramEditor QMenuBar#graphicalEditorMenuBar::item:selected,
+QMainWindow#graphicalProgramEditor QMenuBar#graphicalEditorMenuBar::item:pressed {
+    color: #1D4ED8;
+    background: #EFF6FF;
+    border-color: #BFDBFE;
+}
+QMenu#graphicalOfflineMenu {
+    color: #334155;
+    background: #FFFFFF;
+    border: 1px solid #D7DEE8;
+    padding: 6px;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 10pt;
+}
+QMenu#graphicalOfflineMenu::item {
+    min-width: 180px;
+    min-height: 28px;
+    color: #334155;
+    background: transparent;
+    border-radius: 4px;
+    padding: 6px 18px;
+}
+QMenu#graphicalOfflineMenu::item:selected {
+    color: #1D4ED8;
+    background: #EFF6FF;
+}
+QMenu#graphicalOfflineMenu::item:disabled {
+    color: #A7AFBA;
+    background: transparent;
+}
+QMenu#graphicalOfflineMenu::separator {
     height: 1px;
     background: #E8EDF3;
     margin: 4px 8px;
@@ -1929,7 +1995,7 @@ QMainWindow#graphicalProgramEditor QGroupBox#cameraGroup QLabel {
 QMainWindow#graphicalProgramEditor QGroupBox {
     color: #2563EB;
     margin-top: 0px;
-    padding-top: 28px;
+    padding-top: 24px;
 }
 QMainWindow#graphicalProgramEditor QGroupBox::title {
     subcontrol-origin: padding;
@@ -1939,7 +2005,7 @@ QMainWindow#graphicalProgramEditor QGroupBox::title {
     padding: 0 8px;
     color: #2563EB;
     background: transparent;
-    font-size: 10pt;
+    font-size: 11pt;
     font-weight: 600;
 }
 
@@ -1951,8 +2017,8 @@ QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"] {
     border: 1px solid #D9E1EC;
     border-radius: 7px;
     margin-top: 0px;
-    padding: 28px 8px 8px 8px;
-    font-size: 10pt;
+    padding: 24px 8px 8px 8px;
+    font-size: 11pt;
     font-weight: 600;
 }
 QMainWindow#graphicalProgramEditor QGroupBox[title="测量流程"]::title {

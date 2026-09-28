@@ -73,9 +73,6 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	m_graphicalProgramEditor = new GraphicalProgramEditor(this);
 	m_graphicalProgramEditor->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
 	m_graphicalProgramEditor->setAttribute(Qt::WA_DeleteOnClose, false);
-	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
-		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
-	});
 	m_graphicalProgramEditor->setCameraBackend(
 		[this](int camera) {
 			GraphicalProgramEditor::CameraSnapshot state;
@@ -981,6 +978,10 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	goHomeThread_Ptr = new axisGoHome_thread(moveControlCardPtr);
 	connect(goHomeThread_Ptr, SIGNAL(GoHomeProgress(QString)), this, SLOT(showDeviceInf(QString)));
 	connect(goHomeThread_Ptr, SIGNAL(goHomeFinished(int, bool)), this, SLOT(goHomeThreadFinish(int, bool)));
+	// 轴后端捕获控制卡指针；必须等控制卡及回零线程创建完毕再绑定。
+	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
+		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
+	});
 	//connect(goHomeThread_Ptr, &QThread::finished, m_program0_Ptr, &QThread::deleteLater);//线程删除测试
 
 	//连接菜单信号槽函数

@@ -125,9 +125,6 @@
     <QtMoc Include="myCode\head\program_19.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </QtMoc>
-    <QtMoc Include="myCode\head\sdk_assist.h">
-      <Filter>Form Files\Header Files\myCode</Filter>
-    </QtMoc>
     <QtMoc Include="myCode\head\graphical_canvas.h">
       <Filter>Form Files\Header Files\myCode</Filter>
     </QtMoc>
@@ -456,9 +453,6 @@
     <ClCompile Include="myCode\sourceCode\program_19.cpp">
       <Filter>Source Files\myCode</Filter>
     </ClCompile>
-    <ClCompile Include="myCode\sourceCode\sdk_assist.cpp">
-      <Filter>Source Files\myCode</Filter>
-    </ClCompile>
     <ClCompile Include="myCode\sourceCode\graphical_canvas.cpp">
       <Filter>Source Files\myCode</Filter>
     </ClCompile>
@@ -577,9 +571,6 @@
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="logIn.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtUic Include="sdk_assist.ui">
       <Filter>Form Files</Filter>
     </QtUic>
   </ItemGroup>
