@@ -3687,8 +3687,13 @@ void AxisMeasurement::restructureMainLayout()
 
 	QGridLayout* processGrid = new QGridLayout();
 	processGrid->setContentsMargins(0, 0, 0, 0);
+	processGrid->setSizeConstraint(QLayout::SetMinimumSize);
 	processGrid->setHorizontalSpacing(12);
-	processGrid->setVerticalSpacing(14);
+	processGrid->setVerticalSpacing(0); // 通过固定控件高度控制行间距
+	processGrid->setRowMinimumHeight(0, 34);
+	processGrid->setRowMinimumHeight(1, 34);
+	processGrid->setRowMinimumHeight(2, 34);
+	processGrid->setRowMinimumHeight(3, 30);
 	processGrid->setColumnStretch(0, 0);
 	processGrid->setColumnStretch(1, 1);
 	ui.label_40->setMinimumWidth(112);
@@ -3696,6 +3701,8 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_21->setMinimumWidth(112);
 	ui.partNub->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.programProcess->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.programProcess->setFixedHeight(34);
+	ui.programProgressBar->setMinimumHeight(30);
 	ui.programProgressBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	processGrid->addWidget(ui.label_40, 0, 0);
 	processGrid->addWidget(ui.partNub, 0, 1);
@@ -3708,6 +3715,7 @@ void AxisMeasurement::restructureMainLayout()
 	processCardLayout->setSpacing(3);//程序测量进程与后文的距离
 	processCardLayout->addWidget(ui.label_39, 0, Qt::AlignHCenter);
 	processCardLayout->addLayout(processGrid);
+	processCardLayout->setAlignment(processGrid, Qt::AlignTop);
 
 	QWidget* lightCurtainPanel = ui.lsCurrentValue->parentWidget();
 	if (lightCurtainPanel) {

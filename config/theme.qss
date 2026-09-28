@@ -1213,6 +1213,8 @@ QMainWindow#AxisMeasurementClass QLabel#rightCardTitle[textRole="moduleTitle"] {
     font-weight: 600;
 }
 QMainWindow#AxisMeasurementClass QGroupBox#leftProcessCard QLabel#programProcess {
+    min-height: 34px;
+    max-height: 34px;
     color: #64748B;
     font-weight: 600;
 }
@@ -1226,8 +1228,8 @@ QMainWindow#AxisMeasurementClass QGroupBox#leftProcessCard QLabel#programProcess
     color: #B91C1C;
 }
 QMainWindow#AxisMeasurementClass QGroupBox#leftProcessCard QProgressBar {
-    min-height: 18px;
-    max-height: 18px;
+    min-height: 30px;
+    max-height: 30px;
     color: #334155;
     background: #E9EEF5;
     border: none;
