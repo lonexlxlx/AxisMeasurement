@@ -1,6 +1,7 @@
 #include "AxisMeasurement.h"
 #include <QAbstractItemView>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QEvent>
 #include <QLabel>
 #include <QPainter>
@@ -372,9 +373,6 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		refreshGraphicalProgramList(refreshError);
 		if (!refreshError.isEmpty()) showDeviceInf(refreshError);
 	});
-	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
-		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
-	});
 	m_graphicalProgramEditor->setCameraBackend(
 		[this](int camera) {
 			GraphicalProgramEditor::CameraSnapshot state;
@@ -413,6 +411,11 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 				return result;
 			}
 			if (command == GraphicalProgramEditor::CameraCommand::StartCapture) {
+				const QString axisConflict = activeAxisConflict();
+				if (!axisConflict.isEmpty()) {
+					result.error = axisConflict;
+					return result;
+				}
 				for (int index = 0; index < 3; ++index) {
 					if (camCaptureFlag[index]) {
 						result.error = QStringLiteral("相机%1正在采集；请先停止。").arg(index);
@@ -426,12 +429,22 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 				device->setExposeTime(exposure);
 				device->m_captureMode = QStringLiteral("continuous");
 				device->startCapture();
+				if (!device->lastCaptureStartSucceeded()) {
+					result.error = QStringLiteral("相机%1连续采集启动失败。").arg(camera);
+					return result;
+				}
 				thread->start();
 				camCaptureFlag[camera] = true;
 				return result;
 			}
 			if (command == GraphicalProgramEditor::CameraCommand::StopCapture) {
-				if (camCaptureFlag[camera]) device->stopCapture();
+				if (camCaptureFlag[camera]) {
+					device->stopCapture();
+					if (!device->lastCaptureStopSucceeded()) {
+						result.error = QStringLiteral("相机%1连续采集停止失败。").arg(camera);
+						return result;
+					}
+				}
 				thread->requestInterruption();
 				if (thread->isRunning() && !thread->wait(1500)) {
 					result.error = QStringLiteral("相机%1显示线程未能及时停止。").arg(camera);
@@ -1284,6 +1297,32 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	attachGraphicalAxisBackend(m_graphicalProgramEditor, moveControlCardPtr, [this]() {
 		return allDeviceOpenFlag && !programRunFlag && !goHomeThread_Ptr->isRunning();
 	});
+	m_graphicalProgramEditor->setLightCurtainBackend([this]() {
+		GraphicalProgramEditor::LightCurtainSnapshot state;
+		state.connected = lsSensorPtr && lsSensorPtr->lsOpenflag;
+		state.available = state.connected && m_lsThread && m_lsThread->isRunning()
+			&& !programRunFlag && !goHomeThread_Ptr->isRunning();
+		if (!state.connected) {
+			state.message = QStringLiteral("光幕未连接；请先在主窗口打开全部设备。");
+			return state;
+		}
+		if (!state.available) {
+			state.message = QStringLiteral("光幕当前不可读取或正被自动流程占用。");
+			return state;
+		}
+		float rawOut1 = 0;
+		qint64 sampledAtMs = 0;
+		state.hasSample = m_lsThread->latestResult(0, rawOut1, sampledAtMs);
+		state.rawOut1 = rawOut1;
+		state.sampledAtMs = sampledAtMs;
+		if (state.hasSample) {
+			state.compensatedDiameter = diameter_compensation(rawOut1);
+			state.message = QStringLiteral("光幕已连接，实时缓存有效。");
+		} else {
+			state.message = QStringLiteral("光幕已连接，正在等待有效采样。");
+		}
+		return state;
+	});
 	//connect(goHomeThread_Ptr, &QThread::finished, m_program0_Ptr, &QThread::deleteLater);//线程删除测试
 
 	//连接菜单信号槽函数
@@ -1317,14 +1356,26 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 
 AxisMeasurement::~AxisMeasurement()
 {
-	for (int i = 0; i < 3; i++)
-	{
-		cameraPtrList[i]->unInit();
-	};
+	if (m_graphicalProgramEditor) {
+		m_graphicalProgramEditor->setAxisBackend({}, {});
+		m_graphicalProgramEditor->setCameraBackend({}, {});
+		m_graphicalProgramEditor->setLightCurtainBackend({});
+	}
+	QString ignored;
+	stopHardwareMonitorThreads(ignored);
+	for (int index = 0; index < 3; ++index) {
+		if (camCaptureFlag[index]) cameraPtrList[index]->stopCapture();
+		cameraPtrList[index]->closeCam();
+		delete m_camThread_ptrList[index];
+		m_camThread_ptrList[index] = nullptr;
+	}
+	for (int index = 0; index < 8; ++index) {
+		delete moveThreadList[index];
+		moveThreadList[index] = nullptr;
+	}
+	delete m_lsThread;
+	m_lsThread = nullptr;
 	delete m_logIn;
-	//delete cameraPtrList;
-	delete moveControlCardPtr;
-	delete lsSensorPtr;
 	delete m_program0_Ptr;
 	delete m_program1_Ptr;
 	delete m_program2_Ptr;
@@ -1337,28 +1388,60 @@ AxisMeasurement::~AxisMeasurement()
 	delete m_program9_Ptr;
 	delete m_program10_Ptr;
 	delete goHomeThread_Ptr;
-	//delete moveThreadList;
-	//delete m_camThread_ptrList;// cameraPtrList、moveThreadList 和 m_camThread_ptrList 是固定成员数组，不能直接 delete。
-	//delete originalImgPtr;
-	delete m_lsThread;
+	delete moveControlCardPtr;
+	delete lsSensorPtr;
+	cameraPtrList[0]->unInit();
 };
+
+void AxisMeasurement::closeEvent(QCloseEvent* event)
+{
+	if (programRunFlag || (goHomeThread_Ptr && goHomeThread_Ptr->isRunning())) {
+		showTips(QStringLiteral("测量或回原点仍在运行，请先取消或急停并确认停止。"));
+		event->ignore();
+		return;
+	}
+	if (m_graphicalProgramEditor && m_graphicalProgramEditor->isVisible()) {
+		showTips(QStringLiteral("请先关闭图形化编程窗口。"));
+		event->ignore();
+		return;
+	}
+	if (allDeviceOpenFlag || (moveControlCardPtr && moveControlCardPtr->openControllerFlag)
+		|| (lsSensorPtr && lsSensorPtr->lsOpenflag)) {
+		showTips(QStringLiteral("请先点击“关闭全部设备”，确认硬件安全断开后再退出软件。"));
+		event->ignore();
+		return;
+	}
+	for (int index = 0; index < 3; ++index) {
+		if (cameraPtrList[index] && cameraPtrList[index]->isOpenCam) {
+			showTips(QStringLiteral("仍有相机未关闭，请先关闭全部设备。"));
+			event->ignore();
+			return;
+		}
+	}
+	QMainWindow::closeEvent(event);
+}
 
 /// 菜单控制槽函数
 
 void AxisMeasurement::on_autoMeasureMode_Triggered()
 {
 	cout << "设置为自动模式" << endl;
-	currentMeasureMode = "AutoMeasureMode";
 	if (camCaptureFlag[0] || camCaptureFlag[1] || camCaptureFlag[2])
 	{
 		showTips("有相机仍在采集中，请停止采集后重新尝试！");
 		return;
 	};
-	ui.uiWidget->setCurrentIndex(0);
 	//关闭轴以及其更新线程
-	moveThreadList[currentAxisIndex]->requestInterruption();
-	moveThreadList[currentAxisIndex]->quit();
-	moveThreadList[currentAxisIndex]->exit();
+	moveThread* thread = moveThreadList[currentAxisIndex];
+	if (thread && thread->isRunning()) {
+		thread->requestInterruption();
+		if (!thread->wait(1500)) {
+			showTips(QStringLiteral("轴监控线程未能停止，暂不能切换到自动模式。"));
+			return;
+		}
+	}
+	currentMeasureMode = "AutoMeasureMode";
+	ui.uiWidget->setCurrentIndex(0);
 	ui.startAutoMearsurement->setEnabled(false);
 	ui.measureCancel->setEnabled(false);
 	ui.programConfirm->setEnabled(false);
@@ -1385,6 +1468,11 @@ void AxisMeasurement::on_ManualControl_Triggered()
 		statusBar()->showMessage(QStringLiteral("临时界面预览：可切换Jog/点位模式并查看对应页签；硬件动作与参数修改禁用，待反馈后恢复入口限制。"));
 		return;
 	}
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) {
+		showTips(conflict);
+		return;
+	}
 	if (allDeviceOpenFlag && !programRunFlag)
 	{
 		cout << "手动控制模式" << endl;
@@ -1402,9 +1490,33 @@ void AxisMeasurement::on_ManualControl_Triggered()
 };
 void AxisMeasurement::on_graphicalProgramEditor_Triggered()
 {
-	currentMeasureMode = "GraphicalProgramEditor";
 	if (!m_graphicalProgramEditor)
 		return;
+	if (programRunFlag || (goHomeThread_Ptr && goHomeThread_Ptr->isRunning())) {
+		showTips(QStringLiteral("自动测量或回原点正在运行，暂不能打开图形化编程。"));
+		return;
+	}
+	const QString cameraConflict = activeCameraConflict();
+	if (!cameraConflict.isEmpty()) {
+		showTips(cameraConflict + QStringLiteral(" 请先停止采集。"));
+		return;
+	}
+	const QString axisConflict = activeAxisConflict();
+	if (!axisConflict.isEmpty()) {
+		showTips(axisConflict + QStringLiteral(" 请先停止运动。"));
+		return;
+	}
+	for (int index = 0; index < 8; ++index) {
+		moveThread* thread = moveThreadList[index];
+		if (!thread || !thread->isRunning()) continue;
+		thread->requestInterruption();
+		if (!thread->wait(1500)) {
+			showTips(QStringLiteral("轴%1监控线程未能停止，暂不能打开图形化编程。")
+				.arg(index + 1));
+			return;
+		}
+	}
+	currentMeasureMode = "GraphicalProgramEditor";
 	m_graphicalProgramEditor->show();
 	m_graphicalProgramEditor->raise();
 	m_graphicalProgramEditor->activateWindow();
@@ -1449,6 +1561,11 @@ float  AxisMeasurement::axis1And2_caculation(long int encodePos)
 
 void AxisMeasurement::on_openAllDevice_clicked()
 {
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) {
+		showTips(conflict);
+		return;
+	}
 	allDeviceOpenFlag = false;
 	showDeviceInf("正在打开设备，请勿进行其他操作！");
 	
@@ -1473,7 +1590,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	};
 	cameraPtrList[2]->openCam();
 	cameraPtrList[2]->setExposeTime(300);
-	if (!cameraPtrList[1]->isOpenCam)
+	if (!cameraPtrList[2]->isOpenCam)
 	{
 		showTips("粗糙度相机打开失败，请检查！");
 	};
@@ -1602,7 +1719,33 @@ void AxisMeasurement::on_openAllDevice_clicked()
 };
 void AxisMeasurement::on_closeAllDevice_clicked()
 {
-	//cout << "on_closeAllDevice_clicked" << endl;
+	if (programRunFlag) {
+		showTips(QStringLiteral("自动测量正在运行，请先取消或急停并确认设备停止。"));
+		return;
+	}
+	if (goHomeThread_Ptr && goHomeThread_Ptr->isRunning()) {
+		showTips(QStringLiteral("回原点正在运行，不能关闭设备。"));
+		return;
+	}
+	if (m_graphicalProgramEditor && m_graphicalProgramEditor->isVisible()) {
+		showTips(QStringLiteral("请先关闭图形化编程窗口，确认其轴和相机操作已经停止。"));
+		return;
+	}
+	const QString cameraConflict = activeCameraConflict(false);
+	if (!cameraConflict.isEmpty()) {
+		showTips(cameraConflict + QStringLiteral(" 请先停止采集。"));
+		return;
+	}
+	const QString axisConflict = activeAxisConflict();
+	if (!axisConflict.isEmpty()) {
+		showTips(axisConflict + QStringLiteral(" 请先停止运动。"));
+		return;
+	}
+	QString stopError;
+	if (!stopHardwareMonitorThreads(stopError)) {
+		showTips(stopError);
+		return;
+	}
 
 	closeDatabase();
 
@@ -1612,9 +1755,6 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 	};
 	moveControlCardPtr->closeAxisController();
 	lsSensorPtr->closeLs();
-	m_lsThread->requestInterruption();
-	m_lsThread->quit();
-	m_lsThread->exit();
 	cout << "相机：" << cameraPtrList[0]->isOpenCam << cameraPtrList[1]->isOpenCam << cameraPtrList[2]->isOpenCam << " 运动控制卡：" << moveControlCardPtr->openControllerFlag << "光幕" << lsSensorPtr->lsOpenflag << endl;
 
 	if (!cameraPtrList[0]->isOpenCam && !cameraPtrList[1]->isOpenCam && !cameraPtrList[2]->isOpenCam && !moveControlCardPtr->openControllerFlag && !lsSensorPtr->lsOpenflag && !DbOpenFlag)
@@ -1839,6 +1979,11 @@ void AxisMeasurement::on_startAutoMearsurement_clicked()
 {
 	//cout << "on_startAutoMearsurement_clicked()" << endl;
 	programRunFlag = false;
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) {
+		showTips(conflict);
+		return;
+	}
 	
 	
 	ui.startAutoMearsurement->setEnabled(false);
@@ -2271,6 +2416,11 @@ void AxisMeasurement::on_urgrentStopMearsure_clicked()
 };
 void AxisMeasurement::on_allAxisGoHome_clicked()//一键回原点槽函数
 {
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) {
+		showTips(conflict);
+		return;
+	}
 	ui.startAutoMearsurement->setEnabled(false);
 	ui.autoMoveAdjust->setEnabled(true);
 	ui.allAxisGoHome->setEnabled(false);
@@ -2617,11 +2767,84 @@ void AxisMeasurement::on_measureCancel_clicked()//检测取消槽函数
 };
 bool AxisMeasurement::motionControlReady() const
 {
-	if (moveControlCardPtr && moveControlCardPtr->openControllerFlag && allDeviceOpenFlag && !programRunFlag)
+	const QString conflict = mainHardwareConflict();
+	if (conflict.isEmpty() && moveControlCardPtr && moveControlCardPtr->openControllerFlag
+		&& allDeviceOpenFlag)
 		return true;
 
-	const_cast<AxisMeasurement*>(this)->showDeviceInf(QStringLiteral("运动控制不可用，请先打开全部设备并确认当前未在测量！"));
+	const_cast<AxisMeasurement*>(this)->showDeviceInf(conflict.isEmpty()
+		? QStringLiteral("运动控制不可用，请先打开全部设备！") : conflict);
 	return false;
+}
+
+QString AxisMeasurement::activeAxisConflict() const
+{
+	if (!moveControlCardPtr || !moveControlCardPtr->openControllerFlag) return QString();
+	for (const int axis : { 1, 2, 5, 6, 7 }) {
+		long status = 0;
+		const short result = GTN_GetSts(moveControlCardPtr->axisCore[axis - 1], axis, &status);
+		if (result)
+			return QStringLiteral("无法确认轴%1是否停止（SDK %2），已拒绝新的硬件操作。")
+				.arg(axis).arg(result);
+		if (status & 0x400)
+			return QStringLiteral("轴%1正在运动，已拒绝新的硬件操作。").arg(axis);
+	}
+	return QString();
+}
+
+QString AxisMeasurement::activeCameraConflict(bool includeDisplayThreads) const
+{
+	for (int index = 0; index < 3; ++index) {
+		if (camCaptureFlag[index])
+			return QStringLiteral("相机%1正在采集，已拒绝新的硬件操作。").arg(index);
+		if (includeDisplayThreads && m_camThread_ptrList[index]
+			&& m_camThread_ptrList[index]->isRunning())
+			return QStringLiteral("相机%1显示线程尚未停止，已拒绝新的硬件操作。").arg(index);
+	}
+	return QString();
+}
+
+QString AxisMeasurement::mainHardwareConflict(bool includeDisplayThreads) const
+{
+	if (programRunFlag) return QStringLiteral("自动测量正在运行，已拒绝其他硬件操作。");
+	if (goHomeThread_Ptr && goHomeThread_Ptr->isRunning())
+		return QStringLiteral("回原点正在运行，已拒绝其他硬件操作。");
+	if (m_graphicalProgramEditor && m_graphicalProgramEditor->isVisible())
+		return QStringLiteral("图形化编程窗口已打开；请先关闭该窗口，再从主界面操作硬件。");
+	const QString cameraConflict = activeCameraConflict(includeDisplayThreads);
+	if (!cameraConflict.isEmpty()) return cameraConflict;
+	return activeAxisConflict();
+}
+
+bool AxisMeasurement::stopHardwareMonitorThreads(QString& error)
+{
+	error.clear();
+	for (int index = 0; index < 3; ++index) {
+		camThread* thread = m_camThread_ptrList[index];
+		if (!thread || !thread->isRunning()) continue;
+		thread->requestInterruption();
+		if (!thread->wait(1500)) {
+			error = QStringLiteral("相机%1显示线程未能停止，设备保持连接。 ").arg(index);
+			return false;
+		}
+	}
+	for (int index = 0; index < 8; ++index) {
+		moveThread* thread = moveThreadList[index];
+		if (!thread || !thread->isRunning()) continue;
+		thread->requestInterruption();
+		if (!thread->wait(1500)) {
+			error = QStringLiteral("轴%1监控线程未能停止，设备保持连接。").arg(index + 1);
+			return false;
+		}
+	}
+	if (m_lsThread && m_lsThread->isRunning()) {
+		m_lsThread->requestInterruption();
+		if (!m_lsThread->wait(1500)) {
+			error = QStringLiteral("光幕监控线程未能停止，设备保持连接。");
+			return false;
+		}
+	}
+	return true;
 }
 
 bool AxisMeasurement::isGraphicalProgramNumber(int programNumber) const
@@ -3531,6 +3754,7 @@ void AxisMeasurement::show_Statistics()
 
 void AxisMeasurement::on_clearStatus_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "on_clearStatus_clicked()" << endl;
 	moveControlCardPtr->clearStatus();
 
@@ -3543,6 +3767,7 @@ void AxisMeasurement::on_jogMode_clicked()
 		ui.trapControl->setEnabled(false);
 		return;
 	}
+	if (!motionControlReady()) return;
 	moveControlCardPtr->setMoveMode("Jog");
 	ui.jogControl->setEnabled(true);
 	ui.trapControl->setEnabled(false);
@@ -3550,6 +3775,7 @@ void AxisMeasurement::on_jogMode_clicked()
 };
 void AxisMeasurement::on_moveEnable_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "on_moveEnable_clicked" << endl;
 	moveControlCardPtr->moveEnable();
 };
@@ -3573,17 +3799,20 @@ void AxisMeasurement::on_trapMode_clicked()
 		ui.trapControl->setEnabled(true);
 		return;
 	}
+	if (!motionControlReady()) return;
 	moveControlCardPtr->setMoveMode("Trap");
 	ui.jogControl->setEnabled(false);
 	ui.trapControl->setEnabled(true);
 };
 void AxisMeasurement::on_zeroPosition_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "zeroPosition" << endl;
 	moveControlCardPtr->zeroPosition();
 };
 void AxisMeasurement::on_jogBackwardMove_pressed()
 {
+	if (!motionControlReady()) return;
 	cout << "on_jogBackwardMove_pressed" << endl;
 	moveControlCardPtr->startJogMove("backward");
 };
@@ -3594,6 +3823,7 @@ void AxisMeasurement::on_jogBackwardMove_released()
 };
 void AxisMeasurement::on_jogForwardwardMove_pressed()
 {
+	if (!motionControlReady()) return;
 	cout << "on_jogForwardwardMove_pressed" << endl;
 	moveControlCardPtr->startJogMove("forward");
 };
@@ -3604,18 +3834,21 @@ void AxisMeasurement::on_jogForwardwardMove_released()
 };
 void AxisMeasurement::on_startTrap_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "startTrap" << endl;
 	moveControlCardPtr->setTrapPrm(moveControlCardPtr->axisCore[moveControlCardPtr->currentAxisIndex], moveControlCardPtr->currentAxisNumber, moveControlCardPtr->trapManual[moveControlCardPtr->currentAxisIndex], moveControlCardPtr->trapStepLengthManual[moveControlCardPtr->currentAxisIndex], moveControlCardPtr->trapVelManual[moveControlCardPtr->currentAxisIndex]);
 	moveControlCardPtr->startTrap();
 };
 void AxisMeasurement::on_goHome_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "goHome" << moveControlCardPtr->currentAxisNumber << endl;
 	goHomeThread_Ptr->setGoHomeAxis(moveControlCardPtr->currentAxisNumber);
 	goHomeThread_Ptr->start();
 };
 void AxisMeasurement::on_moveUnable_clicked()
 {
+	if (!motionControlReady()) return;
 	cout << "moveUnable" << endl;
 	moveControlCardPtr->moveUnable();
 };
@@ -3679,9 +3912,14 @@ void AxisMeasurement::on_axisNumber_currentIndexChanged(int nIndex)
 	cout << "axisNumber_currentIndexChanged" << nIndex << endl;
 
 	lastAxisIndex = currentAxisIndex;
-	moveThreadList[lastAxisIndex]->requestInterruption();
-	moveThreadList[lastAxisIndex]->quit();
-	moveThreadList[lastAxisIndex]->exit();
+	moveThread* previousThread = moveThreadList[lastAxisIndex];
+	if (previousThread && previousThread->isRunning()) {
+		previousThread->requestInterruption();
+		if (!previousThread->wait(1500)) {
+			showTips(QStringLiteral("原轴监控线程未能停止，已取消轴切换。"));
+			return;
+		}
+	}
 	switch (nIndex)
 	{
 	case 0:
@@ -3837,9 +4075,18 @@ void AxisMeasurement::on_saveImg_clicked()
 };
 void AxisMeasurement::on_startCamCapture_clicked()
 {
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) {
+		showTips(conflict);
+		return;
+	}
 	cout << "开始采集的是相机" << currentCamNum << endl;
 	cameraPtrList[currentCamNum]->m_captureMode = "continuous";
 	cameraPtrList[currentCamNum]->startCapture();
+	if (!cameraPtrList[currentCamNum]->lastCaptureStartSucceeded()) {
+		showTips(QStringLiteral("相机%1连续采集启动失败。").arg(currentCamNum));
+		return;
+	}
 	m_camThread_ptrList[currentCamNum]->start();
 	ui.stopCamCapture->setEnabled(true);
 	ui.startCamCapture->setEnabled(false);
@@ -3851,9 +4098,16 @@ void AxisMeasurement::on_stopCamCapture_clicked()
 {
 	cout << "结束采集相机" << currentCamNum << endl;
 	cameraPtrList[currentCamNum]->stopCapture();
+	if (!cameraPtrList[currentCamNum]->lastCaptureStopSucceeded()) {
+		showTips(QStringLiteral("相机%1连续采集停止失败；设备仍按占用状态处理。").arg(currentCamNum));
+		return;
+	}
 	m_camThread_ptrList[currentCamNum]->requestInterruption();
-	m_camThread_ptrList[currentCamNum]->quit();
-	m_camThread_ptrList[currentCamNum]->exit();
+	if (m_camThread_ptrList[currentCamNum]->isRunning()
+		&& !m_camThread_ptrList[currentCamNum]->wait(1500)) {
+		showTips(QStringLiteral("相机%1显示线程未能及时停止。").arg(currentCamNum));
+		return;
+	}
 	ui.startCamCapture->setEnabled(true);
 	ui.stopCamCapture->setEnabled(false);
 	ui.saveImg->setEnabled(true);
@@ -3862,13 +4116,17 @@ void AxisMeasurement::on_stopCamCapture_clicked()
 };
 void AxisMeasurement::on_exposeTime_editingFinished()
 {
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) { showDeviceInf(conflict); return; }
 	int newExposeTime = ui.exposeTime->text().toInt();
 	cout << "  曝光时间设置：相机 " << currentCamNum << "  曝光时间  " << newExposeTime << endl;
 	cameraPtrList[currentCamNum]->setExposeTime(newExposeTime);
 };
 void AxisMeasurement::on_gain_editingFinished()
 {
-	double newGain = ui.exposeTime->text().toDouble();
+	const QString conflict = mainHardwareConflict();
+	if (!conflict.isEmpty()) { showDeviceInf(conflict); return; }
+	double newGain = ui.gain->text().toDouble();
 	cout << "增益设置：相机" << currentCamNum << "增益" << newGain << endl;
 	cameraPtrList[currentCamNum]->setGain(newGain);
 };

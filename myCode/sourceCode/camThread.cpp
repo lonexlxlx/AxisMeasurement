@@ -11,15 +11,8 @@ camThread::camThread(cam_device* camera, Mat* image, int index)
 };
 camThread::~camThread()
 {
-	terminate();
-	if (cameraPtr != NULL)
-	{
-		delete cameraPtr;
-	}
-	if (imgPtr != NULL)
-	{
-		delete imgPtr;
-	}
+	requestInterruption();
+	wait();
 };
 void camThread::camThread::run()
 {

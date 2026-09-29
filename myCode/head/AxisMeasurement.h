@@ -114,6 +114,9 @@ class AxisMeasurement : public QMainWindow
 public:
     AxisMeasurement(QWidget *parent = nullptr);
     ~AxisMeasurement();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
  
 private:
     Ui::AxisMeasurementClass ui;
@@ -136,6 +139,10 @@ private:
     void enableStartupMotionControls();
 
     bool motionControlReady() const;
+    QString activeAxisConflict() const;
+    QString activeCameraConflict(bool includeDisplayThreads = true) const;
+    QString mainHardwareConflict(bool includeDisplayThreads = true) const;
+    bool stopHardwareMonitorThreads(QString& error);
     bool isGraphicalProgramNumber(int programNumber) const;
     bool refreshGraphicalProgramList(QString& error);
     void startGraphicalProgramMeasurement();

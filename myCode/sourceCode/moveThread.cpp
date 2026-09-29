@@ -8,7 +8,8 @@ moveThread::moveThread(short index, moveControl* devicePtr)
 };
 moveThread::~moveThread()
 {
-	terminate();
+	requestInterruption();
+	wait();
 };
 void moveThread::run()
 {

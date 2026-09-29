@@ -10,11 +10,8 @@ lsThread::lsThread(ls_device* lsDevice)
 
 lsThread::~lsThread()
 {
-	terminate();
-	if (lsPtr != NULL)
-	{
-		delete lsPtr;
-	};
+	requestInterruption();
+	wait();
 };
 void lsThread::run()
 {
