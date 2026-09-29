@@ -21,6 +21,8 @@ public:
 
 	void run();
 	bool latestResult(int outputIndex, float& value, qint64& sampledAtMs) const;
+	bool latestRoundoutResult(float& out1, float& out2, float& out3,
+		qint64& sampledAtMs) const;
 	int sleepTime;//循环时间
 	float currentResult[4];
 

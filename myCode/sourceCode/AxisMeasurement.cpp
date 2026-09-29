@@ -141,6 +141,196 @@ bool stopGraphicalProgramAxes(moveControl* card)
 		if (GTN_Stop(core, 0xffff, 0xffff) != 0) stopped = false;
 	return stopped;
 }
+
+bool readFreshLightCurtainOut1(lsThread* thread, qint64& previousTimestamp,
+	const std::function<bool()>& cancelRequested, double& value, QString& error,
+	int timeoutMs = 2500)
+{
+	error.clear();
+	if (!thread || !thread->isRunning() || timeoutMs <= 0) {
+		error = QStringLiteral("光幕缓存线程未运行。");
+		return false;
+	}
+	QElapsedTimer timer;
+	timer.start();
+	while (timer.elapsed() <= timeoutMs) {
+		if (cancelRequested && cancelRequested()) {
+			error = QStringLiteral("光幕OUT1采集已取消。");
+			return false;
+		}
+		float current = 0;
+		qint64 sampledAt = 0;
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		if (thread->latestResult(0, current, sampledAt)
+			&& sampledAt > previousTimestamp && now >= sampledAt
+			&& now - sampledAt <= 3000 && std::isfinite(current) && current > 0) {
+			previousTimestamp = sampledAt;
+			value = current;
+			return true;
+		}
+		graphicalProgramDelay(20, cancelRequested);
+	}
+	error = QStringLiteral("等待光幕OUT1新样本超时或缓存已过期。");
+	return false;
+}
+
+bool captureRotationalDiameterSamples(moveControl* card, lsThread* thread,
+	const std::function<bool()>& cancelRequested, QVector<double>& samples, QString& error)
+{
+	samples.clear();
+	error.clear();
+	if (!card || !card->openControllerFlag || !thread || !thread->isRunning()) {
+		error = QStringLiteral("转台或光幕缓存未就绪。");
+		return false;
+	}
+	GraphicalAxisRuntimeCallbacks callbacks = makeGraphicalAxisRuntimeCallbacks(card, cancelRequested);
+	callbacks.delay = [cancelRequested](int milliseconds) {
+		graphicalProgramDelay(milliseconds, cancelRequested);
+	};
+	const GraphicalAxisRuntimeState start = callbacks.readStartState(7);
+	constexpr qint64 fullRevolutionPulses = 360 * 500;
+	if (!start.valid || !std::isfinite(start.position)
+		|| start.position < double(std::numeric_limits<qint64>::min() + fullRevolutionPulses)
+		|| start.position > double(std::numeric_limits<qint64>::max() - fullRevolutionPulses)) {
+		error = start.error.isEmpty() ? QStringLiteral("无法读取转台起始位置。") : start.error;
+		return false;
+	}
+	const qint64 target = qRound64(start.position) + fullRevolutionPulses;
+	qint64 previousTimestamp = -1;
+	float baselineValue = 0;
+	thread->latestResult(0, baselineValue, previousTimestamp);
+	const GraphicalSensorMotionResult motion =
+		GraphicalSensorMeasurement::executeAxisMotionWithSampling(7, target, callbacks,
+			[&](QString&) {
+				float raw = 0;
+				qint64 sampledAt = 0;
+				const qint64 now = QDateTime::currentMSecsSinceEpoch();
+				if (thread->latestResult(0, raw, sampledAt) && sampledAt > previousTimestamp
+					&& now >= sampledAt && now - sampledAt <= 3000
+					&& std::isfinite(raw) && raw > 0) {
+					const double compensated = diameter_compensation(raw);
+					if (std::isfinite(compensated) && compensated > 0) {
+						samples.append(compensated);
+						previousTimestamp = sampledAt;
+					}
+				}
+				return true;
+			}, 120000, 20);
+	if (!motion.ok) {
+		error = motion.error;
+		return false;
+	}
+	if (samples.size() < 5) {
+		error = QStringLiteral("整周旋转仅取得%1个光幕OUT1新样本，每截面至少需要5个。")
+			.arg(samples.size());
+		samples.clear();
+		return false;
+	}
+	return true;
+}
+
+bool captureRotationalRoundoutSamples(moveControl* card, lsThread* thread,
+	qint64 axis5Encoder, const std::function<bool()>& cancelRequested,
+	GraphicalProgramRuntimeFrame& frame, QString& error)
+{
+	frame.roundoutRadiusSamples.clear();
+	frame.roundoutCenterSamples.clear();
+	frame.axialPositionMm = axis5_compensation(axis5Encoder);
+	error.clear();
+	if (!card || !card->openControllerFlag || !thread || !thread->isRunning()
+		|| !std::isfinite(frame.axialPositionMm)) {
+		error = QStringLiteral("转台、光幕缓存或轴5位置未就绪。");
+		return false;
+	}
+	GraphicalAxisRuntimeCallbacks callbacks = makeGraphicalAxisRuntimeCallbacks(card, cancelRequested);
+	callbacks.delay = [cancelRequested](int milliseconds) {
+		graphicalProgramDelay(milliseconds, cancelRequested);
+	};
+	const GraphicalAxisRuntimeState start = callbacks.readStartState(7);
+	constexpr qint64 fullRevolutionPulses = 360 * 500;
+	if (!start.valid || !std::isfinite(start.position)
+		|| start.position > double(std::numeric_limits<qint64>::max() - fullRevolutionPulses)) {
+		error = start.error.isEmpty() ? QStringLiteral("无法读取转台起始位置。") : start.error;
+		return false;
+	}
+	const qint64 target = qRound64(start.position) + fullRevolutionPulses;
+	qint64 previousTimestamp = -1;
+	float baselineOut1 = 0, baselineOut2 = 0, baselineOut3 = 0;
+	thread->latestRoundoutResult(
+		baselineOut1, baselineOut2, baselineOut3, previousTimestamp);
+	const GraphicalSensorMotionResult motion =
+		GraphicalSensorMeasurement::executeAxisMotionWithSampling(7, target, callbacks,
+			[&](QString&) {
+				float out1 = 0, out2 = 0, out3 = 0;
+				qint64 sampledAt = 0;
+				const qint64 now = QDateTime::currentMSecsSinceEpoch();
+				if (thread->latestRoundoutResult(out1, out2, out3, sampledAt)
+					&& sampledAt > previousTimestamp && now >= sampledAt
+					&& now - sampledAt <= 3000 && std::isfinite(out1) && out1 > 0
+					&& std::isfinite(out2) && std::isfinite(out3)) {
+					frame.roundoutRadiusSamples.append(out1 / 2.0);
+					frame.roundoutCenterSamples.append((out2 - out3) / 2.0);
+					previousTimestamp = sampledAt;
+				}
+				return true;
+			}, 120000, 20);
+	if (!motion.ok) {
+		error = motion.error;
+		return false;
+	}
+	if (frame.roundoutRadiusSamples.size() < 25
+		|| frame.roundoutCenterSamples.size() != frame.roundoutRadiusSamples.size()) {
+		error = QStringLiteral("整周旋转仅取得%1组同步光幕样本，至少需要25组。")
+			.arg(frame.roundoutRadiusSamples.size());
+		frame.roundoutRadiusSamples.clear();
+		frame.roundoutCenterSamples.clear();
+		return false;
+	}
+	return true;
+}
+
+bool validateRoundoutDependencies(const GraphicalProgramExecutionPlan& plan,
+	QSet<QString>& datumFeatures, QString& error)
+{
+	datumFeatures.clear();
+	error.clear();
+	bool hasRoundout = false;
+	for (const GraphicalProgramStep& step : plan.steps)
+		if (step.type == QStringLiteral("跳动")) { hasRoundout = true; break; }
+	if (!hasRoundout) return true;
+	QHash<QString, const GraphicalProgramStep*> byFeature;
+	for (const GraphicalProgramStep& step : plan.steps) {
+		const QString key = step.featureNumber.trimmed().toCaseFolded();
+		if (byFeature.contains(key)) {
+			error = QStringLiteral("工序特征号%1重复，无法解析圆跳动基准。")
+				.arg(step.featureNumber);
+			return false;
+		}
+		byFeature.insert(key, &step);
+	}
+	for (int index = plan.steps.size() - 1; index >= 0; --index) {
+		const GraphicalProgramStep& step = plan.steps.at(index);
+		if (step.type != QStringLiteral("跳动")
+			|| datumFeatures.contains(step.featureNumber.toCaseFolded())) continue;
+		for (const QString& field : { QStringLiteral("roundoutReference1"),
+			QStringLiteral("roundoutReference2") }) {
+			const QString reference = step.definition.value(field).toString().trimmed();
+			const QString key = reference.toCaseFolded();
+			if (!byFeature.contains(key) || byFeature.value(key)->type != QStringLiteral("跳动")) {
+				error = QStringLiteral("跳动特征%1的基准%2未指向现有跳动记录。")
+					.arg(step.featureNumber, reference);
+				return false;
+			}
+			if (byFeature.value(key)->sequence >= step.sequence) {
+				error = QStringLiteral("跳动特征%1的基准%2必须排在目标记录之前。")
+					.arg(step.featureNumber, byFeature.value(key)->featureNumber);
+				return false;
+			}
+			datumFeatures.insert(byFeature.value(key)->featureNumber.toCaseFolded());
+		}
+	}
+	return true;
+}
 }
 
 /// <summary>
@@ -2500,6 +2690,13 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 		finishGraphicalProgramRun(false, QStringLiteral("图形化程序%1未通过注册校验。").arg(currentProgram));
 		return;
 	}
+	QSet<QString> roundoutDatumFeatures;
+	QString dependencyError;
+	if (!validateRoundoutDependencies(iterator.value(), roundoutDatumFeatures, dependencyError)) {
+		finishGraphicalProgramRun(false, dependencyError);
+		return;
+	}
+	QHash<QString, QVector<std::array<double, 3>>> roundoutDatumPoints;
 	m_graphicalProgramCancelRequested = false;
 	ui.measureCancel->setEnabled(true);
 	ui.programConfirm->setEnabled(false);
@@ -2568,17 +2765,27 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 						QStringLiteral("相机%1正被手动采集占用；整程序未开始运动。")
 							.arg(index));
 			}
-			return GraphicalProgramRunStepResult::failure(
-				QStringLiteral("记录%1的%2实时计算后端尚未接入；整程序未开始运动。")
-					.arg(step.sequence).arg(step.type));
+			return GraphicalProgramRunStepResult::success();
 		}
-		if (step.type == QStringLiteral("直径") || step.type == QStringLiteral("圆柱度"))
+		if (step.type == QStringLiteral("直径")) {
+			if (!lsSensorPtr || !lsSensorPtr->lsOpenflag || !m_lsThread || !m_lsThread->isRunning())
+				return GraphicalProgramRunStepResult::failure(
+					QStringLiteral("记录%1所需光幕缓存未就绪；整程序未开始运动。")
+						.arg(step.sequence));
+			return GraphicalProgramRunStepResult::success();
+		}
+		if (step.type == QStringLiteral("圆柱度")) {
+			if (!lsSensorPtr || !lsSensorPtr->lsOpenflag || !m_lsThread || !m_lsThread->isRunning())
+				return GraphicalProgramRunStepResult::failure(
+					QStringLiteral("记录%1所需光幕缓存未就绪；整程序未开始运动。")
+						.arg(step.sequence));
+			return GraphicalProgramRunStepResult::success();
+		}
+		if (!lsSensorPtr || !lsSensorPtr->lsOpenflag || !m_lsThread || !m_lsThread->isRunning())
 			return GraphicalProgramRunStepResult::failure(
-				QStringLiteral("记录%1的真实光幕采集后端尚未接入；整程序未开始运动。")
+				QStringLiteral("记录%1所需同步光幕缓存未就绪；整程序未开始运动。")
 					.arg(step.sequence));
-		return GraphicalProgramRunStepResult::failure(
-			QStringLiteral("记录%1的转台整周采集与基准换算后端尚未接入；整程序未开始运动。")
-				.arg(step.sequence));
+		return GraphicalProgramRunStepResult::success();
 	};
 	callbacks.moveToTarget = [this](const GraphicalProgramStep&,
 		const GraphicalProgramMotionTarget& target) {
@@ -2601,6 +2808,53 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 	};
 	callbacks.captureTarget = [this](const GraphicalProgramStep& step,
 		const GraphicalProgramMotionTarget& target) {
+		if (step.type == QStringLiteral("直径")) {
+			GraphicalProgramRuntimeFrame frame;
+			frame.source = target.label;
+			qint64 previousTimestamp = -1;
+			float baselineValue = 0;
+			m_lsThread->latestResult(0, baselineValue, previousTimestamp);
+			for (int index = 0; index < 2; ++index) {
+				double raw = 0;
+				QString error;
+				if (!readFreshLightCurtainOut1(m_lsThread, previousTimestamp,
+						[this]() { return m_graphicalProgramCancelRequested; }, raw, error)) {
+					return GraphicalProgramRunStepResult::failure(
+						QStringLiteral("直径第%1次采集失败：%2").arg(index + 1).arg(error));
+				}
+				const double compensated = diameter_compensation(static_cast<float>(raw));
+				if (!std::isfinite(compensated) || compensated <= 0)
+					return GraphicalProgramRunStepResult::failure(
+						QStringLiteral("直径第%1次补偿结果无效。").arg(index + 1));
+				frame.compensatedDiameterSamples.append(compensated);
+			}
+			return GraphicalProgramRunStepResult::successWithFrame(frame);
+		}
+		if (step.type == QStringLiteral("圆柱度")) {
+			GraphicalProgramRuntimeFrame frame;
+			frame.source = target.label;
+			QString error;
+			if (!captureRotationalDiameterSamples(moveControlCardPtr, m_lsThread,
+					[this]() { return m_graphicalProgramCancelRequested; },
+					frame.compensatedDiameterSamples, error)) {
+				return GraphicalProgramRunStepResult::failure(error);
+			}
+			return GraphicalProgramRunStepResult::successWithFrame(frame);
+		}
+		if (step.type == QStringLiteral("跳动")) {
+			if (!target.axisEncoderTargets.contains(5))
+				return GraphicalProgramRunStepResult::failure(
+					QStringLiteral("%1缺少轴5截面位置。").arg(target.label));
+			GraphicalProgramRuntimeFrame frame;
+			frame.source = target.label;
+			QString error;
+			if (!captureRotationalRoundoutSamples(moveControlCardPtr, m_lsThread,
+					target.axisEncoderTargets.value(5),
+					[this]() { return m_graphicalProgramCancelRequested; }, frame, error)) {
+				return GraphicalProgramRunStepResult::failure(error);
+			}
+			return GraphicalProgramRunStepResult::successWithFrame(frame);
+		}
 		if (!step.contract.requiresImage)
 			return GraphicalProgramRunStepResult::failure(
 				QStringLiteral("%1的真实传感器采集后端尚未接入。")
@@ -2614,7 +2868,7 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 				&camCaptureFlag[camera],
 				[this]() { return m_graphicalProgramCancelRequested; }));
 	};
-	callbacks.computeTargets = [](const GraphicalProgramStep& step,
+	callbacks.computeTargets = [&roundoutDatumFeatures, &roundoutDatumPoints](const GraphicalProgramStep& step,
 		const QVector<GraphicalProgramMotionTarget>& targets,
 		const QVector<GraphicalProgramRuntimeFrame>& frames) {
 		GraphicalProgramMeasurementCallbacks measurement;
@@ -2624,7 +2878,51 @@ void AxisMeasurement::startGraphicalProgramMeasurement()
 			return GraphicalProgramEditor::runRuntimeVisualMeasurement(
 				visualStep, visualTargets, visualFrames);
 		};
-		return GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, measurement);
+		if (step.type != QStringLiteral("跳动"))
+			return GraphicalProgramMeasurementDispatcher::compute(step, targets, frames, measurement);
+
+		QVector<std::array<double, 3>> sectionPoints;
+		for (const GraphicalProgramRuntimeFrame& frame : frames) {
+			const GraphicalSensorAxisPointResult center =
+				GraphicalSensorMeasurement::sectionCenterFromSamples(
+					frame.roundoutCenterSamples, frame.axialPositionMm);
+			if (!center.ok) return GraphicalProgramRunStepResult::failure(center.error);
+			sectionPoints.append({ center.x, center.y, center.z });
+		}
+		const QString featureKey = step.featureNumber.toCaseFolded();
+		if (roundoutDatumFeatures.contains(featureKey)) {
+			roundoutDatumPoints.insert(featureKey, sectionPoints);
+			return GraphicalProgramRunStepResult::success();
+		}
+		QVector<std::array<double, 3>> referencePoints;
+		for (const QString& field : { QStringLiteral("roundoutReference1"),
+			QStringLiteral("roundoutReference2") }) {
+			const QString key = step.definition.value(field).toString().trimmed().toCaseFolded();
+			if (!roundoutDatumPoints.contains(key))
+				return GraphicalProgramRunStepResult::failure(
+					QStringLiteral("跳动基准%1尚未完成采样。").arg(key));
+			referencePoints += roundoutDatumPoints.value(key);
+		}
+		const GraphicalSensorAxisLineResult axis =
+			GraphicalSensorMeasurement::fitReferenceAxis(referencePoints);
+		if (!axis.ok) return GraphicalProgramRunStepResult::failure(axis.error);
+		QVector<GraphicalProgramRuntimeFrame> measuredFrames = frames;
+		for (int index = 0; index < measuredFrames.size(); ++index) {
+			const auto& point = sectionPoints.at(index);
+			const GraphicalSensorAxisPointResult axisPoint =
+				GraphicalSensorMeasurement::axisPointAtZ(axis.point, axis.direction, point[2]);
+			if (!axisPoint.ok) return GraphicalProgramRunStepResult::failure(axisPoint.error);
+			QString error;
+			if (!GraphicalSensorMeasurement::roundoutDistances(
+					measuredFrames[index].roundoutRadiusSamples,
+					std::hypot(point[0], point[1]), std::atan2(point[1], point[0]),
+					axisPoint.x, axisPoint.y, false,
+					measuredFrames[index].roundoutDistanceSamples, error)) {
+				return GraphicalProgramRunStepResult::failure(error);
+			}
+		}
+		return GraphicalProgramMeasurementDispatcher::compute(
+			step, targets, measuredFrames, measurement);
 	};
 	callbacks.requestStop = [this]() {
 		return stopGraphicalProgramAxes(moveControlCardPtr);

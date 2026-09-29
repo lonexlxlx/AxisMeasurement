@@ -53,6 +53,13 @@ inline bool isJsonInteger(const QJsonValue& value)
         && number <= std::numeric_limits<int>::max();
 }
 
+inline bool finiteNumber(const QJsonValue& value, double* result = nullptr)
+{
+    if (!value.isDouble() || !std::isfinite(value.toDouble())) return false;
+    if (result) *result = value.toDouble();
+    return true;
+}
+
 inline bool contractMatches(const QJsonObject& manifestRecord,
     const QJsonObject& definitionRecord, QString& error)
 {
@@ -118,13 +125,6 @@ inline bool contractMatches(const QJsonObject& manifestRecord,
         error = QStringLiteral("程序包记录%1的运动轴契约与测量类型不一致。").arg(sequence);
         return false;
     }
-    return true;
-}
-
-inline bool finiteNumber(const QJsonValue& value, double* result = nullptr)
-{
-    if (!value.isDouble() || !std::isfinite(value.toDouble())) return false;
-    if (result) *result = value.toDouble();
     return true;
 }
 

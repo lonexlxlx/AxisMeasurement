@@ -171,6 +171,26 @@ static void testSensorMeasurementAdapter()
     require(axisPoint.ok && axisPoint.x == 1 && axisPoint.y == 2 && axisPoint.z == 7,
         "reference axis projection must preserve a vertical axis");
 
+    QVector<double> centerSamples;
+    constexpr double pi = 3.14159265358979323846;
+    for (int index = 0; index < 25; ++index)
+        centerSamples.append(3.0 * std::cos(2.0 * pi * index / 25.0));
+    const auto sectionCenter = GraphicalSensorMeasurement::sectionCenterFromSamples(
+        centerSamples, 12.5);
+    require(sectionCenter.ok && std::abs(sectionCenter.x - 3.0) < 1e-9
+        && std::abs(sectionCenter.y) < 1e-9 && sectionCenter.z == 12.5,
+        "harmonic section fit must recover the rotation center and axial position");
+    QVector<std::array<double, 3>> referencePoints;
+    for (double z : { 0.0, 10.0, 20.0, 30.0, 40.0, 50.0 })
+        referencePoints.append({ 1.0 + 0.1 * z, 2.0 - 0.2 * z, z });
+    const auto referenceAxis = GraphicalSensorMeasurement::fitReferenceAxis(referencePoints);
+    const auto projectedReference = GraphicalSensorMeasurement::axisPointAtZ(
+        referenceAxis.point, referenceAxis.direction, 25.0);
+    require(referenceAxis.ok && projectedReference.ok
+        && std::abs(projectedReference.x - 3.5) < 1e-8
+        && std::abs(projectedReference.y + 3.0) < 1e-8,
+        "six datum section centers must fit a stable reference axis");
+
     int polls = 0, stops = 0;
     const auto timeout = GraphicalSensorMeasurement::waitForMotion(
         [&]() { ++polls; return GraphicalSensorMotionState{ true, true, false, false, QString() }; },
@@ -210,6 +230,32 @@ static void testSensorMeasurementAdapter()
     require(!commandFailure.ok && commandFailure.stopAttempted && runtimeStops == 1
         && commandFailure.error.contains(QStringLiteral("simulated SDK")),
         "axis runtime must stop after a target command failure");
+
+    runtimePolls = 0;
+    runtimeStops = 0;
+    int rotationSamples = 0;
+    axisCallbacks.issueAbsoluteMove = [](int axis, qint64 target, QString&) {
+        return axis == 7 && target == 181000;
+    };
+    axisCallbacks.queryMotion = [&](int, qint64) {
+        return ++runtimePolls < 4
+            ? GraphicalSensorMotionState{ true, true, false, false, QString() }
+            : GraphicalSensorMotionState{ true, false, true, false, QString() };
+    };
+    const auto sampledRotation = GraphicalSensorMeasurement::executeAxisMotionWithSampling(
+        7, 181000, axisCallbacks, [&](QString&) { ++rotationSamples; return true; }, 50, 10);
+    require(sampledRotation.ok && rotationSamples == 4 && runtimeStops == 0,
+        "full-revolution adapter must sample through confirmed axis arrival");
+    runtimePolls = 0;
+    const auto failedRotationSample = GraphicalSensorMeasurement::executeAxisMotionWithSampling(
+        7, 181000, axisCallbacks, [](QString& error) {
+            error = QStringLiteral("simulated light curtain failure");
+            return false;
+        }, 50, 10);
+    require(!failedRotationSample.ok && failedRotationSample.stopAttempted
+        && failedRotationSample.stopSucceeded && runtimeStops == 1
+        && failedRotationSample.error.contains(QStringLiteral("light curtain")),
+        "rotation sample failure must stop axis 7 and preserve the sample error");
     std::cout << "PASS: sensor axial mapping, diameter/cylindricity/roundout guards, reference axis and motion stop policy\n";
 }
 
@@ -1285,10 +1331,29 @@ static void testImageLessSensorPlan()
     visualPosition[QStringLiteral("exposure")] = 10;
     visualPosition[QStringLiteral("axes")] = QJsonArray{ axisPosition };
     visualRecord[QStringLiteral("devicePosition")] = visualPosition;
+    visualRecord[QStringLiteral("runtimeRoi")] = QJsonObject{
+        { QStringLiteral("type"), QStringLiteral("矩形") },
+        { QStringLiteral("width"), 20.0 },
+        { QStringLiteral("height"), 20.0 },
+        { QStringLiteral("points"), QJsonArray{
+            QJsonArray{ 0.0, 0.0 }, QJsonArray{ 20.0, 0.0 },
+            QJsonArray{ 20.0, 20.0 }, QJsonArray{ 0.0, 20.0 } } } };
+    visualRecord[QStringLiteral("runtimeSecondaryRoi")] = QJsonObject{
+        { QStringLiteral("type"), QStringLiteral("矩形") },
+        { QStringLiteral("width"), 20.0 },
+        { QStringLiteral("height"), 20.0 },
+        { QStringLiteral("points"), QJsonArray{
+            QJsonArray{ 30.0, 0.0 }, QJsonArray{ 50.0, 0.0 },
+            QJsonArray{ 50.0, 20.0 }, QJsonArray{ 30.0, 20.0 } } } };
     GraphicalProgramStep visualStep;
     require(GraphicalProgramRegistry::buildExecutionStep(visualRecord, visualStep, error, &visualFeatures)
         && visualStep.contract.requiresImage && visualStep.contract.requiresSecondRoi,
         qPrintable(QStringLiteral("visual execution step should accept existing ROIs: %1").arg(error)));
+    QJsonObject stringSequenceRecord = visualRecord;
+    stringSequenceRecord[QStringLiteral("sequence")] = QStringLiteral("9");
+    require(!GraphicalProgramRegistry::buildExecutionStep(
+        stringSequenceRecord, visualStep, error, &visualFeatures),
+        "registry must reject numeric strings instead of validating values later read as zero");
     QHash<int, QSet<int>> missingSecondRoi;
     QSet<int> onlyPrimaryFeature;
     onlyPrimaryFeature.insert(11);

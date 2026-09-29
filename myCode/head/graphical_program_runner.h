@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <exception>
 #include <functional>
+#include <limits>
 
 enum class GraphicalProgramRunState {
     Idle,
@@ -32,6 +33,9 @@ struct GraphicalProgramRuntimeFrame {
     QString source;
     QVector<double> compensatedDiameterSamples;
     QVector<double> roundoutDistanceSamples;
+    QVector<double> roundoutRadiusSamples;
+    QVector<double> roundoutCenterSamples;
+    double axialPositionMm = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct GraphicalProgramMotionTarget {

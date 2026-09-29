@@ -47,6 +47,13 @@ struct GraphicalSensorAxisPointResult {
     QString error;
 };
 
+struct GraphicalSensorAxisLineResult {
+    bool ok = false;
+    std::array<double, 3> point{};
+    std::array<double, 3> direction{};
+    QString error;
+};
+
 struct GraphicalSensorMotionState {
     bool valid = false;
     bool moving = false;
@@ -148,6 +155,69 @@ public:
             [&]() { return callbacks.queryMotion(axis, target); },
             [&]() { return callbacks.stopAxis(axis); }, callbacks.cancelRequested,
             callbacks.delay, timeoutMs, pollIntervalMs);
+    }
+
+    static GraphicalSensorMotionResult executeAxisMotionWithSampling(int axis, qint64 target,
+        const GraphicalAxisRuntimeCallbacks& callbacks,
+        const std::function<bool(QString&)>& collectSample,
+        int timeoutMs = 30000, int pollIntervalMs = 20)
+    {
+        GraphicalSensorMotionResult result;
+        if (!callbacks.readStartState || !callbacks.issueAbsoluteMove
+            || !callbacks.queryMotion || !callbacks.stopAxis || !callbacks.delay
+            || !collectSample || timeoutMs <= 0 || pollIntervalMs <= 0) {
+            result.error = QStringLiteral("旋转采样运行回调不完整。");
+            return result;
+        }
+        const GraphicalAxisRuntimeState start = callbacks.readStartState(axis);
+        if (!start.valid) {
+            result.error = start.error.isEmpty()
+                ? QStringLiteral("无法读取轴%1启动状态。").arg(axis) : start.error;
+            return result;
+        }
+        const GraphicalAxisStartDecision decision = validateAxisMotionStart(
+            axis, start.status, start.position, target);
+        if (!decision.ok) { result.error = decision.error; return result; }
+        QString commandError;
+        if (!callbacks.issueAbsoluteMove(axis, target, commandError)) {
+            result.stopAttempted = true;
+            result.stopSucceeded = callbacks.stopAxis(axis);
+            result.error = commandError.isEmpty()
+                ? QStringLiteral("轴%1旋转目标下发失败。").arg(axis) : commandError;
+            if (!result.stopSucceeded) result.error += QStringLiteral("；停止命令失败");
+            return result;
+        }
+        const int maximumPolls = qMax(1, (timeoutMs + pollIntervalMs - 1) / pollIntervalMs);
+        const auto failAndStop = [&](const QString& message) {
+            GraphicalSensorMotionResult failure;
+            failure.stopAttempted = true;
+            failure.stopSucceeded = callbacks.stopAxis(axis);
+            failure.error = message;
+            if (!failure.stopSucceeded) failure.error += QStringLiteral("；停止命令失败");
+            return failure;
+        };
+        for (int poll = 0; poll <= maximumPolls; ++poll) {
+            if (callbacks.cancelRequested && callbacks.cancelRequested())
+                return failAndStop(QStringLiteral("旋转采样已取消。"));
+            QString sampleError;
+            if (!collectSample(sampleError))
+                return failAndStop(sampleError.isEmpty()
+                    ? QStringLiteral("旋转采样失败。") : sampleError);
+            const GraphicalSensorMotionState state = callbacks.queryMotion(axis, target);
+            if (!state.valid)
+                return failAndStop(state.error.isEmpty()
+                    ? QStringLiteral("无法读取旋转轴状态。") : state.error);
+            if (state.fault)
+                return failAndStop(state.error.isEmpty()
+                    ? QStringLiteral("旋转轴报告故障。") : state.error);
+            if (state.arrived) { result.ok = true; return result; }
+            if (!state.moving)
+                return failAndStop(QStringLiteral("旋转轴已停止但未确认整周到位。"));
+            if (poll == maximumPolls)
+                return failAndStop(QStringLiteral("等待整周旋转到位超时。"));
+            callbacks.delay(pollIntervalMs);
+        }
+        return failAndStop(QStringLiteral("等待整周旋转到位超时。"));
     }
 
     // 中间点位加减两个独立偏移，避免旧记录路径中上下偏移变量对调。
@@ -295,6 +365,84 @@ public:
             angle += step;
         }
         return true;
+    }
+
+    static GraphicalSensorAxisPointResult sectionCenterFromSamples(
+        const QVector<double>& centerSamples, double axialPositionMm)
+    {
+        GraphicalSensorAxisPointResult result;
+        if (centerSamples.size() < 25 || !std::isfinite(axialPositionMm)) {
+            result.error = QStringLiteral("圆跳动截面中心样本不足或轴5位置无效。");
+            return result;
+        }
+        constexpr double pi = 3.1415926535897932384626433832795;
+        long double cosine = 0;
+        long double sine = 0;
+        for (int index = 0; index < centerSamples.size(); ++index) {
+            const double sample = centerSamples.at(index);
+            if (!std::isfinite(sample)) {
+                result.error = QStringLiteral("圆跳动截面中心样本包含非有限值。");
+                return result;
+            }
+            const double angle = 2.0 * pi * index / centerSamples.size();
+            cosine += sample * std::cos(angle);
+            sine += sample * std::sin(angle);
+        }
+        const double scale = 2.0 / centerSamples.size();
+        result.x = double(cosine * scale);
+        result.y = double(-sine * scale);
+        result.z = axialPositionMm;
+        result.ok = std::isfinite(result.x) && std::isfinite(result.y);
+        if (!result.ok) result.error = QStringLiteral("圆跳动截面中心拟合结果无效。");
+        return result;
+    }
+
+    static GraphicalSensorAxisLineResult fitReferenceAxis(
+        const QVector<std::array<double, 3>>& points)
+    {
+        GraphicalSensorAxisLineResult result;
+        if (points.size() < 2) {
+            result.error = QStringLiteral("圆跳动基准轴至少需要两个有效点。");
+            return result;
+        }
+        for (const auto& point : points)
+            for (double value : point)
+                if (!std::isfinite(value)) {
+                    result.error = QStringLiteral("圆跳动基准点包含非有限值。");
+                    return result;
+                }
+        for (const auto& point : points)
+            for (int axis = 0; axis < 3; ++axis) result.point[axis] += point[axis];
+        for (double& value : result.point) value /= points.size();
+        double covariance[3][3]{};
+        for (const auto& point : points) {
+            double delta[3];
+            for (int axis = 0; axis < 3; ++axis) delta[axis] = point[axis] - result.point[axis];
+            for (int row = 0; row < 3; ++row)
+                for (int column = 0; column < 3; ++column)
+                    covariance[row][column] += delta[row] * delta[column];
+        }
+        result.direction = { 0, 0, 1 };
+        for (int iteration = 0; iteration < 32; ++iteration) {
+            std::array<double, 3> next{};
+            for (int row = 0; row < 3; ++row)
+                for (int column = 0; column < 3; ++column)
+                    next[row] += covariance[row][column] * result.direction[column];
+            const double norm = std::hypot(next[0], std::hypot(next[1], next[2]));
+            if (!std::isfinite(norm) || norm <= 1e-12) {
+                result.error = QStringLiteral("圆跳动基准点退化，无法拟合轴线。");
+                return result;
+            }
+            for (int axis = 0; axis < 3; ++axis) result.direction[axis] = next[axis] / norm;
+        }
+        if (result.direction[2] < 0)
+            for (double& value : result.direction) value = -value;
+        if (std::abs(result.direction[2]) <= 1e-12) {
+            result.error = QStringLiteral("圆跳动基准轴与轴5方向退化。");
+            return result;
+        }
+        result.ok = true;
+        return result;
     }
 
     // 保留旧程序每端剔除12个极值后的峰谷差，同时补齐样本边界检查。

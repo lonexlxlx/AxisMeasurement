@@ -1813,10 +1813,29 @@ GraphicalSensorValueResult GraphicalProgramEditor::runRuntimeVisualMeasurement(
     };
     const GraphicalDetectionParameters parameters = parametersFromDefinition(step.definition);
     GraphicalCanvas::MeasurementRoi firstRoi;
-    if (step.definition.value(QStringLiteral("crossFrameLength")).toBool(false))
-        return GraphicalSensorValueResult::failure(QStringLiteral("跨图长度的轴5补偿换算后端尚未接入。"));
     if (!roiFromJson(step.definition.value(QStringLiteral("runtimeRoi")).toObject(), firstRoi))
         return GraphicalSensorValueResult::failure(QStringLiteral("记录%1主ROI运行几何无效。").arg(step.sequence));
+
+    if (step.definition.value(QStringLiteral("crossFrameLength")).toBool(false)) {
+        GraphicalCanvas::MeasurementRoi secondRoi;
+        if (step.type != QStringLiteral("长度") || targets.size() != 2 || frames.size() != 2
+            || !roiFromJson(step.definition.value(QStringLiteral("runtimeSecondaryRoi")).toObject(), secondRoi)
+            || !targets.at(0).axisEncoderTargets.contains(5)
+            || !targets.at(1).axisEncoderTargets.contains(5)) {
+            return GraphicalSensorValueResult::failure(
+                QStringLiteral("记录%1跨图长度运行输入无效。").arg(step.sequence));
+        }
+        const double movementMm = axis5_compensation(
+            targets.at(1).axisEncoderTargets.value(5)) - axis5_compensation(
+                targets.at(0).axisEncoderTargets.value(5));
+        const CrossFrameLengthTrialResult result = runCrossFrameLengthTrial(
+            frames.at(0).image, firstRoi, frames.at(1).image, secondRoi,
+            step.definition.value(QStringLiteral("lengthCalibrationMmPerPixel")).toDouble(0),
+            parameters, true, movementMm);
+        return result.distanceMm > 0
+            ? GraphicalSensorValueResult::success(result.distanceMm)
+            : GraphicalSensorValueResult::failure(result.status);
+    }
 
     if (step.type == QStringLiteral("角度")) {
         const bool singleRoi = step.definition.value(QStringLiteral("singleRoiAngle")).toBool(false);
