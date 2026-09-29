@@ -12,7 +12,7 @@ $doc = $null
 
 function Set-CellText {
     param($Cell, [string]$Text, [bool]$Header)
-    $Cell.Range.Text = $Text.Trim()
+    $Cell.Range.Text = $Text.Trim().Replace('`', '')
     $Cell.VerticalAlignment = 1
     $Cell.Range.ParagraphFormat.SpaceAfter = 0
     $Cell.Range.ParagraphFormat.Alignment = if ($Header) { 1 } else { 0 }
@@ -52,6 +52,11 @@ try {
     $doc.Styles.Item(-3).Font.Size = 12
 
     $lines = Get-Content -LiteralPath $SourcePath -Encoding UTF8
+    $documentTitle = if ($lines.Count -gt 0 -and $lines[0].StartsWith('# ')) {
+        $lines[0].Substring(2).Replace('`', '')
+    } else {
+        [IO.Path]::GetFileNameWithoutExtension($SourcePath)
+    }
     $selection = $word.Selection
     $selection.SetRange(0, 0)
     $index = 0
@@ -131,7 +136,7 @@ try {
     }
 
     $footer = $section.Footers.Item(1).Range
-    $footer.Text = 'AxisMeasurement 图形化测量操作与现场验收说明书'
+    $footer.Text = $documentTitle
     $footer.Font.NameFarEast = 'Microsoft YaHei'
     $footer.Font.Size = 8
     $footer.ParagraphFormat.Alignment = 1
