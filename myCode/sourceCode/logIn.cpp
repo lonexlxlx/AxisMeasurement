@@ -33,6 +33,8 @@ logIn::logIn(QWidget* parent)
 	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
 	//无边框窗口（P1-6 登录窗美化）；拖动由 mousePressEvent/mouseMoveEvent 实现
 	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowSystemMenuHint);
+	setAttribute(Qt::WA_TranslucentBackground);
+	setStyleSheet(QStringLiteral("QMainWindow#logInClass { background: transparent; }"));
 	//白色卡片投影，增强层次
 	QGraphicsDropShadowEffect* shadow = new QGraphicsDropShadowEffect(this);
 	shadow->setBlurRadius(32);
