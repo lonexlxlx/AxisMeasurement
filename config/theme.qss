@@ -1652,7 +1652,6 @@ QMainWindow#AxisMeasurementClass QGroupBox#topDeviceBarCard QPushButton[buttonRo
     background: #F1F3F5;
     border-color: #E3E8EF;
 }
-
 /* ============================================================
    图形化二次开发编辑器：统一视觉规范
    仅作用于 objectName，不改变工具按钮行为、信号槽或测量逻辑

@@ -1,4 +1,12 @@
 #include "AxisMeasurement.h"
+#include <QAbstractItemView>
+#include <QCheckBox>
+#include <QEvent>
+#include <QLabel>
+#include <QPainter>
+#include <QStyleOptionButton>
+#include <QStyledItemDelegate>
+#include <QTimer>
 #include <QVBoxLayout>//P2：布局重组用
 #include <QWidget>//P2：布局重组用
 
@@ -3842,6 +3850,153 @@ void AxisMeasurement::restructureMainLayout()
 	ui.label_39->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.label_32->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
+	class CheckMarkGlyph final : public QWidget
+	{
+	public:
+		explicit CheckMarkGlyph(QWidget* parent)
+			: QWidget(parent)
+		{
+			setAttribute(Qt::WA_TransparentForMouseEvents);
+			setAttribute(Qt::WA_TranslucentBackground);
+		}
+
+	protected:
+		void paintEvent(QPaintEvent*) override
+		{
+			QPainter painter(this);
+			painter.setRenderHint(QPainter::Antialiasing, true);
+			QPen pen(Qt::white, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+			painter.setPen(pen);
+			const qreal width = this->width();
+			const qreal height = this->height();
+			painter.drawLine(QPointF(width * 0.23, height * 0.52),
+				QPointF(width * 0.43, height * 0.72));
+			painter.drawLine(QPointF(width * 0.43, height * 0.72),
+				QPointF(width * 0.78, height * 0.30));
+		}
+	};
+
+	class CheckMarkOverlay final : public QObject
+	{
+	public:
+		explicit CheckMarkOverlay(QCheckBox* checkBox)
+			: QObject(checkBox), m_checkBox(checkBox), m_mark(new CheckMarkGlyph(checkBox))
+		{
+			connect(checkBox, &QCheckBox::toggled, m_mark, &QWidget::setVisible);
+			checkBox->installEventFilter(this);
+			updateMark();
+		}
+
+	protected:
+		bool eventFilter(QObject* watched, QEvent* event) override
+		{
+			if (watched == m_checkBox
+				&& (event->type() == QEvent::Resize
+					|| event->type() == QEvent::Show
+					|| event->type() == QEvent::StyleChange)) {
+				updateMark();
+			}
+			return QObject::eventFilter(watched, event);
+		}
+
+	private:
+		void updateMark()
+		{
+			QStyleOptionButton option;
+			option.initFrom(m_checkBox);
+			option.text = m_checkBox->text();
+			option.state.setFlag(QStyle::State_On, m_checkBox->isChecked());
+			const QRect indicatorRect = m_checkBox->style()->subElementRect(
+				QStyle::SE_CheckBoxIndicator, &option, m_checkBox);
+			m_mark->setGeometry(indicatorRect);
+			m_mark->setVisible(m_checkBox->isChecked());
+			m_mark->raise();
+		}
+
+		QCheckBox* m_checkBox;
+		CheckMarkGlyph* m_mark;
+	};
+
+	auto installCheckMarkOverlays = [this]() {
+		const QList<QCheckBox*> checkBoxes = findChildren<QCheckBox*>();
+		for (QCheckBox* checkBox : checkBoxes) {
+			if (checkBox->property("checkMarkOverlayInstalled").toBool()) {
+				continue;
+			}
+			checkBox->setProperty("checkMarkOverlayInstalled", true);
+			new CheckMarkOverlay(checkBox);
+		}
+	};
+	installCheckMarkOverlays();
+	QTimer::singleShot(0, this, installCheckMarkOverlays);
+
+	class VerdictItemDelegate final : public QStyledItemDelegate
+	{
+	public:
+		explicit VerdictItemDelegate(QObject* parent)
+			: QStyledItemDelegate(parent)
+		{
+		}
+
+		void paint(QPainter* painter, const QStyleOptionViewItem& option,
+			const QModelIndex& index) const override
+		{
+			const QString verdict = index.data(Qt::DisplayRole).toString().trimmed();
+			QColor textColor;
+			QColor backgroundColor;
+
+			if (verdict == QStringLiteral("OK")) {
+				textColor = QColor(QStringLiteral("#15803D"));
+				backgroundColor = QColor(QStringLiteral("#DCFCE7"));
+			}
+			else if (verdict == QStringLiteral("NG")) {
+				textColor = QColor(QStringLiteral("#C2410C"));
+				backgroundColor = QColor(QStringLiteral("#FFEDD5"));
+			}
+			else if (verdict == QStringLiteral("错误")) {
+				textColor = QColor(QStringLiteral("#DC2626"));
+				backgroundColor = QColor(QStringLiteral("#FEE2E2"));
+			}
+			else if (verdict == QStringLiteral("未判定")) {
+				textColor = QColor(QStringLiteral("#475569"));
+				backgroundColor = QColor(QStringLiteral("#E2E8F0"));
+			}
+			else {
+				QStyledItemDelegate::paint(painter, option, index);
+				return;
+			}
+
+			painter->save();
+			painter->fillRect(option.rect, backgroundColor);
+			QFont verdictFont = option.font;
+			verdictFont.setBold(true);
+			painter->setFont(verdictFont);
+			painter->setPen(textColor);
+			painter->drawText(option.rect.adjusted(4, 0, -4, 0),
+				Qt::AlignCenter, verdict);
+			painter->restore();
+		}
+	};
+
+	auto* verdictDelegate = new VerdictItemDelegate(this);
+	auto installVerdictDelegate = [this, verdictDelegate]() {
+		const QList<QAbstractItemView*> itemViews = findChildren<QAbstractItemView*>();
+		for (QAbstractItemView* itemView : itemViews) {
+			if (!itemView->model()) {
+				continue;
+			}
+			for (int column = 0; column < itemView->model()->columnCount(); ++column) {
+				if (itemView->model()->headerData(column, Qt::Horizontal).toString().trimmed()
+					== QStringLiteral("判定")) {
+					itemView->setItemDelegateForColumn(column, verdictDelegate);
+					break;
+				}
+			}
+		}
+	};
+	installVerdictDelegate();
+	QTimer::singleShot(0, this, installVerdictDelegate);
+
 	QGridLayout* processGrid = new QGridLayout();
 	processGrid->setContentsMargins(0, 0, 0, 0);
 	processGrid->setSizeConstraint(QLayout::SetMinimumSize);
@@ -3851,27 +4006,35 @@ void AxisMeasurement::restructureMainLayout()
 	processGrid->setRowMinimumHeight(1, 34);
 	processGrid->setRowMinimumHeight(2, 34);
 	processGrid->setRowMinimumHeight(3, 30);
-	processGrid->setColumnStretch(0, 0);
-	processGrid->setColumnStretch(1, 1);
-	ui.label_40->setMinimumWidth(112);
-	ui.label_31->setMinimumWidth(112);
-	ui.label_21->setMinimumWidth(112);
-	ui.label_40->setContentsMargins(12, 0, 0, 0);
-	ui.label_31->setContentsMargins(12, 0, 0, 0);
-	ui.label_21->setContentsMargins(12, 0, 0, 0);
+	// Keep the field/value block centred while the splitter changes the panel width.
+	processGrid->setColumnStretch(0, 1);
+	processGrid->setColumnStretch(1, 3);
+	processGrid->setColumnStretch(2, 3);
+	processGrid->setColumnStretch(3, 1);
+	processGrid->setColumnMinimumWidth(1, 112);
+	processGrid->setColumnMinimumWidth(2, 112);
+	ui.label_40->setContentsMargins(0, 0, 0, 0);
+	ui.label_31->setContentsMargins(0, 0, 0, 0);
+	ui.label_21->setContentsMargins(0, 0, 0, 0);
+	ui.label_40->setIndent(0);
+	ui.label_31->setIndent(0);
+	ui.label_21->setIndent(0);
 	ui.partNub->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	ui.programProcess->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	ui.partNub->setIndent(0);
+	ui.programProcess->setIndent(0);
 	ui.partNub->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 	ui.programProcess->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 	ui.programProcess->setFixedHeight(34);
 	ui.programProgressBar->setMinimumHeight(30);
 	ui.programProgressBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-	processGrid->addWidget(ui.label_40, 0, 0);
-	processGrid->addWidget(ui.partNub, 0, 1);
-	processGrid->addWidget(ui.label_31, 1, 0);
-	processGrid->addWidget(ui.programProcess, 1, 1);
-	processGrid->addWidget(ui.label_21, 2, 0, 1, 2);
-	processGrid->addWidget(ui.programProgressBar, 3, 0, 1, 2);
+	processGrid->addWidget(ui.label_40, 0, 1);
+	processGrid->addWidget(ui.partNub, 0, 2);
+	processGrid->addWidget(ui.label_31, 1, 1);
+	processGrid->addWidget(ui.programProcess, 1, 2);
+	processGrid->addWidget(ui.label_21, 2, 1, 1, 2);
+	processGrid->addWidget(ui.programProgressBar, 3, 0, 1, 4);
+
 	QVBoxLayout* processCardLayout = new QVBoxLayout(ui.groupBox);
 	processCardLayout->setContentsMargins(14, 4, 14, 14);
 	processCardLayout->setSpacing(3);//程序测量进程与后文的距离
@@ -3886,16 +4049,45 @@ void AxisMeasurement::restructureMainLayout()
 		lightCurtainCardLayout->setSpacing(3);//光幕实时显示与后文的距离
 		lightCurtainPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		if (QGridLayout* lightGrid = qobject_cast<QGridLayout*>(lightCurtainPanel->layout())) {
-			lightGrid->setColumnStretch(0, 0);
-			lightGrid->setColumnStretch(1, 1);
+		lightGrid->setColumnStretch(0, 1);
+		lightGrid->setColumnStretch(1, 3);
+		lightGrid->setColumnStretch(2, 3);
+		lightGrid->setColumnStretch(3, 1);
+		lightGrid->setColumnMinimumWidth(1, 112);
+		lightGrid->setColumnMinimumWidth(2, 112);
 			lightGrid->setHorizontalSpacing(16);
-			ui.label_36->setContentsMargins(12, 0, 0, 0);
-			ui.label_34->setContentsMargins(12, 0, 0, 0);
-			ui.label_28->setContentsMargins(12, 0, 0, 0);
-			ui.lsPosition->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-			ui.lsDiameter->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-			ui.lsCurrentValue->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-		}
+			lightGrid->setVerticalSpacing(0);
+			lightGrid->setRowMinimumHeight(0, 34);
+			lightGrid->setRowMinimumHeight(1, 34);
+			lightGrid->setRowMinimumHeight(2, 34);
+		ui.label_36->setContentsMargins(0, 0, 0, 0);
+		ui.label_34->setContentsMargins(0, 0, 0, 0);
+		ui.label_28->setContentsMargins(0, 0, 0, 0);
+		ui.label_36->setIndent(0);
+		ui.label_34->setIndent(0);
+		ui.label_28->setIndent(0);
+		ui.lsPosition->setIndent(0);
+		ui.lsDiameter->setIndent(0);
+		ui.lsCurrentValue->setIndent(0);
+			ui.label_36->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+			ui.label_34->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+			ui.label_28->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		ui.lsPosition->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		ui.lsDiameter->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		ui.lsCurrentValue->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		lightGrid->removeWidget(ui.label_36);
+		lightGrid->removeWidget(ui.lsPosition);
+		lightGrid->removeWidget(ui.label_34);
+		lightGrid->removeWidget(ui.lsDiameter);
+		lightGrid->removeWidget(ui.label_28);
+		lightGrid->removeWidget(ui.lsCurrentValue);
+		lightGrid->addWidget(ui.label_36, 0, 1);
+		lightGrid->addWidget(ui.lsPosition, 0, 2);
+		lightGrid->addWidget(ui.label_34, 1, 1);
+		lightGrid->addWidget(ui.lsDiameter, 1, 2);
+		lightGrid->addWidget(ui.label_28, 2, 1);
+		lightGrid->addWidget(ui.lsCurrentValue, 2, 2);
+	}
 		lightCurtainCardLayout->addWidget(ui.label_32, 0, Qt::AlignHCenter);
 		lightCurtainCardLayout->addWidget(lightCurtainPanel);
 	}
