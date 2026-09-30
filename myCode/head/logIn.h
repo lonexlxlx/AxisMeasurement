@@ -26,8 +26,8 @@ private:
 	Ui::logInClass ui;
 	string putIn_userName;
 	string putIn_password;
-	string m_userName="XJTU";
-	string m_password="121314";
+	string m_userName="admin";
+	string m_password="JMJC211";
 	QPoint m_dragPos; //拖动时鼠标相对窗口左上角的位置
 signals:
 	void logToSystem(); //登录主界面信号
