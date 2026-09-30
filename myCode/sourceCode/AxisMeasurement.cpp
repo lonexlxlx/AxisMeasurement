@@ -1691,7 +1691,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 		showTips("远心相机打开失败，请检查！");
 		return;
 	};
-	cameraPtrList[0]->setExposeTime(10000);
+	cameraPtrList[0]->setExposeTime(11);
 
 	// TEMP_CAMERA0_PREVIEW_BEGIN：连接相机0后直接启动实时预览，不访问光幕和运动控制卡。
 	if (kCamera0PreviewOnly)
