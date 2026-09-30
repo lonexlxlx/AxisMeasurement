@@ -33,8 +33,11 @@
 
 #include "graphical_axis_backend.h"
 
-// Temporary UI-only preview requested by the user. Restore false after feedback.
-namespace { constexpr bool kManualLayoutPreview = false; } //手动控制界面临时预览开关，编译时期的常量
+// Temporary test switches. Restore false after the corresponding verification is complete.
+namespace {
+constexpr bool kManualLayoutPreview = false; //手动控制界面临时预览开关
+constexpr bool kSingleCamera0TestMode = true; //仅连接并显示相机0，不打开其他硬件
+}
 
 namespace {
 QImage cameraFrameToQImage(const cv::Mat& frame)//把OpenCV的cv::Mat转成Ot的OImage
@@ -683,22 +686,65 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 
 
 	//设备参数初始化
+	QString cameraDiscoveryError;
+	const QVector<cam_device::DiscoveredDevice> discoveredCameras =
+		cam_device::discoverDevices(cameraDiscoveryError);
+	QString assignedCameraSns[3];
+	QVector<bool> assignedCameras(discoveredCameras.size(), false);
+
+	// 优先按现有相机系列前缀保持业务角色；无法识别的设备再按枚举顺序填入空槽位。
+	const QString rolePrefixes[3] = {
+		QStringLiteral("GCD"), QStringLiteral("FCB"), QStringLiteral("GCK")
+	};
+	for (int cameraIndex = 0; cameraIndex < 3; ++cameraIndex)
+	{
+		for (int deviceIndex = 0; deviceIndex < discoveredCameras.size(); ++deviceIndex)
+		{
+			if (assignedCameras[deviceIndex]) continue;
+			if (discoveredCameras[deviceIndex].serialNumber.startsWith(
+				rolePrefixes[cameraIndex], Qt::CaseInsensitive))
+			{
+				assignedCameraSns[cameraIndex] = discoveredCameras[deviceIndex].serialNumber;
+				assignedCameras[deviceIndex] = true;
+				break;
+			}
+		}
+	}
+	for (int cameraIndex = 0; cameraIndex < 3; ++cameraIndex)
+	{
+		if (!assignedCameraSns[cameraIndex].isEmpty()) continue;
+		for (int deviceIndex = 0; deviceIndex < discoveredCameras.size(); ++deviceIndex)
+		{
+			if (assignedCameras[deviceIndex]) continue;
+			assignedCameraSns[cameraIndex] = discoveredCameras[deviceIndex].serialNumber;
+			assignedCameras[deviceIndex] = true;
+			break;
+		}
+	}
+	if (!cameraDiscoveryError.isEmpty())
+		cout << cameraDiscoveryError.toLocal8Bit().constData() << endl;
+
+	// 原固定 SN 初始化逻辑保留如下，必要时可快速回退：
+	// cameraList[0].initInf("GCD22090931", 0); //远心相机
+	// cameraList[1].initInf("FCB22070932", 1); //右侧相机用于测孔
+	// cameraList[2].initInf("GCK22050066", 2); //左侧相机用于测量表面粗糙度
+
 	//远心相机
-	cameraList[0].initInf("GCD22090931", 0);//远心相机
+	cameraList[0].initInf(assignedCameraSns[0].toLocal8Bit().constData(), 0);//远心相机
 	cameraPtrList[0] = &cameraList[0];
 	m_camThread_ptrList[0] = new camThread(cameraPtrList[0], &(cameraPtrList[0]->capturedImg), cameraPtrList[0]->camNumber);
 	camCaptureFlag[0] = false;
 	connect(cameraPtrList[0], SIGNAL(cameraErrorInf(QString)), this, SLOT(showDeviceErrorInf(QString)));
 	connect(m_camThread_ptrList[0], SIGNAL(Display(const Mat*, QString, int)), this, SLOT(displayImg(const Mat*, QString, int)));
 	// 右侧相机用于测孔
-	cameraList[1].initInf("FCB22070932", 1);
+	cameraList[1].initInf(assignedCameraSns[1].toLocal8Bit().constData(), 1);
 	cameraPtrList[1] = &cameraList[1];
 	m_camThread_ptrList[1] = new camThread(cameraPtrList[1], &(cameraPtrList[1]->capturedImg), cameraPtrList[1]->camNumber);
 	camCaptureFlag[1] = false;
 	connect(cameraPtrList[1], SIGNAL(cameraErrorInf(QString)), this, SLOT(showDeviceErrorInf(QString)));
 	connect(m_camThread_ptrList[1], SIGNAL(Display(const Mat*, QString, int)), this, SLOT(displayImg(const Mat*, QString, int)));
 	//左侧相机用于测量表面粗糙度 
-	cameraList[2].initInf("GCK22050066", 2);
+	cameraList[2].initInf(assignedCameraSns[2].toLocal8Bit().constData(), 2);
 	cameraPtrList[2] = &cameraList[2];
 	m_camThread_ptrList[2] = new camThread(cameraPtrList[2], &(cameraPtrList[2]->capturedImg), cameraPtrList[2]->camNumber);
 	camCaptureFlag[2] = false;
@@ -1637,12 +1683,34 @@ void AxisMeasurement::on_openAllDevice_clicked()
 
 	 //打开相机
 	cameraPtrList[0]->openCam();
-	cameraPtrList[0]->setExposeTime(11);
 	if (!cameraPtrList[0]->isOpenCam)
 	{
 		showTips("远心相机打开失败，请检查！");
 		return;
 	};
+	cameraPtrList[0]->setExposeTime(10000);
+
+	// 临时单相机0采集测试：启动连续采集和显示线程，不打开其他相机及运动相关设备。
+	if (kSingleCamera0TestMode)
+	{
+		cameraPtrList[0]->m_captureMode = QStringLiteral("continuous");
+		cameraPtrList[0]->startCapture();
+		if (!cameraPtrList[0]->lastCaptureStartSucceeded())
+		{
+			showTips(QStringLiteral("相机0连续采集启动失败！"));
+			showDeviceInf(QStringLiteral("相机0已连接，但图像采集启动失败"));
+			return;
+		}
+		if (!m_camThread_ptrList[0]->isRunning())
+			m_camThread_ptrList[0]->start();
+		camCaptureFlag[0] = true;
+		showDeviceInf(QStringLiteral("相机0连接并开始连续采集（单相机测试模式）"));
+	}
+	ui.openAllDevice->setEnabled(false);
+	ui.closeAllDevice->setEnabled(true);
+	return;
+
+#if 0 // 原相机1、相机2连接逻辑暂时注释保留，完成测试后可恢复。
 	cameraPtrList[1]->openCam();
 	cameraPtrList[1]->setExposeTime(400);
 	if (!cameraPtrList[1]->isOpenCam)
@@ -1655,6 +1723,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	{
 		showTips("粗糙度相机打开失败，请检查！");
 	};
+#endif
 
 	//光幕传感器
 	
@@ -1791,6 +1860,16 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 	if (m_graphicalProgramEditor && m_graphicalProgramEditor->isVisible()) {
 		showTips(QStringLiteral("请先关闭图形化编程窗口，确认其轴和相机操作已经停止。"));
 		return;
+	}
+	// 临时单相机0测试：关闭设备前自动停止采集和显示线程。
+	if (kSingleCamera0TestMode && camCaptureFlag[0]) {
+		cameraPtrList[0]->stopCapture();
+		m_camThread_ptrList[0]->requestInterruption();
+		if (m_camThread_ptrList[0]->isRunning() && !m_camThread_ptrList[0]->wait(1500)) {
+			showTips(QStringLiteral("相机0显示线程未能及时停止，请稍后重试。"));
+			return;
+		}
+		camCaptureFlag[0] = false;
 	}
 	const QString cameraConflict = activeCameraConflict(false);
 	if (!cameraConflict.isEmpty()) {
@@ -5113,6 +5192,10 @@ void AxisMeasurement::displayImg(const Mat* imgPrt, QString source, int drawMode
 {
 	//"org"/"processed"/"cam"对应显示在面板上的对应位置
 	//cout << "这里是displayImg" <<  source.toStdString() << endl;
+	if (!imgPrt || imgPrt->empty()) return;
+	// 临时单相机0测试：把 cam0 实时画面路由到自动测量页中央图像区。
+	if (kSingleCamera0TestMode && source == QStringLiteral("cam0"))
+		source = QStringLiteral("org");
 	Mat src = imgPrt->clone();
 	QImage imgForDisplay;
 	if (imgPrt->channels() == 3)//RGB Img
