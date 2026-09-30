@@ -45,6 +45,9 @@ public:
     void setImage(const QImage& image);
     void clearImage();
     void fitImageInView();
+    void setLivePreviewImage(const QImage& image);
+    void clearLivePreview();
+    bool isLivePreviewActive() const;
 
     bool hasImage() const;
     QImage sourceImage() const;
@@ -132,6 +135,7 @@ private:
 
     QGraphicsScene* m_scene = nullptr;
     QGraphicsPixmapItem* m_imageItem = nullptr;
+    QGraphicsPixmapItem* m_livePreviewItem = nullptr;
     QImage m_sourceImage;
     bool m_panning = false;
     bool m_spacePressed = false;

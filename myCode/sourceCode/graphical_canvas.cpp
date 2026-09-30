@@ -95,6 +95,7 @@ void GraphicalCanvas::setImage(const QImage& image)
     m_resizeFeatureId = -1;
     m_draggedFeatureItem = nullptr;
     m_circleRadiusGuide = nullptr;
+    m_livePreviewItem = nullptr;
     m_scene->clear();
     m_imageItem = nullptr;
     m_sourceImage = image;
@@ -124,12 +125,59 @@ void GraphicalCanvas::clearImage()
 
 void GraphicalCanvas::fitImageInView()
 {
-    if (!m_imageItem)
+    QGraphicsPixmapItem* displayItem = m_livePreviewItem ? m_livePreviewItem : m_imageItem;
+    if (!displayItem)
         return;
 
     resetTransform();
-    fitInView(m_imageItem, Qt::KeepAspectRatio);
+    fitInView(displayItem, Qt::KeepAspectRatio);
     m_zoomStep = 0;
+}
+
+void GraphicalCanvas::setLivePreviewImage(const QImage& image)
+{
+    if (image.isNull()) return;
+
+    const QPixmap pixmap = QPixmap::fromImage(image);
+    const bool geometryChanged = !m_livePreviewItem
+        || m_livePreviewItem->pixmap().size() != pixmap.size();
+    if (!m_livePreviewItem) {
+        m_scene->clearSelection();
+        m_livePreviewItem = m_scene->addPixmap(pixmap);
+        m_livePreviewItem->setAcceptedMouseButtons(Qt::NoButton);
+        m_livePreviewItem->setZValue(10000.0);
+    }
+    else {
+        m_livePreviewItem->setPixmap(pixmap);
+    }
+    m_livePreviewItem->setPos(0.0, 0.0);
+    m_scene->setSceneRect(m_livePreviewItem->boundingRect());
+    if (geometryChanged) fitImageInView();
+    viewport()->update();
+}
+
+void GraphicalCanvas::clearLivePreview()
+{
+    if (!m_livePreviewItem) return;
+
+    m_scene->removeItem(m_livePreviewItem);
+    delete m_livePreviewItem;
+    m_livePreviewItem = nullptr;
+    if (m_imageItem) {
+        m_scene->setSceneRect(m_imageItem->boundingRect());
+        fitImageInView();
+    }
+    else {
+        m_scene->setSceneRect(QRectF());
+        resetTransform();
+        m_zoomStep = 0;
+    }
+    viewport()->update();
+}
+
+bool GraphicalCanvas::isLivePreviewActive() const
+{
+    return m_livePreviewItem != nullptr;
 }
 
 bool GraphicalCanvas::hasImage() const
@@ -1192,6 +1240,7 @@ void GraphicalCanvas::setDetectionOverlay(const QPainterPath& edges, const QPain
 void GraphicalCanvas::drawForeground(QPainter* painter, const QRectF& rect)//在 drawForeground里叠加画到图像上——试测后你能在画布上看到检测到的边缘和拟合的弧。
 {
     QGraphicsView::drawForeground(painter, rect);
+    if (m_livePreviewItem) return;
     painter->save();
     painter->setBrush(Qt::NoBrush);
     painter->setPen(makeCanvasPen(QColor(0, 255, 120), 2));
@@ -1246,7 +1295,7 @@ void GraphicalCanvas::drawForeground(QPainter* painter, const QRectF& rect)//在
 
 void GraphicalCanvas::wheelEvent(QWheelEvent* event)//滚轮缩放
 {
-    if (!m_imageItem || event->angleDelta().y() == 0) {
+    if ((!m_livePreviewItem && !m_imageItem) || event->angleDelta().y() == 0) {
         QGraphicsView::wheelEvent(event);
         return;
     }
@@ -1267,6 +1316,10 @@ void GraphicalCanvas::wheelEvent(QWheelEvent* event)//滚轮缩放
 void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
 {
     setFocus(Qt::MouseFocusReason);
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::MiddleButton
         || (event->button() == Qt::LeftButton && m_spacePressed)) {//中键或者空格+左键平移
         m_rotateFeatureId = -1;
@@ -1409,6 +1462,10 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
 
 void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_lastPanPosition = event->pos();
@@ -1479,6 +1536,10 @@ void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
 
 void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && m_rotateFeatureId > 0) {
         const bool changed = m_interactiveEditHistoryStarted
             || event->pos() != m_interactiveEditPressPosition;
@@ -1541,6 +1602,10 @@ void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
 
 void GraphicalCanvas::contextMenuEvent(QContextMenuEvent* event)
 {
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     QGraphicsItem* clickedItem = featureAtViewportPosition(event->pos());
     const int featureId = clickedItem ? clickedItem->data(0).toInt() : -1;
     if (featureId <= 0) {
@@ -1562,6 +1627,10 @@ void GraphicalCanvas::contextMenuEvent(QContextMenuEvent* event)
 
 void GraphicalCanvas::keyPressEvent(QKeyEvent* event)
 {
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Escape && m_rotateFeatureId > 0) {
         const int id = m_rotateFeatureId;
         m_rotateFeatureId = -1;
@@ -1602,6 +1671,10 @@ void GraphicalCanvas::keyPressEvent(QKeyEvent* event)
 
 void GraphicalCanvas::keyReleaseEvent(QKeyEvent* event)
 {
+    if (m_livePreviewItem) {
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
         m_spacePressed = false;
         if (!m_panning) {

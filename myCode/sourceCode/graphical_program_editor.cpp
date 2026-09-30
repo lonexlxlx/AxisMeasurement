@@ -1296,15 +1296,23 @@ GraphicalProgramEditor::GraphicalProgramEditor(QWidget* parent)
     m_projectDirty = false;
     QTimer* axisTimer = new QTimer(this);
     connect(axisTimer, &QTimer::timeout, this, &GraphicalProgramEditor::refreshAxisPanel);
-    connect(axisTimer, &QTimer::timeout, this, &GraphicalProgramEditor::refreshCameraPanel);
     axisTimer->start(200);
+    m_cameraRefreshTimer = new QTimer(this);
+    connect(m_cameraRefreshTimer, &QTimer::timeout,
+        this, &GraphicalProgramEditor::refreshCameraPanel);
+    m_cameraRefreshTimer->start(200);
 }
 
 void GraphicalProgramEditor::setAxisBackend(AxisReader reader, AxisCommander commander)
 {
     m_axisReader = std::move(reader);
     m_axisCommander = std::move(commander);
+    if (m_axisReader && m_axisSelector) {
+        const AxisSnapshot snapshot = m_axisReader(m_axisSelector->currentData().toInt());
+        m_axisBackendAvailable = snapshot.available && snapshot.valid;
+    }
     refreshAxisPanel();
+    refreshDevicePositionPanel();
 }
 
 void GraphicalProgramEditor::setCameraBackend(CameraReader reader, CameraCommander commander)
@@ -1312,6 +1320,15 @@ void GraphicalProgramEditor::setCameraBackend(CameraReader reader, CameraCommand
     m_cameraReader = std::move(reader);
     m_cameraCommander = std::move(commander);
     refreshCameraPanel();
+}
+
+void GraphicalProgramEditor::setCameraDiscoveryBackend(CameraDiscovery discovery,
+    CameraConnector connector)
+{
+    m_cameraDiscovery = std::move(discovery);
+    m_cameraConnector = std::move(connector);
+    if (m_cameraRefreshDevices) m_cameraRefreshDevices->setEnabled(bool(m_cameraDiscovery));
+    if (m_cameraConnectDevice) m_cameraConnectDevice->setEnabled(false);
 }
 
 void GraphicalProgramEditor::setProgramPackageGeneratedHandler(std::function<void()> handler)
@@ -1442,10 +1459,18 @@ void GraphicalProgramEditor::refreshCameraPanel()
     CameraSnapshot snapshot;
     snapshot.message = QStringLiteral("相机%1未连接").arg(camera);
     if (m_cameraReader) snapshot = m_cameraReader(camera);
+    const int previewRefreshMs = snapshot.capturing ? 33 : 200;
+    if (m_cameraRefreshTimer && m_cameraRefreshTimer->interval() != previewRefreshMs)
+        m_cameraRefreshTimer->setInterval(previewRefreshMs);
+    if (!snapshot.connected || !snapshot.available) clearCameraPreviewFromCanvas();
     if (m_ownedCamera >= 0 && (!snapshot.connected || !snapshot.available || m_trialRunning)) {
         stopOwnedCamera();
         return;
     }
+    if (snapshot.capturing && !snapshot.previewImage.isNull())
+        showCameraPreviewOnCanvas(snapshot.previewImage, camera, true);
+    else if (m_cameraPreviewOnCanvas && !snapshot.previewImage.isNull())
+        showCameraPreviewOnCanvas(snapshot.previewImage, camera, false);
     const QString stateText = snapshot.message + (snapshot.hasFrame
         ? QStringLiteral("\n最后一帧：%1 × %2，曝光 %3 μs")
             .arg(snapshot.frameSize.width()).arg(snapshot.frameSize.height()).arg(snapshot.exposure)
@@ -1466,7 +1491,89 @@ void GraphicalProgramEditor::refreshCameraPanel()
     m_cameraStart->setEnabled(idle);
     m_cameraStop->setEnabled(snapshot.connected && snapshot.capturing);
     m_cameraLoad->setEnabled(idle && snapshot.hasFrame);
+    const bool canBindPhysicalCamera = !snapshot.capturing && m_ownedAxis < 0 && !m_trialRunning;
+    m_cameraRefreshDevices->setEnabled(bool(m_cameraDiscovery) && canBindPhysicalCamera);
+    m_cameraConnectDevice->setEnabled(bool(m_cameraConnector) && canBindPhysicalCamera
+        && m_physicalCameraSelector->currentIndex() >= 0
+        && !m_physicalCameraSelector->currentData().toString().isEmpty());
     refreshDevicePositionPanel();
+}
+
+void GraphicalProgramEditor::showCameraPreviewOnCanvas(
+    const QImage& image, int camera, bool capturing)
+{
+    if (!m_canvas || image.isNull()) return;
+    if (!m_cameraPreviewOnCanvas) {
+        if (QLabel* badge = m_canvas->findChild<QLabel*>(QStringLiteral("canvasSourceBadge"))) {
+            m_canvasBadgeBeforeCameraPreview = badge->text();
+            m_canvasBadgeWasVisible = !badge->isHidden();
+        }
+        m_cameraPreviewOnCanvas = true;
+    }
+    m_canvas->setLivePreviewImage(image);
+    setCanvasSourceBadge(m_canvas, capturing
+        ? QStringLiteral("相机%1 · 实时采集").arg(camera)
+        : QStringLiteral("相机%1 · 最后一帧待载入").arg(camera));
+    if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint")))
+        hint->hide();
+}
+
+void GraphicalProgramEditor::clearCameraPreviewFromCanvas()
+{
+    if (!m_cameraPreviewOnCanvas || !m_canvas) return;
+    m_canvas->clearLivePreview();
+    if (QLabel* badge = m_canvas->findChild<QLabel*>(QStringLiteral("canvasSourceBadge"))) {
+        badge->setText(m_canvasBadgeBeforeCameraPreview);
+        badge->setVisible(m_canvasBadgeWasVisible);
+        if (m_canvasBadgeWasVisible) badge->raise();
+    }
+    if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint")))
+        hint->setVisible(!m_canvas->hasImage());
+    m_cameraPreviewOnCanvas = false;
+    m_canvasBadgeWasVisible = false;
+    m_canvasBadgeBeforeCameraPreview.clear();
+}
+
+void GraphicalProgramEditor::refreshDiscoveredCameras()
+{
+    if (!m_physicalCameraSelector) return;
+    m_physicalCameraSelector->clear();
+    if (!m_cameraDiscovery) {
+        m_physicalCameraSelector->addItem(QStringLiteral("相机枚举接口未连接"));
+        m_cameraConnectDevice->setEnabled(false);
+        return;
+    }
+    QString error;
+    const QVector<CameraDeviceDescriptor> devices = m_cameraDiscovery(error);
+    for (const auto& device : devices) {
+        const QString label = QStringLiteral("%1 · %2 · SN %3")
+            .arg(device.displayName.isEmpty() ? QStringLiteral("相机") : device.displayName,
+                device.modelName.isEmpty() ? QStringLiteral("未知型号") : device.modelName,
+                device.serialNumber);
+        m_physicalCameraSelector->addItem(label, device.serialNumber);
+    }
+    if (!error.isEmpty()) m_cameraState->setText(error);
+    else if (devices.isEmpty()) m_cameraState->setText(QStringLiteral("未发现可用相机；请检查供电、数据线和驱动。"));
+    else m_cameraState->setText(QStringLiteral("发现%1台相机；请选择后连接到当前逻辑相机。")
+        .arg(devices.size()));
+    m_cameraConnectDevice->setEnabled(!devices.isEmpty() && bool(m_cameraConnector));
+}
+
+void GraphicalProgramEditor::connectSelectedCamera()
+{
+    if (!m_cameraConnector || !m_physicalCameraSelector || m_physicalCameraSelector->currentIndex() < 0)
+        return;
+    const int logicalCamera = m_cameraSelector->currentData().toInt();
+    const QString serial = m_physicalCameraSelector->currentData().toString();
+    QString error;
+    if (!m_cameraConnector(logicalCamera, serial, error)) {
+        m_cameraState->setText(error.isEmpty() ? QStringLiteral("测试相机连接失败。") : error);
+        return;
+    }
+    clearCameraPreviewFromCanvas();
+    m_cameraState->setText(QStringLiteral("已将 SN %1 连接为相机%2。").arg(serial).arg(logicalCamera));
+    m_cameraExposureEdited = false;
+    refreshCameraPanel();
 }
 
 bool GraphicalProgramEditor::stopOwnedCamera()
@@ -1544,6 +1651,7 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
     if (imageSha256.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("载入采集图像失败"), hashError); return;
     }
+    clearCameraPreviewFromCanvas();
     cancelRelink();
     if (appendCrossLengthFrame) {
         storeCurrentFrame();
@@ -1570,7 +1678,7 @@ void GraphicalProgramEditor::executeCameraCommand(CameraCommand command)
     }
     m_loadingProject = true;
     m_canvas->setImage(result.image);
-    setCanvasSourceBadge(m_canvas, QStringLiteral("相机快照 · 非实时"));
+    setCanvasSourceBadge(m_canvas, QStringLiteral("相机最后一帧 · 可编辑"));
     m_loadingProject = false;
     if (QLabel* hint = m_canvas->findChild<QLabel*>(QStringLiteral("canvasEmptyHint"))) hint->hide();
     m_records.clear();
@@ -2689,6 +2797,21 @@ void GraphicalProgramEditor::buildInterface()
     m_cameraState->setWordWrap(true);
     cameraLayout->addWidget(m_cameraState);
 
+    QHBoxLayout* physicalCameraRow = new QHBoxLayout;
+    m_physicalCameraSelector = new QComboBox(cameraGroup);
+    m_physicalCameraSelector->setObjectName(QStringLiteral("physicalCameraSelector"));
+    m_physicalCameraSelector->addItem(QStringLiteral("点击刷新枚举测试相机"));
+    m_cameraRefreshDevices = new QPushButton(QStringLiteral("刷新相机"), cameraGroup);
+    m_cameraRefreshDevices->setObjectName(QStringLiteral("refreshPhysicalCameras"));
+    physicalCameraRow->addWidget(m_physicalCameraSelector, 1);
+    physicalCameraRow->addWidget(m_cameraRefreshDevices);
+    cameraLayout->addLayout(physicalCameraRow);
+    m_cameraConnectDevice = new QPushButton(QStringLiteral("连接为当前相机"), cameraGroup);
+    m_cameraConnectDevice->setObjectName(QStringLiteral("connectPhysicalCamera"));
+    m_cameraRefreshDevices->setEnabled(false);
+    m_cameraConnectDevice->setEnabled(false);
+    cameraLayout->addWidget(m_cameraConnectDevice);
+
     QHBoxLayout* exposureRow = new QHBoxLayout;
     exposureRow->setSpacing(5);
     QLabel* exposureLabel = new QLabel(QStringLiteral("曝光"), cameraGroup);
@@ -2895,7 +3018,11 @@ void GraphicalProgramEditor::buildInterface()
     connect(openProjectAction, &QAction::triggered, this, &GraphicalProgramEditor::openProject);
     connect(saveProjectAction, &QAction::triggered, this, &GraphicalProgramEditor::saveProject);
     connect(m_cameraSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-        [this]() { m_cameraExposureEdited = false; refreshCameraPanel(); });
+        [this]() {
+            clearCameraPreviewFromCanvas();
+            m_cameraExposureEdited = false;
+            refreshCameraPanel();
+        });
     connect(m_cameraExposure, QOverload<int>::of(&QSpinBox::valueChanged), this,
         [this]() { m_cameraExposureEdited = true; });
     connect(m_cameraStart, &QPushButton::clicked, this,
@@ -2904,6 +3031,10 @@ void GraphicalProgramEditor::buildInterface()
         [this]() { executeCameraCommand(CameraCommand::StopCapture); });
     connect(m_cameraLoad, &QPushButton::clicked, this,
         [this]() { executeCameraCommand(CameraCommand::Snapshot); });
+    connect(m_cameraRefreshDevices, &QPushButton::clicked, this,
+        &GraphicalProgramEditor::refreshDiscoveredCameras);
+    connect(m_cameraConnectDevice, &QPushButton::clicked, this,
+        &GraphicalProgramEditor::connectSelectedCamera);
     connect(m_recordDevicePosition, &QPushButton::clicked, this,
         &GraphicalProgramEditor::recordSelectedDevicePosition);
     connect(m_clearDevicePosition, &QPushButton::clicked, this,

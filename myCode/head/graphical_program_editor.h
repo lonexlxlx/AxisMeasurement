@@ -43,6 +43,7 @@ struct GraphicalDetectionParameters {
 class QLabel;
 class QListWidget;
 class QTableWidget;
+class QTimer;
 class QAction;
 class QDoubleSpinBox;
 class QSpinBox;
@@ -82,7 +83,13 @@ public:
         bool hasFrame = false;
         int exposure = -1;
         QSize frameSize;
+        QImage previewImage;
         QString message;
+    };
+    struct CameraDeviceDescriptor {
+        QString serialNumber;
+        QString displayName;
+        QString modelName;
     };
     enum class CameraCommand { StartCapture, StopCapture, Snapshot };
     struct CameraCommandResult {
@@ -93,6 +100,9 @@ public:
     using CameraReader = std::function<CameraSnapshot(int)>;
     using CameraCommander = std::function<CameraCommandResult(int, CameraCommand, int)>;
     void setCameraBackend(CameraReader reader, CameraCommander commander);
+    using CameraDiscovery = std::function<QVector<CameraDeviceDescriptor>(QString&)>;
+    using CameraConnector = std::function<bool(int, const QString&, QString&)>;
+    void setCameraDiscoveryBackend(CameraDiscovery discovery, CameraConnector connector);
     void setProgramPackageGeneratedHandler(std::function<void()> handler);
     bool saveRecipeFile(const QString& filePath, QString& error);
     bool loadRecipeFile(const QString& filePath, QString& error);
@@ -145,6 +155,8 @@ private:
     bool m_axisStopRequested = false;
     qint64 m_axisStartedAt = 0;
     void refreshCameraPanel();
+    void refreshDiscoveredCameras();
+    void connectSelectedCamera();
     void executeCameraCommand(CameraCommand command);
     bool stopOwnedCamera();
     void recordSelectedDevicePosition();
@@ -152,11 +164,16 @@ private:
     void refreshDevicePositionPanel();
     CameraReader m_cameraReader;
     CameraCommander m_cameraCommander;
+    CameraDiscovery m_cameraDiscovery;
+    CameraConnector m_cameraConnector;
     std::function<void()> m_programPackageGeneratedHandler;
     LightCurtainReader m_lightCurtainReader;
     QComboBox* m_cameraSelector = nullptr;
     QSpinBox* m_cameraExposure = nullptr;
     QLabel* m_cameraState = nullptr;
+    QComboBox* m_physicalCameraSelector = nullptr;
+    QPushButton* m_cameraRefreshDevices = nullptr;
+    QPushButton* m_cameraConnectDevice = nullptr;
     QPushButton* m_cameraStart = nullptr;
     QPushButton* m_cameraStop = nullptr;
     QPushButton* m_cameraLoad = nullptr;
@@ -166,6 +183,12 @@ private:
     QPushButton* m_clearDevicePosition = nullptr;
     int m_ownedCamera = -1;
     bool m_cameraExposureEdited = false;
+    bool m_cameraPreviewOnCanvas = false;
+    QTimer* m_cameraRefreshTimer = nullptr;
+    bool m_canvasBadgeWasVisible = false;
+    QString m_canvasBadgeBeforeCameraPreview;
+    void showCameraPreviewOnCanvas(const QImage& image, int camera, bool capturing);
+    void clearCameraPreviewFromCanvas();
     bool m_axisBackendAvailable = false;
     void openLocalImage();
     void addLocalFrame();

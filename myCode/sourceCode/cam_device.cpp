@@ -1,6 +1,7 @@
 ﻿//#pragma execution_character_set("gbk")
 //#pragma execution_character_set("utf-8")
 #include "cam_device.h"
+#include <QMutexLocker>
 
 
 cam_device::cam_device()
@@ -38,6 +39,50 @@ void cam_device::initInf(gxstring sn, int cam_number)
 	camSn = sn;
 	camNumber = cam_number;
 };
+
+QVector<cam_device::DiscoveredDevice> cam_device::discoverDevices(QString& error)
+{
+	error.clear();
+	QVector<DiscoveredDevice> devices;
+	try
+	{
+		IGXFactory::GetInstance().Init();
+		gxdeviceinfo_vector deviceInfo;
+		IGXFactory::GetInstance().UpdateDeviceList(500, deviceInfo);
+		for (size_t index = 0; index < deviceInfo.size(); ++index)
+		{
+			const CGXDeviceInfo& device = deviceInfo[index];
+			DiscoveredDevice value;
+			value.serialNumber = QString::fromLocal8Bit(device.GetSN().c_str());
+			value.displayName = QString::fromLocal8Bit(device.GetDisplayName().c_str());
+			value.modelName = QString::fromLocal8Bit(device.GetModelName().c_str());
+			devices.append(value);
+		}
+	}
+	catch (CGalaxyException& e)
+	{
+		error = QStringLiteral("枚举相机失败（SDK %1）：%2")
+			.arg(e.GetErrorCode()).arg(QString::fromLocal8Bit(e.what()));
+	}
+	catch (std::exception& e)
+	{
+		error = QStringLiteral("枚举相机失败：%1").arg(QString::fromLocal8Bit(e.what()));
+	}
+	return devices;
+}
+
+cv::Mat cam_device::capturedFrameCopy(int* exposure) const
+{
+	QMutexLocker locker(&m_frameMutex);
+	if (exposure) *exposure = imgExposeTime;
+	return capturedImg.clone();
+}
+
+QString cam_device::activeSerialNumber() const
+{
+	return QString::fromLocal8Bit(camSn.c_str());
+}
+
 void cam_device::openCam()
 {
 	try
@@ -62,6 +107,7 @@ void cam_device::openCam()
 			m_deviceInfo = m_objDevicePtr->GetDeviceInfo();//m_deviceInfo是在库中定义的一种类或者结构体，可以通过调用其中的各种函数获得设备参数
 			m_firmName = m_deviceInfo.GetVendorName();
 			m_productName = m_deviceInfo.GetModelName();
+			m_serialNumName = m_deviceInfo.GetSN();
 			m_ipName = m_deviceInfo.GetIP();
 			m_maskName = m_deviceInfo.GetSubnetMask();
 			m_macName = m_deviceInfo.GetMAC();
@@ -289,13 +335,14 @@ void cam_device::saveImg(string imgPath,int width,int height,int mode)//mode为0
 {
 	cout << "camsave" << imgPath << endl;
 	cv::Mat PicCvt;
+	const cv::Mat frame = capturedFrameCopy();
 	if (mode == 0)
 	{
-		PicCvt = capturedImg;
+		PicCvt = frame;
 	}
 	else if (mode == 1)
 	{
-		cvtColor(capturedImg, PicCvt, COLOR_BGR2GRAY);
+		cvtColor(frame, PicCvt, COLOR_BGR2GRAY);
 	}; 
 	if (width==0 || height==0)
 	{
@@ -315,7 +362,7 @@ void cam_device::imgFormatConvert(CImageDataPointer objImagePtr)
 	{
 		//cout << "采集成功" << endl;
 		//图像获取为完整帧，可以读取图像宽、高、数据格式等
-		capturedImg.create(m_height, m_width, CV_8UC3);
+		cv::Mat convertedImage(m_height, m_width, CV_8UC3);
 		//对采集到的图像格式进行判断
 		GX_PIXEL_FORMAT_ENTRY emPixelFormat = objImagePtr->GetPixelFormat();
 		//cout << "采集到的图像格式为" << emPixelFormat << endl;
@@ -340,9 +387,15 @@ void cam_device::imgFormatConvert(CImageDataPointer objImagePtr)
 		{
 			//cout << "有图像" << endl;
 			double d = m_objRemoteFeatureControlPtr->GetFloatFeature("ExposureTime")->GetValue();
-			imgExposeTime = int(d);
+			const int capturedExposure = int(d);
 			//cout << "照片曝光时间为" << imgExposeTime << endl;
-			memcpy(capturedImg.data, pRGB24Buffer, (m_width) * (m_height) * 3);
+			memcpy(convertedImage.data, pRGB24Buffer, (m_width) * (m_height) * 3);
+			{
+				QMutexLocker locker(&m_frameMutex);
+				capturedImg.create(m_height, m_width, CV_8UC3);
+				memcpy(capturedImg.data, convertedImage.data, (m_width) * (m_height) * 3);
+				imgExposeTime = capturedExposure;
+			}
 			m_capturedFrameSerial.fetch_add(1, std::memory_order_release);
 		}
 		else

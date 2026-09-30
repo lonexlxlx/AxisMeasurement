@@ -381,17 +381,24 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 				return state;
 			}
 			cam_device* device = cameraPtrList[camera];
+			int capturedExposure = -1;
+			const cv::Mat capturedFrame = device->capturedFrameCopy(&capturedExposure);
 			state.connected = device->isOpenCam && device->isOpenStream;
 			state.available = state.connected && !programRunFlag
 				&& !goHomeThread_Ptr->isRunning();
 			state.capturing = camCaptureFlag[camera];
-			state.hasFrame = !state.capturing && !device->capturedImg.empty();
-			state.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : device->exposeTime;
-			if (state.hasFrame) state.frameSize = QSize(device->capturedImg.cols, device->capturedImg.rows);
+			state.hasFrame = !state.capturing && !capturedFrame.empty();
+			state.exposure = capturedExposure >= 0 ? capturedExposure : device->exposeTime;
+			if (!capturedFrame.empty()) {
+				state.frameSize = QSize(capturedFrame.cols, capturedFrame.rows);
+				state.previewImage = cameraFrameToQImage(capturedFrame);
+			}
 			if (!state.connected) state.message = QStringLiteral("相机%1未连接").arg(camera);
 			else if (!state.available) state.message = QStringLiteral("相机%1当前不可操作").arg(camera);
-			else if (state.capturing) state.message = QStringLiteral("相机%1正在连续采集").arg(camera);
-			else state.message = QStringLiteral("相机%1已就绪").arg(camera);
+			else if (state.capturing) state.message = QStringLiteral("相机%1正在连续采集（SN %2）")
+				.arg(camera).arg(device->activeSerialNumber());
+			else state.message = QStringLiteral("相机%1已就绪（SN %2）")
+				.arg(camera).arg(device->activeSerialNumber());
 			return state;
 		},
 		[this](int camera, GraphicalProgramEditor::CameraCommand command, int exposure) {
@@ -457,15 +464,69 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 				result.error = QStringLiteral("请先停止相机%1采集。").arg(camera);
 				return result;
 			}
-			result.image = cameraFrameToQImage(device->capturedImg);
-			result.exposure = device->imgExposeTime >= 0 ? device->imgExposeTime : exposure;
+			int capturedExposure = -1;
+			result.image = cameraFrameToQImage(device->capturedFrameCopy(&capturedExposure));
+			result.exposure = capturedExposure >= 0 ? capturedExposure : exposure;
 			if (result.image.isNull()) result.error = QStringLiteral("相机%1没有可用的最后一帧。").arg(camera);
 			return result;
+		});
+	m_graphicalProgramEditor->setCameraDiscoveryBackend(
+		[](QString& error) {
+			QVector<GraphicalProgramEditor::CameraDeviceDescriptor> result;
+			const QVector<cam_device::DiscoveredDevice> devices = cam_device::discoverDevices(error);
+			for (const auto& device : devices) {
+				GraphicalProgramEditor::CameraDeviceDescriptor value;
+				value.serialNumber = device.serialNumber;
+				value.displayName = device.displayName;
+				value.modelName = device.modelName;
+				result.append(value);
+			}
+			return result;
+		},
+		[this](int camera, const QString& serial, QString& error) {
+			error.clear();
+			if (camera < 0 || camera >= 3 || !cameraPtrList[camera]) {
+				error = QStringLiteral("逻辑相机编号无效。");
+				return false;
+			}
+			if (programRunFlag || goHomeThread_Ptr->isRunning()) {
+				error = QStringLiteral("自动测量或回零正在运行，不能切换相机。");
+				return false;
+			}
+			const QString axisConflict = activeAxisConflict();
+			if (!axisConflict.isEmpty()) {
+				error = axisConflict;
+				return false;
+			}
+			for (int index = 0; index < 3; ++index) {
+				if (camCaptureFlag[index] || (m_camThread_ptrList[index] && m_camThread_ptrList[index]->isRunning())) {
+					error = QStringLiteral("相机%1仍在采集；请先停止。").arg(index);
+					return false;
+				}
+				if (index != camera && cameraPtrList[index] && cameraPtrList[index]->isOpenCam
+					&& cameraPtrList[index]->activeSerialNumber() == serial) {
+					error = QStringLiteral("SN %1 已连接为相机%2，不能重复占用。").arg(serial).arg(index);
+					return false;
+				}
+			}
+			cam_device* device = cameraPtrList[camera];
+			if (device->isOpenCam && device->activeSerialNumber() == serial) return true;
+			if (device->isOpenCam || device->isOpenStream) device->closeCam();
+			const QByteArray serialBytes = serial.toLocal8Bit();
+			device->initInf(gxstring(serialBytes.constData()), camera);
+			device->openCam();
+			if (!device->isOpenCam || !device->isOpenStream) {
+				error = QStringLiteral("SN %1 打开失败；请检查是否被其他软件占用、驱动和网络配置。")
+					.arg(serial);
+				return false;
+			}
+			return true;
 		});
 	connect(this, &QObject::destroyed, m_graphicalProgramEditor, [this]() {
 		if (m_graphicalProgramEditor) {
 			m_graphicalProgramEditor->setAxisBackend({}, {});
 			m_graphicalProgramEditor->setCameraBackend({}, {});
+			m_graphicalProgramEditor->setCameraDiscoveryBackend({}, {});
 		}
 	});
 	

@@ -5,6 +5,9 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <atomic>
+#include <QMutex>
+#include <QString>
+#include <QVector>
 
 #include "GalaxyIncludes.h"
 
@@ -18,6 +21,11 @@ class cam_device :public QMainWindow,public ICaptureEventHandler//, public IDevi
 signals:
 	void cameraErrorInf(QString errorInf);
 public:
+	struct DiscoveredDevice {
+		QString serialNumber;
+		QString displayName;
+		QString modelName;
+	};
 
 	cam_device();
 	~cam_device();
@@ -33,6 +41,9 @@ public:
 	void setGain(double newGain);
 	void saveImg(string imgPath,int width, int height,int mode);
 	void unInit();//释放所有打开的资源所有相机执行一次即可
+	static QVector<DiscoveredDevice> discoverDevices(QString& error);
+	cv::Mat capturedFrameCopy(int* exposure = nullptr) const;
+	QString activeSerialNumber() const;
 	unsigned long long capturedFrameSerial() const noexcept;
 	bool lastCaptureStartSucceeded() const noexcept;
 	bool lastCaptureStopSucceeded() const noexcept;
@@ -73,6 +84,7 @@ public:
 	string m_triggerSource;
 
 private:
+	mutable QMutex m_frameMutex;
 	std::atomic<unsigned long long> m_capturedFrameSerial{ 0 };
 	std::atomic<bool> m_lastCaptureStartSucceeded{ false };
 	std::atomic<bool> m_lastCaptureStopSucceeded{ true };

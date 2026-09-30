@@ -948,6 +948,21 @@ static void testDetectionRecords()
 
 static void testCameraWorkflow()
 {
+    GraphicalCanvas previewCanvas;
+    QImage localImage(80, 60, QImage::Format_RGB32);
+    localImage.fill(QColor(30, 40, 50));
+    QImage liveImage(64, 48, QImage::Format_RGB32);
+    liveImage.fill(QColor(12, 160, 80));
+    previewCanvas.setImage(localImage);
+    previewCanvas.setLivePreviewImage(liveImage);
+    require(previewCanvas.isLivePreviewActive() && previewCanvas.hasImage()
+        && previewCanvas.sourceImage().pixelColor(0, 0) == QColor(30, 40, 50),
+        "live camera display must preserve the editable image on the same canvas");
+    previewCanvas.clearLivePreview();
+    require(!previewCanvas.isLivePreviewActive()
+        && previewCanvas.sourceImage().pixelColor(0, 0) == QColor(30, 40, 50),
+        "clearing live display must restore the prior editable image");
+
     GraphicalProgramEditor editor;
     editor.setAttribute(Qt::WA_DontShowOnScreen);
     bool connected = false;
@@ -956,6 +971,7 @@ static void testCameraWorkflow()
     int starts = 0;
     int stops = 0;
     int snapshots = 0;
+    QImage previewFrame;
     using CameraCommand = GraphicalProgramEditor::CameraCommand;
     editor.setCameraBackend([&](int camera) {
         GraphicalProgramEditor::CameraSnapshot state;
@@ -965,6 +981,7 @@ static void testCameraWorkflow()
         state.hasFrame = hasFrame;
         state.exposure = 500;
         state.frameSize = hasFrame ? QSize(64, 48) : QSize();
+        state.previewImage = previewFrame;
         state.message = connected
             ? QStringLiteral("模拟相机%1已连接").arg(camera)
             : QStringLiteral("模拟相机%1未连接").arg(camera);
@@ -979,6 +996,8 @@ static void testCameraWorkflow()
             ++starts;
             capturing = true;
             hasFrame = false;
+            previewFrame = QImage(64, 48, QImage::Format_RGB32);
+            previewFrame.fill(QColor(12, 160, 80));
         }
         else if (command == CameraCommand::StopCapture) {
             ++stops;
@@ -992,6 +1011,18 @@ static void testCameraWorkflow()
             result.exposure = exposure;
         }
         return result;
+    });
+    editor.setCameraDiscoveryBackend([](QString& error) {
+        error.clear();
+        GraphicalProgramEditor::CameraDeviceDescriptor device;
+        device.serialNumber = QStringLiteral("TEST-SN-001");
+        device.displayName = QStringLiteral("测试相机");
+        device.modelName = QStringLiteral("MockCam");
+        return QVector<GraphicalProgramEditor::CameraDeviceDescriptor>{ device };
+    }, [&](int camera, const QString& serial, QString& error) {
+        error.clear();
+        connected = camera == 0 && serial == QStringLiteral("TEST-SN-001");
+        return connected;
     });
     editor.show();
     QTest::qWait(250);
@@ -1009,20 +1040,33 @@ static void testCameraWorkflow()
     require(!start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
         "disconnected camera controls must be disabled");
 
-    connected = true;
+    auto* refreshDevices = editor.findChild<QPushButton*>(QStringLiteral("refreshPhysicalCameras"));
+    auto* connectDevice = editor.findChild<QPushButton*>(QStringLiteral("connectPhysicalCamera"));
+    auto* physicalSelector = editor.findChild<QComboBox*>(QStringLiteral("physicalCameraSelector"));
+    require(refreshDevices && connectDevice && physicalSelector, "test camera binding controls required");
+    QTest::mouseClick(refreshDevices, Qt::LeftButton);
+    require(physicalSelector->count() == 1
+        && physicalSelector->currentData().toString() == QStringLiteral("TEST-SN-001"),
+        "discovered test camera must be selectable");
+    QTest::mouseClick(connectDevice, Qt::LeftButton);
     QTest::qWait(250);
+    require(connected, "selected physical camera must bind to logical camera 0");
+
     require(start->isEnabled() && !stop->isEnabled() && !load->isEnabled(),
         "connected camera must allow capture start only");
     QTest::mouseClick(start, Qt::LeftButton);
     QTest::qWait(250);
     require(starts == 1 && capturing && stop->isEnabled(), "camera start command missing");
+    auto* canvas = editor.findChild<GraphicalCanvas*>();
+    require(canvas && canvas->isLivePreviewActive(),
+        "graphical editor must display the live camera frame on the central canvas");
     QTest::mouseClick(stop, Qt::LeftButton);
     QTest::qWait(250);
-    require(stops == 1 && !capturing && load->isEnabled(), "last frame must become available after stop");
+    require(stops == 1 && !capturing && load->isEnabled() && canvas->isLivePreviewActive(),
+        "last frame must remain on the central canvas after stop");
     QTest::mouseClick(load, Qt::LeftButton);
     QTest::qWait(250);
-    auto* canvas = editor.findChild<GraphicalCanvas*>();
-    require(snapshots == 1 && canvas && canvas->hasImage(),
+    require(snapshots == 1 && canvas->hasImage() && !canvas->isLivePreviewActive(),
         "snapshot must be cached and loaded without a save dialog");
     QTemporaryDir recipeDirectory;
     require(recipeDirectory.isValid(), "temporary recipe directory missing");
@@ -1384,6 +1428,8 @@ static void testImageLessSensorPlan()
 
 int main(int argc, char** argv)
 {
+    std::cout << std::unitbuf;
+    std::cerr << std::unitbuf;
     QApplication app(argc, argv);
     QFile theme(QStringLiteral("config/theme.qss"));
     if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
