@@ -1686,12 +1686,13 @@ void AxisMeasurement::on_openAllDevice_clicked()
 
 	 //打开相机
 	cameraPtrList[0]->openCam();
+	cameraPtrList[0]->setExposeTime(11);
 	if (!cameraPtrList[0]->isOpenCam)
 	{
 		showTips("远心相机打开失败，请检查！");
 		return;
 	};
-	cameraPtrList[0]->setExposeTime(11);
+	
 
 	// TEMP_CAMERA0_PREVIEW_BEGIN：连接相机0后直接启动实时预览，不访问光幕和运动控制卡。
 	if (kCamera0PreviewOnly)
@@ -1721,7 +1722,7 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	}
 	// TEMP_CAMERA0_PREVIEW_END
 
-	#if 0 // 临时仅连接相机0；相机1、相机2原连接逻辑保留，三相机联调时恢复。
+	#if 1 // 临时仅连接相机0；相机1、相机2原连接逻辑保留，三相机联调时恢复。
 	cameraPtrList[1]->openCam();
 	cameraPtrList[1]->setExposeTime(400);
 	if (!cameraPtrList[1]->isOpenCam)
@@ -1796,9 +1797,9 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	}
 	//cout<<"设备打开情况"<< cameraPtrList[0]->isOpenCam<<"  " << cameraPtrList[1]->isOpenCam << "  " << cameraPtrList[2]->isOpenCam << "  "<< moveControlCardPtr->openControllerFlag<< lsSensorPtr->lsOpenflag
 	// 当前联调阶段只要求相机0；相机1、2恢复后应重新加入此就绪条件。
-	if (cameraPtrList[0]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag)
+	//if (cameraPtrList[0]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag)
 
-	//if (cameraPtrList[0]->isOpenCam && cameraPtrList[1]->isOpenCam && cameraPtrList[2]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag && DbOpenFlag)//所有设备均正常打开了
+	if (cameraPtrList[0]->isOpenCam && cameraPtrList[1]->isOpenCam && cameraPtrList[2]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag && DbOpenFlag)//所有设备均正常打开了
 	{
 		ui.programNumber->setEnabled(true);
 		QString graphicalProgramError;
