@@ -30,7 +30,7 @@ logIn::logIn(QWidget* parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
-	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
+	this->setWindowIcon(QIcon(":/AxisMeasurement/config/logo-measurement-rounded.ico"));
 	//无边框窗口（P1-6 登录窗美化）；拖动由 mousePressEvent/mouseMoveEvent 实现
 	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowSystemMenuHint);
 	setAttribute(Qt::WA_TranslucentBackground);

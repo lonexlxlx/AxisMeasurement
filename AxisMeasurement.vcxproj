@@ -357,9 +357,10 @@
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>
-  <Target Name="CopyRuntimeThemeQss" AfterTargets="Build">
+  <Target Name="CopyRuntimeConfigAssets" AfterTargets="Build">
     <MakeDir Directories="$(OutDir)config" />
     <Copy SourceFiles="$(ProjectDir)config\theme.qss" DestinationFiles="$(OutDir)config\theme.qss" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)config\logo-measurement-rounded.ico" DestinationFiles="$(OutDir)config\logo-measurement-rounded.ico" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="VerifyReleaseProgramDatabase" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <Error Condition="!Exists('$(OutDir)$(TargetName).pdb')" Text="Release构建缺少主程序PDB：$(OutDir)$(TargetName).pdb" />

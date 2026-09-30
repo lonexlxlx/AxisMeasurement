@@ -2322,7 +2322,7 @@ void GraphicalProgramEditor::buildInterface()
     }
 
     menuBar()->setObjectName(QStringLiteral("graphicalEditorMenuBar"));
-    QMenu* offlineMenu = menuBar()->addMenu(QStringLiteral("离线调试"));
+    QMenu* offlineMenu = menuBar()->addMenu(QStringLiteral("打开本地端点图"));
     offlineMenu->setObjectName(QStringLiteral("graphicalOfflineMenu"));
     QAction* addFrameAction = offlineMenu->addAction(QStringLiteral("导入端点图…"));
     QAction* removeFrameAction = offlineMenu->addAction(QStringLiteral("移除当前端点图"));
@@ -2825,7 +2825,7 @@ void GraphicalProgramEditor::buildInterface()
     exposureRow->addWidget(m_cameraExposure, 1);
     cameraLayout->addLayout(exposureRow);
 
-    m_cameraStart = new QPushButton(QStringLiteral("开始连续采集"), cameraGroup);
+    m_cameraStart = new QPushButton(QStringLiteral("开始实时预览"), cameraGroup);
     m_cameraStop = new QPushButton(QStringLiteral("停止采集"), cameraGroup);
     m_cameraLoad = new QPushButton(QStringLiteral("载入最后一帧"), cameraGroup);
     cameraLayout->addWidget(m_cameraStart);

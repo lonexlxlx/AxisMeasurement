@@ -36,7 +36,10 @@
 // Temporary test switches. Restore false after the corresponding verification is complete.
 namespace {
 constexpr bool kManualLayoutPreview = false; //手动控制界面临时预览开关
-constexpr bool kSingleCamera0TestMode = true; //仅连接并显示相机0，不打开其他硬件
+// TEMP_CAMERA0_PREVIEW: 仅用于相机0实时画面验证。
+// true：跳过光幕和运动控制卡，不允许运动/自动测量；相机0画面显示到主界面中央。
+// false：恢复设备原有打开流程。三相机交付前还需同时恢复下方相机1、2的 #if 0 代码块。
+constexpr bool kCamera0PreviewOnly = false;
 }
 
 namespace {
@@ -354,13 +357,13 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		ui.programNumber->setItemData(index, index, Qt::UserRole);
 	QString graphicalProgramError;
 	refreshGraphicalProgramList(graphicalProgramError);
-	//this->setWindowIcon(QIcon("://AxisMeasurement/config/logo.ico")); 
+	//this->setWindowIcon(QIcon("://AxisMeasurement/config/logo-measurement-rounded.ico")); 
 
 	//P2-9/10/11：布局重构（分组收纳+QSplitter 自适应+数值仪表盘化），必须在任何控件操作之前执行
 	restructureMainLayout();
 
 	//系统相关
-	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
+	this->setWindowIcon(QIcon(":/AxisMeasurement/config/logo-measurement-rounded.ico"));
 	m_logIn = new(logIn);
 	m_logIn->show();//设定为登陆界面
 	connect(m_logIn, SIGNAL(logToSystem()), this, SLOT(show()));
@@ -369,7 +372,7 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 	connect(updateDateTimer, SIGNAL(timeout()), this, SLOT(showTime()));
 	updateDateTimer->start(1000);
 	m_graphicalProgramEditor = new GraphicalProgramEditor(this);
-	m_graphicalProgramEditor->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
+	m_graphicalProgramEditor->setWindowIcon(QIcon(":/AxisMeasurement/config/logo-measurement-rounded.ico"));
 	m_graphicalProgramEditor->setAttribute(Qt::WA_DeleteOnClose, false);
 	m_graphicalProgramEditor->setProgramPackageGeneratedHandler([this]() {
 		QString refreshError;
@@ -1690,27 +1693,35 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	};
 	cameraPtrList[0]->setExposeTime(10000);
 
-	// 临时单相机0采集测试：启动连续采集和显示线程，不打开其他相机及运动相关设备。
-	if (kSingleCamera0TestMode)
+	// TEMP_CAMERA0_PREVIEW_BEGIN：连接相机0后直接启动实时预览，不访问光幕和运动控制卡。
+	if (kCamera0PreviewOnly)
 	{
 		cameraPtrList[0]->m_captureMode = QStringLiteral("continuous");
 		cameraPtrList[0]->startCapture();
 		if (!cameraPtrList[0]->lastCaptureStartSucceeded())
 		{
 			showTips(QStringLiteral("相机0连续采集启动失败！"));
-			showDeviceInf(QStringLiteral("相机0已连接，但图像采集启动失败"));
+			showDeviceInf(QStringLiteral("相机0已连接，但实时预览启动失败"));
 			return;
 		}
 		if (!m_camThread_ptrList[0]->isRunning())
 			m_camThread_ptrList[0]->start();
 		camCaptureFlag[0] = true;
-		showDeviceInf(QStringLiteral("相机0连接并开始连续采集（单相机测试模式）"));
+		allDeviceOpenFlag = false; // 不伪造光幕和运动控制卡已连接，禁止硬件动作。
+		updateDeviceStatus(true);
+		showDeviceInf(QStringLiteral("相机0实时预览已启动（光幕和运动控制卡已临时跳过）"));
+		ui.openAllDevice->setEnabled(false);
+		ui.closeAllDevice->setEnabled(true);
+		ui.allAxisGoHome->setEnabled(false);
+		ui.startAutoMearsurement->setEnabled(false);
+		ui.measureCancel->setEnabled(false);
+		ui.programConfirm->setEnabled(false);
+		ui.urgrentStopMearsure->setEnabled(false);
+		return;
 	}
-	ui.openAllDevice->setEnabled(false);
-	ui.closeAllDevice->setEnabled(true);
-	return;
+	// TEMP_CAMERA0_PREVIEW_END
 
-#if 0 // 原相机1、相机2连接逻辑暂时注释保留，完成测试后可恢复。
+	#if 0 // 临时仅连接相机0；相机1、相机2原连接逻辑保留，三相机联调时恢复。
 	cameraPtrList[1]->openCam();
 	cameraPtrList[1]->setExposeTime(400);
 	if (!cameraPtrList[1]->isOpenCam)
@@ -1784,7 +1795,8 @@ void AxisMeasurement::on_openAllDevice_clicked()
 		showTips("运动控制卡打开失败，请检查！");
 	}
 	//cout<<"设备打开情况"<< cameraPtrList[0]->isOpenCam<<"  " << cameraPtrList[1]->isOpenCam << "  " << cameraPtrList[2]->isOpenCam << "  "<< moveControlCardPtr->openControllerFlag<< lsSensorPtr->lsOpenflag
-	if (cameraPtrList[0]->isOpenCam && cameraPtrList[1]->isOpenCam && cameraPtrList[2]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag )//所有设备均正常打开了
+	// 当前联调阶段只要求相机0；相机1、2恢复后应重新加入此就绪条件。
+	if (cameraPtrList[0]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag)
 
 	//if (cameraPtrList[0]->isOpenCam && cameraPtrList[1]->isOpenCam && cameraPtrList[2]->isOpenCam && moveControlCardPtr->openControllerFlag && lsSensorPtr->lsOpenflag && DbOpenFlag)//所有设备均正常打开了
 	{
@@ -1841,10 +1853,12 @@ void AxisMeasurement::on_openAllDevice_clicked()
 	
 	ui.openAllDevice->setEnabled(false);
 	ui.closeAllDevice->setEnabled(true);
-	ui.startAutoMearsurement->setEnabled(false);
-	ui.measureCancel->setEnabled(false);
-	ui.urgrentStopMearsure->setEnabled(true);
-	ui.programConfirm->setEnabled(false);
+	// 临时单相机联调：基础硬件就绪后开放顶部流程按钮；各槽函数仍执行原有状态检查。
+	ui.allAxisGoHome->setEnabled(allDeviceOpenFlag);
+	ui.startAutoMearsurement->setEnabled(allDeviceOpenFlag);
+	ui.measureCancel->setEnabled(allDeviceOpenFlag);
+	ui.urgrentStopMearsure->setEnabled(allDeviceOpenFlag);
+	ui.programConfirm->setEnabled(allDeviceOpenFlag);
 	ui.creatDatabase->setEnabled(false);//暂时没用上
 };
 void AxisMeasurement::on_closeAllDevice_clicked()
@@ -1861,16 +1875,30 @@ void AxisMeasurement::on_closeAllDevice_clicked()
 		showTips(QStringLiteral("请先关闭图形化编程窗口，确认其轴和相机操作已经停止。"));
 		return;
 	}
-	// 临时单相机0测试：关闭设备前自动停止采集和显示线程。
-	if (kSingleCamera0TestMode && camCaptureFlag[0]) {
-		cameraPtrList[0]->stopCapture();
+	// TEMP_CAMERA0_PREVIEW_BEGIN：预览模式只停止并关闭相机0，不访问未打开的其他硬件。
+	if (kCamera0PreviewOnly) {
+		if (camCaptureFlag[0]) cameraPtrList[0]->stopCapture();
 		m_camThread_ptrList[0]->requestInterruption();
 		if (m_camThread_ptrList[0]->isRunning() && !m_camThread_ptrList[0]->wait(1500)) {
 			showTips(QStringLiteral("相机0显示线程未能及时停止，请稍后重试。"));
 			return;
 		}
 		camCaptureFlag[0] = false;
+		cameraPtrList[0]->closeCam();
+		allDeviceOpenFlag = false;
+		updateDeviceStatus(false);
+		showDeviceInf(QStringLiteral("相机0实时预览已关闭"));
+		ui.openAllDevice->setEnabled(true);
+		ui.closeAllDevice->setEnabled(false);
+		ui.programNumber->setEnabled(false);
+		ui.allAxisGoHome->setEnabled(false);
+		ui.startAutoMearsurement->setEnabled(false);
+		ui.measureCancel->setEnabled(false);
+		ui.programConfirm->setEnabled(false);
+		ui.urgrentStopMearsure->setEnabled(false);
+		return;
 	}
+	// TEMP_CAMERA0_PREVIEW_END
 	const QString cameraConflict = activeCameraConflict(false);
 	if (!cameraConflict.isEmpty()) {
 		showTips(cameraConflict + QStringLiteral(" 请先停止采集。"));
@@ -5193,8 +5221,8 @@ void AxisMeasurement::displayImg(const Mat* imgPrt, QString source, int drawMode
 	//"org"/"processed"/"cam"对应显示在面板上的对应位置
 	//cout << "这里是displayImg" <<  source.toStdString() << endl;
 	if (!imgPrt || imgPrt->empty()) return;
-	// 临时单相机0测试：把 cam0 实时画面路由到自动测量页中央图像区。
-	if (kSingleCamera0TestMode && source == QStringLiteral("cam0"))
+	// TEMP_CAMERA0_PREVIEW：测试期间把相机0实时画面送到自动测量页中央区域。
+	if (kCamera0PreviewOnly && source == QStringLiteral("cam0"))
 		source = QStringLiteral("org");
 	Mat src = imgPrt->clone();
 	QImage imgForDisplay;

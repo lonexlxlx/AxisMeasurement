@@ -482,7 +482,7 @@ sdk_assist::sdk_assist(QWidget* parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
-	this->setWindowIcon(QIcon(runtimePath("config/logo.ico")));
+	this->setWindowIcon(QIcon(":/AxisMeasurement/config/logo-measurement-rounded.ico"));
 	this->setWindowTitle("sdkAssist");
 	    //====== sdkAssist UI 重构：滚动容器 + 卡片式模块 + 布局管理器 ======
     // 保留 Designer 中的控件实例和 objectName，让 Qt 自动连接槽函数继续生效；只重排父子关系和布局。
@@ -660,7 +660,7 @@ sdk_assist::sdk_assist(QWidget* parent)
 		m_diameterPositionInf[i] = new diameterPositionInf();
 	}
 	*/
-	//this->setWindowIcon(QIcon("./config/logo.ico"));
+	//this->setWindowIcon(QIcon("./config/logo-measurement-rounded.ico"));
 	//ui.setupUi(this);
 };
 sdk_assist::~sdk_assist()

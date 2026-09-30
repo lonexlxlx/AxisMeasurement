@@ -20,8 +20,8 @@
   </property>
   <property name="windowIcon">
    <iconset theme="battery">
-    <normaloff>:/AxisMeasurement/config/logo.ico</normaloff>
-    <normalon>:/AxisMeasurement/config/logo.ico</normalon>:/AxisMeasurement/config/logo.ico</iconset>
+    <normaloff>:/AxisMeasurement/config/logo-measurement-rounded.ico</normaloff>
+    <normalon>:/AxisMeasurement/config/logo-measurement-rounded.ico</normalon>:/AxisMeasurement/config/logo-measurement-rounded.ico</iconset>
   </property>
   <widget class="QWidget" name="widget">
    <widget class="QStackedWidget" name="uiWidget">

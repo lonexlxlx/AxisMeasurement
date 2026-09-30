@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="AxisMeasurement">
+        <file>config/logo-measurement-rounded.ico</file>
         <file>config/icons/arrow_up.png</file>
         <file>config/icons/arrow_down.png</file>
         <file>config/icons/rotate_cw.png</file>
