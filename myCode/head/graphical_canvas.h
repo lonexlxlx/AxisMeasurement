@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QPoint>
 #include <QPair>
+#include <QRect>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -48,6 +49,9 @@ public:
     void setLivePreviewImage(const QImage& image);
     void clearLivePreview();
     bool isLivePreviewActive() const;
+    bool isLiveTrackingValid() const;
+    QPointF liveTrackingOffset() const;
+    double liveTrackingScore() const;
 
     bool hasImage() const;
     QImage sourceImage() const;
@@ -132,11 +136,22 @@ private:
     bool rotationHandleGeometry(QGraphicsItem* item, QPointF& center, QPointF& anchor, QPointF& handle) const;
     bool rotationHandleAt(const QPoint& viewportPoint, QGraphicsItem*& item) const;
     void updateHandleRotation(const QPoint& viewportPoint);
+    void initializeLiveTracking();
+    void updateLiveTracking(const QImage& image);
+    void resetLiveTracking();
+    void drawLiveTrackedFeatures(QPainter* painter) const;
 
     QGraphicsScene* m_scene = nullptr;
     QGraphicsPixmapItem* m_imageItem = nullptr;
     QGraphicsPixmapItem* m_livePreviewItem = nullptr;
     QImage m_sourceImage;
+    QVector<FeatureSnapshot> m_liveTrackingFeatures;
+    QImage m_liveTrackingTemplate;
+    QRect m_liveTrackingTemplateRect;
+    QPointF m_liveTrackingOffset;
+    double m_liveTrackingScore = 0.0;
+    bool m_liveTrackingValid = false;
+    bool m_liveTrackingInitialized = false;
     bool m_panning = false;
     bool m_spacePressed = false;
     QPoint m_lastPanPosition;

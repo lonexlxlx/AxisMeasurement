@@ -6,6 +6,7 @@
 #include <QImage>
 #include <QSize>
 #include <QByteArray>
+#include <QJsonObject>
 #include <QStringList>
 #include <functional>
 #include <cmath>
@@ -112,6 +113,11 @@ public:
         const GraphicalProgramStep& step,
         const QVector<GraphicalProgramMotionTarget>& targets,
         const QVector<GraphicalProgramRuntimeFrame>& frames);
+    static QJsonObject buildRuntimeRoiDefinition(const QImage& referenceImage,
+        const GraphicalCanvas::FeatureSnapshot& feature);
+    static bool resolveRuntimeMeasurementRoi(const QJsonObject& definition,
+        const QImage& runtimeImage, GraphicalCanvas::MeasurementRoi& roi,
+        QPointF& offset, double& score, QString& error);
     struct LightCurtainSnapshot {
         bool connected = false;
         bool available = false;

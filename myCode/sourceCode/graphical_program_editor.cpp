@@ -10,6 +10,7 @@
 #include <QLineEdit>
 #include <QCloseEvent>
 #include <QBrush>
+#include <QBuffer>
 #include <QColor>
 #include <QIcon>
 #include <QKeySequence>
@@ -31,6 +32,7 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
+#include <opencv2/imgproc.hpp>
 /*工具栏、左右下面板、记录表、试测调度、HALCON 算法*/
 namespace {
 struct ArcTrialResult {
@@ -1871,6 +1873,166 @@ bool GraphicalProgramEditor::collectCurrentDevicePosition(const QString& type,
     return true;
 }
 
+QJsonObject GraphicalProgramEditor::buildRuntimeRoiDefinition(const QImage& referenceImage,
+    const GraphicalCanvas::FeatureSnapshot& feature)
+{
+    QJsonObject roi;
+    roi[QStringLiteral("type")] = feature.type;
+    roi[QStringLiteral("rotation")] = feature.rotation;
+    roi[QStringLiteral("width")] = feature.size.width();
+    roi[QStringLiteral("height")] = feature.size.height();
+    QJsonArray points;
+    QPolygonF boundsPoints;
+    if (feature.type == QStringLiteral("矩形") && feature.points.size() == 1) {
+        const QRectF local(-feature.size.width() / 2.0, -feature.size.height() / 2.0,
+            feature.size.width(), feature.size.height());
+        QTransform transform;
+        transform.translate(feature.points[0].x(), feature.points[0].y());
+        transform.rotate(feature.rotation);
+        boundsPoints << transform.map(local.topLeft()) << transform.map(local.topRight())
+            << transform.map(local.bottomRight()) << transform.map(local.bottomLeft());
+    }
+    else if (feature.type == QStringLiteral("圆") && feature.points.size() == 1) {
+        boundsPoints << feature.points[0];
+    }
+    else {
+        for (const QPointF& point : feature.points) boundsPoints << point;
+    }
+    for (const QPointF& point : boundsPoints)
+        points.append(QJsonArray{ point.x(), point.y() });
+    roi[QStringLiteral("points")] = points;
+
+    if (referenceImage.isNull() || boundsPoints.isEmpty()) return roi;
+    QRectF featureBounds;
+    if (feature.type == QStringLiteral("圆")) {
+        featureBounds = QRectF(feature.points[0]
+            - QPointF(feature.size.width() / 2.0, feature.size.height() / 2.0), feature.size);
+    }
+    else {
+        featureBounds = boundsPoints.boundingRect();
+    }
+    const int margin = qMax(16, qRound(qMax(featureBounds.width(), featureBounds.height()) * 0.2));
+    QRect templateRect = featureBounds.toAlignedRect().adjusted(-margin, -margin, margin, margin)
+        .intersected(QRect(QPoint(), referenceImage.size()));
+    const QSize maximumSize(qMax(32, qRound(referenceImage.width() * 0.65)),
+        qMax(32, qRound(referenceImage.height() * 0.65)));
+    if (templateRect.width() > maximumSize.width() || templateRect.height() > maximumSize.height()) {
+        const QPoint center = templateRect.center();
+        templateRect = QRect(center.x() - maximumSize.width() / 2,
+            center.y() - maximumSize.height() / 2,
+            qMin(templateRect.width(), maximumSize.width()),
+            qMin(templateRect.height(), maximumSize.height()))
+            .intersected(QRect(QPoint(), referenceImage.size()));
+    }
+    if (templateRect.width() < 8 || templateRect.height() < 8) return roi;
+    const QImage templateImage = referenceImage.copy(templateRect);
+    const QImage gray = templateImage.convertToFormat(QImage::Format_Grayscale8);
+    const cv::Mat templateMat(gray.height(), gray.width(), CV_8UC1,
+        const_cast<uchar*>(gray.constBits()), gray.bytesPerLine());
+    cv::Scalar mean, deviation;
+    cv::meanStdDev(templateMat, mean, deviation);
+    if (deviation[0] < 2.0) return roi;
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (!buffer.open(QIODevice::WriteOnly) || !templateImage.save(&buffer, "PNG")
+        || png.isEmpty() || png.size() > 4 * 1024 * 1024) return roi;
+    QJsonObject tracking;
+    tracking[QStringLiteral("x")] = templateRect.x();
+    tracking[QStringLiteral("y")] = templateRect.y();
+    tracking[QStringLiteral("frameWidth")] = referenceImage.width();
+    tracking[QStringLiteral("frameHeight")] = referenceImage.height();
+    tracking[QStringLiteral("minimumScore")] = 0.65;
+    tracking[QStringLiteral("templatePng")] = QString::fromLatin1(png.toBase64());
+    roi[QStringLiteral("trackingReference")] = tracking;
+    return roi;
+}
+
+bool GraphicalProgramEditor::resolveRuntimeMeasurementRoi(const QJsonObject& definition,
+    const QImage& runtimeImage, GraphicalCanvas::MeasurementRoi& roi,
+    QPointF& offset, double& score, QString& error)
+{
+    error.clear(); offset = QPointF(); score = 0.0;
+    const QString type = definition.value(QStringLiteral("type")).toString();
+    const QJsonArray points = definition.value(QStringLiteral("points")).toArray();
+    const double width = definition.value(QStringLiteral("width")).toDouble(0);
+    const double height = definition.value(QStringLiteral("height")).toDouble(0);
+    if (type.isEmpty() || points.isEmpty() || !std::isfinite(width)
+        || !std::isfinite(height) || width <= 0 || height <= 0) {
+        error = QStringLiteral("ROI运行几何无效。"); return false;
+    }
+    roi = GraphicalCanvas::MeasurementRoi();
+    for (const QJsonValue& value : points) {
+        const QJsonArray point = value.toArray();
+        if (point.size() != 2 || !std::isfinite(point.at(0).toDouble())
+            || !std::isfinite(point.at(1).toDouble())) {
+            error = QStringLiteral("ROI坐标无效。"); return false;
+        }
+        roi.corners.append(QPointF(point.at(0).toDouble(), point.at(1).toDouble()));
+    }
+    const double rotation = definition.value(QStringLiteral("rotation")).toDouble();
+    roi.axisAligned = qAbs(rotation / 90.0 - qRound(rotation / 90.0)) <= 1e-8;
+    if (type == QStringLiteral("圆")) {
+        if (roi.corners.size() != 1) { error = QStringLiteral("圆形ROI坐标无效。"); return false; }
+        roi.isCircle = true; roi.center = roi.corners.first(); roi.radius = qMax(width, height) * 0.5;
+    }
+    else if (roi.corners.size() != 4) {
+        error = QStringLiteral("矩形ROI须包含四个角点。"); return false;
+    }
+
+    const QJsonObject tracking = definition.value(QStringLiteral("trackingReference")).toObject();
+    if (tracking.isEmpty()) return true;
+    if (runtimeImage.isNull() || qint64(runtimeImage.width()) * runtimeImage.height() > 50000000
+        || !tracking.value(QStringLiteral("frameWidth")).isDouble()
+        || !tracking.value(QStringLiteral("frameHeight")).isDouble()
+        || !tracking.value(QStringLiteral("x")).isDouble()
+        || !tracking.value(QStringLiteral("y")).isDouble()
+        || tracking.value(QStringLiteral("frameWidth")).toInt() != runtimeImage.width()
+        || tracking.value(QStringLiteral("frameHeight")).toInt() != runtimeImage.height()) {
+        error = QStringLiteral("运行图像尺寸与ROI定位参考不一致。"); return false;
+    }
+    const QByteArray encoded = tracking.value(QStringLiteral("templatePng")).toString().toLatin1();
+    if (encoded.size() > 6 * 1024 * 1024) {
+        error = QStringLiteral("ROI定位参考图数据过大。"); return false;
+    }
+    const QByteArray png = QByteArray::fromBase64(encoded);
+    QImage templateImage;
+    if (encoded.isEmpty() || png.isEmpty() || png.size() > 4 * 1024 * 1024
+        || !templateImage.loadFromData(png, "PNG") || templateImage.isNull()
+        || qint64(templateImage.width()) * templateImage.height() > 50000000) {
+        error = QStringLiteral("ROI定位参考图无效。"); return false;
+    }
+    const QImage frameGray = runtimeImage.convertToFormat(QImage::Format_Grayscale8);
+    const QImage templateGray = templateImage.convertToFormat(QImage::Format_Grayscale8);
+    const cv::Mat frame(frameGray.height(), frameGray.width(), CV_8UC1,
+        const_cast<uchar*>(frameGray.constBits()), frameGray.bytesPerLine());
+    const cv::Mat reference(templateGray.height(), templateGray.width(), CV_8UC1,
+        const_cast<uchar*>(templateGray.constBits()), templateGray.bytesPerLine());
+    if (frame.cols < reference.cols || frame.rows < reference.rows) {
+        error = QStringLiteral("ROI定位参考图大于运行图像。"); return false;
+    }
+    cv::Mat matches;
+    cv::matchTemplate(frame, reference, matches, cv::TM_CCOEFF_NORMED);
+    cv::Point bestLocation;
+    cv::minMaxLoc(matches, nullptr, &score, nullptr, &bestLocation);
+    const double minimumScore = tracking.value(QStringLiteral("minimumScore")).toDouble(0.65);
+    if (!std::isfinite(score) || !std::isfinite(minimumScore)
+        || minimumScore < 0.0 || minimumScore > 1.0 || score < minimumScore) {
+        error = QStringLiteral("ROI特征定位失败（分数%1，要求%2）。")
+            .arg(score, 0, 'f', 3).arg(minimumScore, 0, 'f', 3); return false;
+    }
+    offset = QPointF(bestLocation.x - tracking.value(QStringLiteral("x")).toInt(),
+        bestLocation.y - tracking.value(QStringLiteral("y")).toInt());
+    if (roi.isCircle) roi.center += offset;
+    else for (QPointF& point : roi.corners) point += offset;
+    const QRectF imageBounds(QPointF(), runtimeImage.size());
+    if ((roi.isCircle && !imageBounds.contains(QRectF(roi.center
+            - QPointF(roi.radius, roi.radius), QSizeF(roi.radius * 2, roi.radius * 2))))
+        || (!roi.isCircle && !imageBounds.contains(roi.corners.boundingRect()))) {
+        error = QStringLiteral("定位后的ROI超出运行图像。"); return false;
+    }
+    return true;
+}
+
 GraphicalSensorValueResult GraphicalProgramEditor::runRuntimeVisualMeasurement(
     const GraphicalProgramStep& step,
     const QVector<GraphicalProgramMotionTarget>& targets,
@@ -1921,17 +2083,35 @@ GraphicalSensorValueResult GraphicalProgramEditor::runRuntimeVisualMeasurement(
     };
     const GraphicalDetectionParameters parameters = parametersFromDefinition(step.definition);
     GraphicalCanvas::MeasurementRoi firstRoi;
-    if (!roiFromJson(step.definition.value(QStringLiteral("runtimeRoi")).toObject(), firstRoi))
-        return GraphicalSensorValueResult::failure(QStringLiteral("记录%1主ROI运行几何无效。").arg(step.sequence));
+    const bool crossFrameLength = step.definition.value(QStringLiteral("crossFrameLength")).toBool(false);
+    const bool usesBuiltInLengthTracking = step.type == QStringLiteral("长度") && !crossFrameLength;
+    QPointF firstOffset;
+    double firstTrackingScore = 0.0;
+    QString trackingError;
+    const QJsonObject firstDefinition = step.definition.value(QStringLiteral("runtimeRoi")).toObject();
+    const bool firstReady = usesBuiltInLengthTracking
+        ? roiFromJson(firstDefinition, firstRoi)
+        : resolveRuntimeMeasurementRoi(firstDefinition, frames.first().image,
+            firstRoi, firstOffset, firstTrackingScore, trackingError);
+    if (!firstReady)
+        return GraphicalSensorValueResult::failure(QStringLiteral("记录%1主ROI定位失败：%2")
+            .arg(step.sequence).arg(trackingError.isEmpty() ? QStringLiteral("运行几何无效") : trackingError));
 
-    if (step.definition.value(QStringLiteral("crossFrameLength")).toBool(false)) {
+    if (crossFrameLength) {
         GraphicalCanvas::MeasurementRoi secondRoi;
+        QPointF secondOffset;
+        double secondTrackingScore = 0.0;
         if (step.type != QStringLiteral("长度") || targets.size() != 2 || frames.size() != 2
-            || !roiFromJson(step.definition.value(QStringLiteral("runtimeSecondaryRoi")).toObject(), secondRoi)
             || !targets.at(0).axisEncoderTargets.contains(5)
             || !targets.at(1).axisEncoderTargets.contains(5)) {
             return GraphicalSensorValueResult::failure(
                 QStringLiteral("记录%1跨图长度运行输入无效。").arg(step.sequence));
+        }
+        if (!resolveRuntimeMeasurementRoi(
+            step.definition.value(QStringLiteral("runtimeSecondaryRoi")).toObject(),
+            frames.at(1).image, secondRoi, secondOffset, secondTrackingScore, trackingError)) {
+            return GraphicalSensorValueResult::failure(QStringLiteral("记录%1第二ROI定位失败：%2")
+                .arg(step.sequence).arg(trackingError));
         }
         const double movementMm = axis5_compensation(
             targets.at(1).axisEncoderTargets.value(5)) - axis5_compensation(
@@ -1950,6 +2130,10 @@ GraphicalSensorValueResult GraphicalProgramEditor::runRuntimeVisualMeasurement(
         GraphicalCanvas::MeasurementRoi secondRoi;
         if (!singleRoi && !roiFromJson(step.definition.value(QStringLiteral("runtimeSecondaryRoi")).toObject(), secondRoi))
             return GraphicalSensorValueResult::failure(QStringLiteral("记录%1第二ROI运行几何无效。").arg(step.sequence));
+        if (!singleRoi) {
+            if (secondRoi.isCircle) secondRoi.center += firstOffset;
+            else for (QPointF& point : secondRoi.corners) point += firstOffset;
+        }
         const LineTrialResult result = singleRoi
             ? runSingleRoiAngleTrial(frames.first().image, firstRoi,
                 step.definition.value(QStringLiteral("supplementaryAngle")).toBool(false), parameters)
@@ -4396,24 +4580,11 @@ bool GraphicalProgramEditor::exportProgramPackage(const QString& outputRoot,
         item[QStringLiteral("threeSectionScan")] = contract.threeSectionScan;
         item[QStringLiteral("requiresTwoReferences")] = contract.requiresTwoReferences;
         const auto runtimeRoiJson = [](const ProjectFrame& frame, int geometryId) {
-            QJsonObject roi;
             for (const auto& feature : frame.features) {
                 if (feature.id != geometryId) continue;
-                roi[QStringLiteral("type")] = feature.type;
-                roi[QStringLiteral("rotation")] = feature.rotation;
-                roi[QStringLiteral("width")] = feature.size.width();
-                roi[QStringLiteral("height")] = feature.size.height();
-                QJsonArray points;
-                for (const QPointF& point : feature.points) {
-                    QJsonArray coordinates;
-                    coordinates.append(point.x());
-                    coordinates.append(point.y());
-                    points.append(coordinates);
-                }
-                roi[QStringLiteral("points")] = points;
-                break;
+                return GraphicalProgramEditor::buildRuntimeRoiDefinition(frame.image, feature);
             }
-            return roi;
+            return QJsonObject();
         };
         for (const ProjectFrame& frame : m_frames) {
             if (frame.id == record.frameId && record.geometryId > 0) {
@@ -4715,24 +4886,11 @@ bool GraphicalProgramEditor::writeProject(const QString& filePath, QString& erro
         selection[QStringLiteral("requiresRetest")] = true;
         object[QStringLiteral("candidateSelection")] = selection;
         const auto runtimeRoiJson = [](const ProjectFrame& frame, int geometryId) {
-            QJsonObject roi;
             for (const auto& feature : frame.features) {
                 if (feature.id != geometryId) continue;
-                roi[QStringLiteral("type")] = feature.type;
-                roi[QStringLiteral("rotation")] = feature.rotation;
-                roi[QStringLiteral("width")] = feature.size.width();
-                roi[QStringLiteral("height")] = feature.size.height();
-                QJsonArray points;
-                for (const QPointF& point : feature.points) {
-                    QJsonArray coordinates;
-                    coordinates.append(point.x());
-                    coordinates.append(point.y());
-                    points.append(coordinates);
-                }
-                roi[QStringLiteral("points")] = points;
-                break;
+                return GraphicalProgramEditor::buildRuntimeRoiDefinition(frame.image, feature);
             }
-            return roi;
+            return QJsonObject();
         };
         for (const ProjectFrame& frame : m_frames) {
             if (frame.id == record.frameId && record.geometryId > 0)

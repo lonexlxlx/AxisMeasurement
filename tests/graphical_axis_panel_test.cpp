@@ -19,6 +19,7 @@
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QLabel>
+#include <QPainter>
 #include <QTemporaryDir>
 #include <QDir>
 #include <QJsonDocument>
@@ -963,6 +964,72 @@ static void testCameraWorkflow()
         && previewCanvas.sourceImage().pixelColor(0, 0) == QColor(30, 40, 50),
         "clearing live display must restore the prior editable image");
 
+    GraphicalCanvas trackingCanvas;
+    QImage referenceImage(160, 120, QImage::Format_RGB32);
+    referenceImage.fill(QColor(15, 15, 15));
+    {
+        QPainter painter(&referenceImage);
+        painter.fillRect(QRect(45, 36, 30, 22), QColor(230, 230, 230));
+        painter.fillRect(QRect(49, 40, 7, 15), QColor(20, 20, 20));
+        painter.fillRect(QRect(63, 39, 8, 6), QColor(255, 80, 30));
+        painter.drawLine(QPoint(42, 62), QPoint(79, 67));
+    }
+    trackingCanvas.setImage(referenceImage);
+    GraphicalCanvas::FeatureSnapshot trackingRoi;
+    trackingRoi.id = 1;
+    trackingRoi.type = QStringLiteral("矩形");
+    trackingRoi.points << QPointF(60, 50);
+    trackingRoi.size = QSizeF(34, 28);
+    QString trackingError;
+    require(trackingCanvas.restoreFeatures({ trackingRoi }, trackingError),
+        "tracking ROI must be restored on the reference image");
+    const auto savedBeforeTracking = trackingCanvas.featureSnapshots();
+    QImage translatedImage(referenceImage.size(), referenceImage.format());
+    translatedImage.fill(QColor(15, 15, 15));
+    {
+        QPainter painter(&translatedImage);
+        painter.drawImage(QPoint(17, 9), referenceImage);
+    }
+    trackingCanvas.setLivePreviewImage(translatedImage);
+    require(trackingCanvas.isLiveTrackingValid()
+        && std::abs(trackingCanvas.liveTrackingOffset().x() - 17.0) <= 1.0
+        && std::abs(trackingCanvas.liveTrackingOffset().y() - 9.0) <= 1.0
+        && trackingCanvas.liveTrackingScore() >= 0.65,
+        "live ROI must follow a translated camera feature");
+    const auto savedDuringTracking = trackingCanvas.featureSnapshots();
+    require(savedDuringTracking.size() == savedBeforeTracking.size()
+        && savedDuringTracking[0].points == savedBeforeTracking[0].points
+        && savedDuringTracking[0].size == savedBeforeTracking[0].size,
+        "live tracking must not overwrite persisted feature geometry");
+    const QJsonObject runtimeRoiDefinition =
+        GraphicalProgramEditor::buildRuntimeRoiDefinition(referenceImage, trackingRoi);
+    require(runtimeRoiDefinition.value(QStringLiteral("points")).toArray().size() == 4
+        && runtimeRoiDefinition.value(QStringLiteral("trackingReference")).isObject(),
+        "generated rectangle runtime ROI must contain four corners and a tracking reference");
+    GraphicalCanvas::MeasurementRoi resolvedRuntimeRoi;
+    QPointF runtimeOffset;
+    double runtimeScore = 0.0;
+    QString runtimeTrackingError;
+    require(GraphicalProgramEditor::resolveRuntimeMeasurementRoi(runtimeRoiDefinition,
+            translatedImage, resolvedRuntimeRoi, runtimeOffset, runtimeScore, runtimeTrackingError)
+        && std::abs(runtimeOffset.x() - 17.0) <= 1.0
+        && std::abs(runtimeOffset.y() - 9.0) <= 1.0
+        && resolvedRuntimeRoi.corners.size() == 4,
+        "runtime measurement ROI must use the same translated feature location");
+    QImage unrelatedImage(referenceImage.size(), referenceImage.format());
+    unrelatedImage.fill(QColor(90, 90, 90));
+    trackingCanvas.setLivePreviewImage(unrelatedImage);
+    require(!trackingCanvas.isLiveTrackingValid(),
+        "low-confidence camera frame must hide the tracked ROI");
+    require(!GraphicalProgramEditor::resolveRuntimeMeasurementRoi(runtimeRoiDefinition,
+            unrelatedImage, resolvedRuntimeRoi, runtimeOffset, runtimeScore, runtimeTrackingError)
+        && runtimeTrackingError.contains(QStringLiteral("定位失败")),
+        "runtime measurement must reject a low-confidence ROI location");
+    trackingCanvas.clearLivePreview();
+    require(!trackingCanvas.isLivePreviewActive() && !trackingCanvas.isLiveTrackingValid()
+        && trackingCanvas.liveTrackingOffset().isNull(),
+        "stopping live preview must clear transient tracking state");
+
     GraphicalProgramEditor editor;
     editor.setAttribute(Qt::WA_DontShowOnScreen);
     bool connected = false;
@@ -1140,7 +1207,7 @@ static void testCameraWorkflow()
         && reopenedReference2->text() == QStringLiteral("基准B"),
         "roundout offsets and references must survive save and reopen");
     editor.hide();
-    std::cout << "PASS: simulated camera states, start/stop, cached last-frame load, recipe metadata/assets packaging, roundout configuration, preflight and reopen\n";
+    std::cout << "PASS: live/runtime ROI translation tracking and loss guards, camera states, packaging and reopen\n";
 }
 
 static void testImageLessSensorPlan()

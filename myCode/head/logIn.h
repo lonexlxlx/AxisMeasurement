@@ -27,7 +27,9 @@ private:
 	string putIn_userName;
 	string putIn_password;
 	string m_userName="admin";
+
 	string m_password="jmjc211";
+
 	QPoint m_dragPos; //拖动时鼠标相对窗口左上角的位置
 signals:
 	void logToSystem(); //登录主界面信号

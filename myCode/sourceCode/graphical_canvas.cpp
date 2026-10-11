@@ -27,6 +27,7 @@
 #include <QtMath>
 #include <QTransform>
 #include <climits>
+#include <opencv2/imgproc.hpp>
 /*中央画布（黑色图像区：显示图像、画图形、拖拽/旋转/缩放手柄）/绘图引擎*/
 namespace {
 bool arcCircle(const QPointF& a, const QPointF& b, const QPointF& c,
@@ -48,6 +49,29 @@ QPen makeCanvasPen(const QColor& color, qreal width = 3.0,
     QPen pen(color, width, style);
     pen.setCosmetic(true);
     return pen;
+}
+
+QRectF snapshotBounds(const GraphicalCanvas::FeatureSnapshot& snapshot)
+{
+    if (snapshot.points.isEmpty()) return QRectF();
+    if (snapshot.type == QStringLiteral("矩形") || snapshot.type == QStringLiteral("圆")) {
+        const QRectF local(-snapshot.size.width() / 2.0, -snapshot.size.height() / 2.0,
+            snapshot.size.width(), snapshot.size.height());
+        QTransform transform;
+        transform.translate(snapshot.points[0].x(), snapshot.points[0].y());
+        if (snapshot.type == QStringLiteral("矩形")) transform.rotate(snapshot.rotation);
+        return transform.mapRect(local);
+    }
+    QRectF bounds(snapshot.points[0], QSizeF());
+    for (const QPointF& point : snapshot.points) bounds |= QRectF(point, QSizeF());
+    return bounds;
+}
+
+cv::Mat grayscaleCopy(const QImage& image)
+{
+    const QImage grayscale = image.convertToFormat(QImage::Format_Grayscale8);
+    return cv::Mat(grayscale.height(), grayscale.width(), CV_8UC1,
+        const_cast<uchar*>(grayscale.constBits()), grayscale.bytesPerLine()).clone();
 }
 }
 
@@ -90,6 +114,7 @@ bool GraphicalCanvas::loadImage(const QString& filePath)//loadImage/setImage/cle
 
 void GraphicalCanvas::setImage(const QImage& image)
 {
+    resetLiveTracking();
     setDetectionOverlay(QPainterPath(), QPainterPath());
     m_rotateFeatureId = -1;
     m_resizeFeatureId = -1;
@@ -138,6 +163,9 @@ void GraphicalCanvas::setLivePreviewImage(const QImage& image)
 {
     if (image.isNull()) return;
 
+    if (!m_liveTrackingInitialized) initializeLiveTracking();
+    updateLiveTracking(image);
+
     const QPixmap pixmap = QPixmap::fromImage(image);
     const bool geometryChanged = !m_livePreviewItem
         || m_livePreviewItem->pixmap().size() != pixmap.size();
@@ -158,11 +186,15 @@ void GraphicalCanvas::setLivePreviewImage(const QImage& image)
 
 void GraphicalCanvas::clearLivePreview()
 {
-    if (!m_livePreviewItem) return;
+    if (!m_livePreviewItem) {
+        resetLiveTracking();
+        return;
+    }
 
     m_scene->removeItem(m_livePreviewItem);
     delete m_livePreviewItem;
     m_livePreviewItem = nullptr;
+    resetLiveTracking();
     if (m_imageItem) {
         m_scene->setSceneRect(m_imageItem->boundingRect());
         fitImageInView();
@@ -178,6 +210,112 @@ void GraphicalCanvas::clearLivePreview()
 bool GraphicalCanvas::isLivePreviewActive() const
 {
     return m_livePreviewItem != nullptr;
+}
+
+bool GraphicalCanvas::isLiveTrackingValid() const
+{
+    return m_liveTrackingValid;
+}
+
+QPointF GraphicalCanvas::liveTrackingOffset() const
+{
+    return m_liveTrackingOffset;
+}
+
+double GraphicalCanvas::liveTrackingScore() const
+{
+    return m_liveTrackingScore;
+}
+
+void GraphicalCanvas::resetLiveTracking()
+{
+    m_liveTrackingFeatures.clear();
+    m_liveTrackingTemplate = QImage();
+    m_liveTrackingTemplateRect = QRect();
+    m_liveTrackingOffset = QPointF();
+    m_liveTrackingScore = 0.0;
+    m_liveTrackingValid = false;
+    m_liveTrackingInitialized = false;
+}
+
+void GraphicalCanvas::initializeLiveTracking()
+{
+    resetLiveTracking();
+    m_liveTrackingInitialized = true;
+    m_liveTrackingFeatures = featureSnapshots();
+    if (m_sourceImage.isNull() || m_liveTrackingFeatures.isEmpty()) return;
+
+    QRectF featureBounds;
+    bool hasFeatureBounds = false;
+    for (const FeatureSnapshot& snapshot : m_liveTrackingFeatures) {
+        const QRectF bounds = snapshotBounds(snapshot);
+        featureBounds = hasFeatureBounds ? featureBounds.united(bounds) : bounds;
+        hasFeatureBounds = true;
+    }
+    if (!hasFeatureBounds || !qIsFinite(featureBounds.center().x())
+        || !qIsFinite(featureBounds.center().y())) return;
+
+    const QSize imageSize = m_sourceImage.size();
+    const int margin = qMax(16, qRound(qMax(featureBounds.width(), featureBounds.height()) * 0.2));
+    QRect trackingRect = featureBounds.toAlignedRect().adjusted(-margin, -margin, margin, margin)
+        .intersected(QRect(QPoint(), imageSize));
+    const QSize maximumSize(qMax(32, qRound(imageSize.width() * 0.65)),
+        qMax(32, qRound(imageSize.height() * 0.65)));
+    if (trackingRect.width() > maximumSize.width()
+        || trackingRect.height() > maximumSize.height()) {
+        const QPoint center = trackingRect.center();
+        trackingRect = QRect(center.x() - maximumSize.width() / 2,
+            center.y() - maximumSize.height() / 2,
+            qMin(trackingRect.width(), maximumSize.width()),
+            qMin(trackingRect.height(), maximumSize.height()))
+            .intersected(QRect(QPoint(), imageSize));
+    }
+    const int minimumSide = qMin(32, qMin(imageSize.width(), imageSize.height()));
+    if (trackingRect.width() < minimumSide || trackingRect.height() < minimumSide) {
+        const QPoint center = trackingRect.center();
+        trackingRect = QRect(center.x() - minimumSide / 2, center.y() - minimumSide / 2,
+            minimumSide, minimumSide).intersected(QRect(QPoint(), imageSize));
+    }
+    if (trackingRect.width() < 8 || trackingRect.height() < 8) return;
+
+    const cv::Mat reference = grayscaleCopy(m_sourceImage.copy(trackingRect));
+    cv::Scalar mean, deviation;
+    cv::meanStdDev(reference, mean, deviation);
+    if (deviation[0] < 2.0) return;
+    m_liveTrackingTemplateRect = trackingRect;
+    m_liveTrackingTemplate = m_sourceImage.copy(trackingRect);
+}
+
+void GraphicalCanvas::updateLiveTracking(const QImage& image)
+{
+    const bool wasValid = m_liveTrackingValid;
+    m_liveTrackingValid = false;
+    m_liveTrackingScore = 0.0;
+    if (m_liveTrackingTemplate.isNull() || image.size() != m_sourceImage.size()) {
+        if (wasValid) emit canvasMessage(QStringLiteral("实时特征定位已丢失，跟踪框已隐藏。"));
+        return;
+    }
+
+    const cv::Mat frame = grayscaleCopy(image);
+    const cv::Mat reference = grayscaleCopy(m_liveTrackingTemplate);
+    if (frame.cols < reference.cols || frame.rows < reference.rows) return;
+    cv::Mat result;
+    cv::matchTemplate(frame, reference, result, cv::TM_CCOEFF_NORMED);
+    double bestScore = 0.0;
+    cv::Point bestLocation;
+    cv::minMaxLoc(result, nullptr, &bestScore, nullptr, &bestLocation);
+    m_liveTrackingScore = bestScore;
+    if (!qIsFinite(bestScore) || bestScore < 0.65) {
+        if (wasValid) emit canvasMessage(QStringLiteral("实时特征定位已丢失，跟踪框已隐藏。"));
+        return;
+    }
+
+    m_liveTrackingOffset = QPointF(bestLocation.x - m_liveTrackingTemplateRect.x(),
+        bestLocation.y - m_liveTrackingTemplateRect.y());
+    m_liveTrackingValid = true;
+    if (!wasValid)
+        emit canvasMessage(QStringLiteral("实时特征定位已锁定（置信度 %1）。")
+            .arg(bestScore, 0, 'f', 2));
 }
 
 bool GraphicalCanvas::hasImage() const
@@ -1240,7 +1378,10 @@ void GraphicalCanvas::setDetectionOverlay(const QPainterPath& edges, const QPain
 void GraphicalCanvas::drawForeground(QPainter* painter, const QRectF& rect)//在 drawForeground里叠加画到图像上——试测后你能在画布上看到检测到的边缘和拟合的弧。
 {
     QGraphicsView::drawForeground(painter, rect);
-    if (m_livePreviewItem) return;
+    if (m_livePreviewItem) {
+        if (m_liveTrackingValid) drawLiveTrackedFeatures(painter);
+        return;
+    }
     painter->save();
     painter->setBrush(Qt::NoBrush);
     painter->setPen(makeCanvasPen(QColor(0, 255, 120), 2));
@@ -1293,6 +1434,49 @@ void GraphicalCanvas::drawForeground(QPainter* painter, const QRectF& rect)//在
     painter->restore();
 }
 
+void GraphicalCanvas::drawLiveTrackedFeatures(QPainter* painter) const
+{
+    painter->save();
+    painter->setBrush(Qt::NoBrush);
+    const QPointF offset = m_liveTrackingOffset;
+    for (const FeatureSnapshot& snapshot : m_liveTrackingFeatures) {
+        if (snapshot.type == QStringLiteral("点")) {
+            painter->setPen(makeCanvasPen(QColor(255, 80, 200)));
+            painter->setBrush(QColor(255, 80, 200));
+            const qreal radius = 4.0 / qMax<qreal>(0.0001, qAbs(transform().m11()));
+            painter->drawEllipse(snapshot.points[0] + offset, radius, radius);
+            painter->setBrush(Qt::NoBrush);
+        }
+        else if (snapshot.type == QStringLiteral("直线")) {
+            painter->setPen(makeCanvasPen(QColor(255, 100, 80)));
+            painter->drawLine(QLineF(snapshot.points[0] + offset, snapshot.points[1] + offset));
+        }
+        else if (snapshot.type == QStringLiteral("矩形")) {
+            painter->setPen(makeCanvasPen(QColor(0, 210, 255)));
+            painter->save();
+            painter->translate(snapshot.points[0] + offset);
+            painter->rotate(snapshot.rotation);
+            painter->drawRect(QRectF(-snapshot.size.width() / 2.0, -snapshot.size.height() / 2.0,
+                snapshot.size.width(), snapshot.size.height()));
+            painter->restore();
+        }
+        else if (snapshot.type == QStringLiteral("圆")) {
+            painter->setPen(makeCanvasPen(QColor(0, 255, 120)));
+            painter->drawEllipse(QRectF(snapshot.points[0] + offset
+                - QPointF(snapshot.size.width() / 2.0, snapshot.size.height() / 2.0), snapshot.size));
+        }
+        else if (snapshot.type == QStringLiteral("圆弧")) {
+            QPainterPath path;
+            if (buildArcPath(snapshot.points[0] + offset, snapshot.points[1] + offset,
+                snapshot.points[2] + offset, path)) {
+                painter->setPen(makeCanvasPen(QColor(255, 170, 0)));
+                painter->drawPath(path);
+            }
+        }
+    }
+    painter->restore();
+}
+
 void GraphicalCanvas::wheelEvent(QWheelEvent* event)//滚轮缩放
 {
     if ((!m_livePreviewItem && !m_imageItem) || event->angleDelta().y() == 0) {
@@ -1316,10 +1500,6 @@ void GraphicalCanvas::wheelEvent(QWheelEvent* event)//滚轮缩放
 void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
 {
     setFocus(Qt::MouseFocusReason);
-    if (m_livePreviewItem) {
-        event->accept();
-        return;
-    }
     if (event->button() == Qt::MiddleButton
         || (event->button() == Qt::LeftButton && m_spacePressed)) {//中键或者空格+左键平移
         m_rotateFeatureId = -1;
@@ -1327,6 +1507,10 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
         m_panning = true;
         m_lastPanPosition = event->pos();
         viewport()->setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+    if (m_livePreviewItem) {
         event->accept();
         return;
     }
@@ -1462,15 +1646,15 @@ void GraphicalCanvas::mousePressEvent(QMouseEvent* event)
 
 void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
 {
-    if (m_livePreviewItem) {
-        event->accept();
-        return;
-    }
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_lastPanPosition = event->pos();
         horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
         verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        event->accept();
+        return;
+    }
+    if (m_livePreviewItem) {
         event->accept();
         return;
     }
@@ -1536,6 +1720,15 @@ void GraphicalCanvas::mouseMoveEvent(QMouseEvent* event)
 
 void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (m_panning
+        && (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton)) {
+        m_panning = false;
+        viewport()->setCursor(m_spacePressed
+            ? Qt::OpenHandCursor
+            : (m_drawingTool == DrawingTool::Select ? Qt::ArrowCursor : Qt::CrossCursor));
+        event->accept();
+        return;
+    }
     if (m_livePreviewItem) {
         event->accept();
         return;
@@ -1561,16 +1754,6 @@ void GraphicalCanvas::mouseReleaseEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-    if (m_panning
-        && (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton)) {
-        m_panning = false;
-        viewport()->setCursor(m_spacePressed
-            ? Qt::OpenHandCursor
-            : (m_drawingTool == DrawingTool::Select ? Qt::ArrowCursor : Qt::CrossCursor));
-        event->accept();
-        return;
-    }
-
     if (event->button() == Qt::LeftButton && m_draggedFeatureItem) {
         const QPointF currentScenePosition = mapToScene(event->pos());
         const QPointF delta = currentScenePosition - m_lastFeatureDragScenePosition;
@@ -1627,6 +1810,12 @@ void GraphicalCanvas::contextMenuEvent(QContextMenuEvent* event)
 
 void GraphicalCanvas::keyPressEvent(QKeyEvent* event)
 {
+    if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+        m_spacePressed = true;
+        if (!m_panning) viewport()->setCursor(Qt::OpenHandCursor);
+        event->accept();
+        return;
+    }
     if (m_livePreviewItem) {
         event->accept();
         return;
@@ -1659,29 +1848,21 @@ void GraphicalCanvas::keyPressEvent(QKeyEvent* event)
         event->accept();
         return;
     }
-    if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
-        m_spacePressed = true;
-        if (!m_panning)
-            viewport()->setCursor(Qt::OpenHandCursor);
-        event->accept();
-        return;
-    }
     QGraphicsView::keyPressEvent(event);
 }
 
 void GraphicalCanvas::keyReleaseEvent(QKeyEvent* event)
 {
-    if (m_livePreviewItem) {
-        event->accept();
-        return;
-    }
     if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
         m_spacePressed = false;
         if (!m_panning) {
             viewport()->setCursor(m_drawingTool == DrawingTool::Select
-                ? Qt::ArrowCursor
-                : Qt::CrossCursor);
+                ? Qt::ArrowCursor : Qt::CrossCursor);
         }
+        event->accept();
+        return;
+    }
+    if (m_livePreviewItem) {
         event->accept();
         return;
     }
