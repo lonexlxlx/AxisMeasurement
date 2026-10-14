@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QGraphicsView>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QPoint>
 #include <QPair>
@@ -147,11 +148,14 @@ private:
     QImage m_sourceImage;
     QVector<FeatureSnapshot> m_liveTrackingFeatures;
     QImage m_liveTrackingTemplate;
+    QImage m_liveTrackingTemplateGray;
     QRect m_liveTrackingTemplateRect;
     QPointF m_liveTrackingOffset;
     double m_liveTrackingScore = 0.0;
     bool m_liveTrackingValid = false;
     bool m_liveTrackingInitialized = false;
+    QElapsedTimer m_liveTrackingTimer;
+    qint64 m_lastLiveTrackingMs = -1;
     bool m_panning = false;
     bool m_spacePressed = false;
     QPoint m_lastPanPosition;

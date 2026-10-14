@@ -50,6 +50,88 @@ static void testCornerGeometry()
         "P90 deviation must reject two outliers in ten points");
     require(!std::isfinite(cornerDeviationPercentile({ 1.0, std::numeric_limits<double>::quiet_NaN() })),
         "nonfinite deviations must be rejected");
+    GraphicalCornerEdge diagonalFirst, diagonalSecond;
+    diagonalFirst.first = QPointF(0, 0); diagonalFirst.second = QPointF(20, 20);
+    const QPointF diagonalNormal(-std::sqrt(0.5) * 10.0, std::sqrt(0.5) * 10.0);
+    diagonalSecond.first = diagonalFirst.first + diagonalNormal;
+    diagonalSecond.second = diagonalFirst.second + diagonalNormal;
+    require(std::abs(cornerParallelLineSeparation(diagonalFirst, diagonalSecond) - 10.0) < 1e-9,
+        "rotated parallel-line spacing must use the fitted line direction");
+    GraphicalCornerEdge offsetSecond = diagonalSecond;
+    offsetSecond.first += QPointF(15, 15); offsetSecond.second += QPointF(15, 15);
+    require(std::abs(cornerParallelLineSeparation(diagonalFirst, offsetSecond) - 10.0) < 1e-9,
+        "parallel-line spacing must not change when fitted segment midpoints are offset");
+    GraphicalParallelLineMeasurement diagonalMeasurement;
+    require(cornerParallelLineMeasurement(diagonalFirst, offsetSecond, diagonalMeasurement)
+        && std::abs(cornerLength(diagonalMeasurement.secondPoint
+            - diagonalMeasurement.firstPoint) - diagonalMeasurement.distance) < 1e-9,
+        "parallel-line overlay must show the measured cross-section");
+    GraphicalCornerEdge invalidEdge = diagonalSecond;
+    invalidEdge.first.setX(std::numeric_limits<double>::quiet_NaN());
+    require(!std::isfinite(cornerParallelLineSeparation(diagonalFirst, invalidEdge)),
+        "parallel-line spacing must reject nonfinite fitted edges");
+    GraphicalCornerEdge overlappingFirst, overlappingSecond;
+    overlappingFirst.first = QPointF(0, 0); overlappingFirst.second = QPointF(100, 0);
+    overlappingSecond.first = QPointF(40, 20); overlappingSecond.second = QPointF(120, 20);
+    double overlapRatio = 0;
+    require(std::abs(cornerProjectedOverlap(overlappingFirst, overlappingSecond,
+        &overlapRatio) - 60.0) < 1e-9
+        && std::abs(overlapRatio - 0.75) < 1e-9,
+        "parallel target lines must report their projected overlap and shorter-span ratio");
+    overlappingSecond.first = QPointF(101, 20); overlappingSecond.second = QPointF(120, 20);
+    require(cornerProjectedOverlap(overlappingFirst, overlappingSecond) == 0,
+        "spatially unrelated parallel lines must have no projected overlap");
+    GraphicalCornerEdge tiltedFirst = overlappingFirst, tiltedSecond = overlappingFirst;
+    const double radians = 15.0 * 3.14159265358979323846 / 180.0;
+    const QPointF tiltedDirection(std::cos(radians), std::sin(radians));
+    const QPointF tiltedNormal(-tiltedDirection.y(), tiltedDirection.x());
+    tiltedFirst.second = tiltedFirst.first + tiltedDirection * 100.0;
+    tiltedSecond.first = tiltedFirst.first + tiltedDirection * 40.0 + tiltedNormal * 30.0;
+    tiltedSecond.second = tiltedSecond.first + tiltedDirection * 80.0;
+    require(std::abs(cornerProjectedOverlap(tiltedFirst, tiltedSecond, &overlapRatio) - 60.0) < 1e-9
+        && std::abs(overlapRatio - 0.75) < 1e-9,
+        "projected overlap must follow the fitted lines instead of the ROI angle");
+    const QPointF sectionReference(50, 50);
+    GraphicalParallelLineMeasurement referenceMeasurement, shiftedMeasurement;
+    require(cornerParallelLineMeasurement(tiltedFirst, tiltedSecond,
+        referenceMeasurement, &sectionReference),
+        "tilted parallel lines must intersect the ROI-center cross-section");
+    GraphicalCornerEdge shiftedFirst = tiltedFirst, shiftedSecond = tiltedSecond;
+    shiftedFirst.first -= tiltedDirection * 30.0; shiftedFirst.second -= tiltedDirection * 30.0;
+    shiftedSecond.first += tiltedDirection * 25.0; shiftedSecond.second += tiltedDirection * 25.0;
+    require(cornerParallelLineMeasurement(shiftedFirst, shiftedSecond,
+        shiftedMeasurement, &sectionReference)
+        && cornerLength(referenceMeasurement.firstPoint - shiftedMeasurement.firstPoint) < 1e-9
+        && cornerLength(referenceMeasurement.secondPoint - shiftedMeasurement.secondPoint) < 1e-9,
+        "ROI-center cross-section points must not drift with fitted segment endpoints");
+    QPointF clampedReference;
+    const QPointF preferredOutside = tiltedFirst.first - tiltedDirection * 100.0;
+    require(cornerOverlapReferencePoint(tiltedFirst, tiltedSecond,
+        preferredOutside, clampedReference)
+        && std::abs(QPointF::dotProduct(clampedReference - tiltedFirst.first,
+            tiltedDirection) - 40.0) < 1e-9,
+        "measurement section must clamp to the observed overlap instead of extrapolating");
+    GraphicalCornerEdge separatedFirst, separatedSecond;
+    separatedFirst.first = QPointF(0, 0); separatedFirst.second = QPointF(20, 0);
+    separatedSecond.first = QPointF(40, 10); separatedSecond.second = QPointF(60, 10);
+    GraphicalParallelLineMeasurement separatedMeasurement;
+    const QPointF separatedReference(30, 5);
+    require(cornerProjectedOverlap(separatedFirst, separatedSecond) == 0
+        && cornerParallelLineMeasurement(separatedFirst, separatedSecond,
+            separatedMeasurement, &separatedReference)
+        && std::abs(separatedMeasurement.distance - 10.0) < 1e-9,
+        "non-overlapping parallel shoulder edges must retain a defined line distance");
+    const double oneDegree = 3.14159265358979323846 / 180.0;
+    separatedSecond.second = separatedSecond.first
+        + QPointF(std::cos(oneDegree), std::sin(oneDegree)) * 20.0;
+    GraphicalParallelLineMeasurement sharedAtLeft, sharedAtRight;
+    const QPointF leftReference(0, 0), rightReference(200, 0);
+    require(cornerSharedDirectionMeasurement(separatedFirst, separatedSecond,
+        leftReference, sharedAtLeft)
+        && cornerSharedDirectionMeasurement(separatedFirst, separatedSecond,
+            rightReference, sharedAtRight)
+        && std::abs(sharedAtLeft.distance - sharedAtRight.distance) < 1e-9,
+        "shared-direction shoulder distance must not depend on the ROI cross-section");
     GraphicalCornerEdge first, second;
     first.first = QPointF(10, 10); first.second = QPointF(50, 10);
     second.first = QPointF(10, 10); second.second = QPointF(30, 30);
@@ -816,13 +898,29 @@ static void testDetectionRecords()
     auto* upperAxialOffset = editor.findChild<QSpinBox*>(QStringLiteral("upperAxialOffsetPulse"));
     auto* roundoutReference1 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference1"));
     auto* roundoutReference2 = editor.findChild<QLineEdit*>(QStringLiteral("roundoutReference2"));
+    auto* holeCalibration = editor.findChild<QDoubleSpinBox*>(QStringLiteral("holeCalibration"));
+    auto* lengthCalibration = editor.findChild<QDoubleSpinBox*>(QStringLiteral("lengthCalibration"));
     require(type && axisSelector && feature && minimum && low && table && diagnostic
-        && lowerAxialOffset && upperAxialOffset && roundoutReference1 && roundoutReference2,
+        && lowerAxialOffset && upperAxialOffset && roundoutReference1 && roundoutReference2
+        && holeCalibration && lengthCalibration,
         "detection UI missing");
     require(type->findText(QStringLiteral("粗糙度")) < 0,
         "graphical workflow must not expose the retired roughness measurement entry");
     require(axisSelector->findData(1) < 0,
         "graphical workflow must not expose the retired roughness axis entry");
+    const QString initialMeasurementType = type->currentText();
+    type->setCurrentText(QStringLiteral("孔径"));
+    require(!holeCalibration->isHidden() && holeCalibration->isEnabled()
+        && lengthCalibration->isHidden(),
+        "hole measurement must expose only the hole calibration");
+    type->setCurrentText(QStringLiteral("长度"));
+    require(!lengthCalibration->isHidden() && lengthCalibration->isEnabled()
+        && holeCalibration->isHidden(),
+        "length measurement must expose the telecentric calibration");
+    type->setCurrentText(QStringLiteral("圆弧半径"));
+    require(!lengthCalibration->isHidden() && lengthCalibration->isEnabled(),
+        "arc-radius measurement must expose the telecentric calibration");
+    type->setCurrentText(initialMeasurementType);
     auto enterFeatureNumber = [&](const QString& value) {
         feature->setFocus();
         feature->selectAll();
@@ -838,6 +936,14 @@ static void testDetectionRecords()
     };
     QAction* undoAction = action(QStringLiteral("撤销"));
     QAction* redoAction = action(QStringLiteral("重做"));
+    auto* programToolBar = editor.findChild<QToolBar*>(QStringLiteral("graphicalProgramToolBar"));
+    require(programToolBar && undoAction->objectName() == QStringLiteral("graphicalUndoAction")
+        && redoAction->objectName() == QStringLiteral("graphicalRedoAction")
+        && programToolBar->actions().contains(undoAction)
+        && programToolBar->actions().contains(redoAction)
+        && programToolBar->actions().indexOf(undoAction) < programToolBar->actions().indexOf(action(QStringLiteral("相机图像")))
+        && programToolBar->actions().indexOf(redoAction) < programToolBar->actions().indexOf(action(QStringLiteral("相机图像"))),
+        "undo and redo buttons must stay in the visible leading section of the main toolbar");
     require(undoAction->shortcut() == QKeySequence::Undo
         && redoAction->shortcut() == QKeySequence::Redo,
         "undo and redo must expose the standard shortcuts");
@@ -1018,6 +1124,7 @@ static void testCameraWorkflow()
         "runtime measurement ROI must use the same translated feature location");
     QImage unrelatedImage(referenceImage.size(), referenceImage.format());
     unrelatedImage.fill(QColor(90, 90, 90));
+    QTest::qWait(90);
     trackingCanvas.setLivePreviewImage(unrelatedImage);
     require(!trackingCanvas.isLiveTrackingValid(),
         "low-confidence camera frame must hide the tracked ROI");
@@ -1097,7 +1204,7 @@ static void testCameraWorkflow()
         for (auto* value : editor.findChildren<QPushButton*>()) if (value->text() == name) return value;
         throw std::runtime_error("camera button missing");
     };
-    auto* start = button(QStringLiteral("开始连续采集"));
+    auto* start = button(QStringLiteral("开始实时预览"));
     auto* stop = button(QStringLiteral("停止采集"));
     auto* load = button(QStringLiteral("载入最后一帧"));
     auto* cameraSelector = editor.findChild<QComboBox*>(QStringLiteral("cameraSelector"));

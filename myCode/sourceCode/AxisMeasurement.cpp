@@ -380,23 +380,36 @@ AxisMeasurement::AxisMeasurement(QWidget* parent)
 		if (!refreshError.isEmpty()) showDeviceInf(refreshError);
 	});
 	m_graphicalProgramEditor->setCameraBackend(
-		[this](int camera) {
+		[this, lastPreviewSerial = QVector<unsigned long long>(3, 0),
+			previewDelivered = QVector<bool>(3, false),
+			lastPreviewSize = QVector<QSize>(3)](int camera) mutable {
 			GraphicalProgramEditor::CameraSnapshot state;
 			if (camera < 0 || camera >= 3 || !cameraPtrList[camera]) {
 				state.message = QStringLiteral("相机编号无效");
 				return state;
 			}
 			cam_device* device = cameraPtrList[camera];
+			const unsigned long long frameSerial = device->capturedFrameSerial();
+			const bool newFrame = !previewDelivered[camera]
+				|| frameSerial != lastPreviewSerial[camera];
 			int capturedExposure = -1;
-			const cv::Mat capturedFrame = device->capturedFrameCopy(&capturedExposure);
+			cv::Mat capturedFrame;
+			if (newFrame) {
+				capturedFrame = device->capturedFrameCopy(&capturedExposure);
+				if (!capturedFrame.empty()) {
+					lastPreviewSerial[camera] = frameSerial;
+					previewDelivered[camera] = true;
+					lastPreviewSize[camera] = QSize(capturedFrame.cols, capturedFrame.rows);
+				}
+			}
 			state.connected = device->isOpenCam && device->isOpenStream;
 			state.available = state.connected && !programRunFlag
 				&& !goHomeThread_Ptr->isRunning();
 			state.capturing = camCaptureFlag[camera];
-			state.hasFrame = !state.capturing && !capturedFrame.empty();
+			state.hasFrame = !state.capturing && frameSerial > 0;
 			state.exposure = capturedExposure >= 0 ? capturedExposure : device->exposeTime;
+			state.frameSize = lastPreviewSize[camera];
 			if (!capturedFrame.empty()) {
-				state.frameSize = QSize(capturedFrame.cols, capturedFrame.rows);
 				state.previewImage = cameraFrameToQImage(capturedFrame);
 			}
 			if (!state.connected) state.message = QStringLiteral("相机%1未连接").arg(camera);

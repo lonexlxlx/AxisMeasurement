@@ -323,26 +323,46 @@ LineTrialResult runSingleRoiAngleTrial(const QImage& source,
         ReduceDomain(image, region, &reduced);
         EdgesSubPix(reduced, &edges, "canny", parameters.smoothing, parameters.lowThreshold, parameters.highThreshold);
         result.edges = contourPath(edges);
+        HTuple edgeCount, segmentCount, collinearCount, count;
+        CountObj(edges, &edgeCount);
+        result.diagnostic = QStringLiteral("边缘%1条").arg(edgeCount.I());
+        if (edgeCount.I() == 0) {
+            result.status = QStringLiteral("测量失败：ROI内未提取到边缘；请降低边缘阈值或检查图像对比度。\n")
+                + result.diagnostic;
+            return result;
+        }
         stage = QStringLiteral("单ROI直线分段");
-        // This mode deliberately returns straight-line segments. A rounded or
-        // blurred corner may otherwise be labelled as an elliptic segment by
-        // lines_circles and lose one of the two tangent edges before fitting.
+        QString segmentationMode = QStringLiteral("直线");
         SegmentContoursXld(edges, &segments, "lines", 5, 4, 2);
-        HTuple segmentCount, collinearCount, count;
         CountObj(segments, &segmentCount);
         if (segmentCount.I() == 0) {
-            result.diagnostic = QStringLiteral("直线分段0条");
+            // Blurred step edges can be rejected completely by lines-only
+            // segmentation. Keep the strict path first, then fall back to the
+            // segmentation mode used by the legacy measurement programs.
+            SegmentContoursXld(edges, &segments, "lines_circles", 5, 4, 2);
+            CountObj(segments, &segmentCount);
+            segmentationMode = QStringLiteral("直线/圆弧兼容回退");
+        }
+        if (segmentCount.I() == 0) {
+            // The later Tukey fit and P90 gate still reject curved/noisy raw
+            // contours, while preserving a valid straight edge that the
+            // segmenter could not classify.
+            CopyObj(edges, &segments, 1, -1);
+            CountObj(segments, &segmentCount);
+            segmentationMode = QStringLiteral("原始边缘回退");
+        }
+        result.diagnostic += QStringLiteral(" → %1分段%2条")
+            .arg(segmentationMode).arg(segmentCount.I());
+        if (segmentCount.I() == 0) {
             result.status = QStringLiteral("测量失败：边缘未能分割成直线段；请检查ROI、对比度或边缘参数。\n")
                 + result.diagnostic;
             return result;
         }
         if (segmentCount.I() > 512) {
-            result.diagnostic = QStringLiteral("直线分段%1条").arg(segmentCount.I());
             result.status = QStringLiteral("测量失败：直线分段超过512条，请缩小ROI或提高边缘阈值。\n")
                 + result.diagnostic;
             return result;
         }
-        result.diagnostic = QStringLiteral("直线分段%1条").arg(segmentCount.I());
         // The legacy line detector also fits a guided physical edge as one
         // line. In the unguided ROI mode the same edge can be split by blur,
         // burrs or a rounded endpoint, so consolidate only nearly-collinear
@@ -368,8 +388,6 @@ LineTrialResult runSingleRoiAngleTrial(const QImage& source,
             return result;
         }
         if (count.I() > 256) {
-            result.diagnostic = QStringLiteral("直线分段%1条 → 共线合并%2条 → 长度筛选%3条")
-                .arg(segmentCount.I()).arg(collinearCount.I()).arg(count.I());
             result.status = QStringLiteral("测量失败：轮廓过多，请缩小ROI或提高边缘阈值。\n")
                 + result.diagnostic;
             return result;
@@ -421,7 +439,8 @@ LineTrialResult runSingleRoiAngleTrial(const QImage& source,
         }
         if (result.cornerEdges.size() > 32) {
             result.cornerEdges.clear();
-            result.status = QStringLiteral("测量失败：有效直线超过32条，请缩小ROI。"); return result;
+            result.status = QStringLiteral("测量失败：有效直线超过32条，请缩小ROI。\n")
+                + result.diagnostic; return result;
         }
         stage = QStringLiteral("相邻边对筛选");
         for (int i = 0; i < result.cornerEdges.size(); ++i)
@@ -443,8 +462,8 @@ LineTrialResult runSingleRoiAngleTrial(const QImage& source,
                 pair.firstEdge = i; pair.secondEdge = j;
                 result.cornerPairs.append(pair);
             }
-        result.diagnostic = QStringLiteral("直线分段%1条 → 共线合并%2条 → 长度筛选%3条 → 有效直线%4条（点数排除%5、拟合排除%6、跨度排除%7、P90偏差排除%8）→ 相邻边对%9对；90%点线偏差≤%10 px，角点间隙≤%11 px")
-            .arg(segmentCount.I()).arg(collinearCount.I()).arg(count.I()).arg(result.cornerEdges.size())
+        result.diagnostic += QStringLiteral(" → 有效直线%1条（点数排除%2、拟合排除%3、跨度排除%4、P90偏差排除%5）→ 相邻边对%6对；90%点线偏差≤%7 px，角点间隙≤%8 px")
+            .arg(result.cornerEdges.size())
             .arg(rejectedPointCount).arg(rejectedFit).arg(rejectedSpan).arg(rejectedDeviation)
             .arg(result.cornerPairs.size()).arg(parameters.cornerMaxDeviation).arg(parameters.cornerMaxGap);
         if (result.cornerPairs.isEmpty())
@@ -769,7 +788,8 @@ LinearTrialResult runSingleRoiTemplateLengthTrial(const QImage& source,
         result.edges = candidates.edges;
         result.edges.addPath(matchedBoundary);
         const QPointF roiDirection = matchedRoi.corners[1] - matchedRoi.corners[0];
-        if (cornerLength(roiDirection) < 1e-6) {
+        if (!std::isfinite(roiDirection.x()) || !std::isfinite(roiDirection.y())
+            || cornerLength(roiDirection) < 1e-6) {
             result.status = QStringLiteral("测量失败［长度ROI］：矩形ROI方向无效");
             return result;
         }
@@ -778,12 +798,15 @@ LinearTrialResult runSingleRoiTemplateLengthTrial(const QImage& source,
         while (expectedAngle < 0) expectedAngle += 180.0;
         while (expectedAngle >= 180.0) expectedAngle -= 180.0;
         QVector<int> eligible;
+        QVector<double> candidateAngles(candidates.cornerEdges.size(),
+            std::numeric_limits<double>::quiet_NaN());
         for (int index = 0; index < candidates.cornerEdges.size(); ++index) {
             const QPointF delta = candidates.cornerEdges[index].second
                 - candidates.cornerEdges[index].first;
             double angle = std::atan2(delta.y(), delta.x()) * 180.0 / 3.14159265358979323846;
             while (angle < 0) angle += 180.0;
             while (angle >= 180.0) angle -= 180.0;
+            candidateAngles[index] = angle;
             if (undirectedAngleDifference(angle, expectedAngle) <= 20.0)
                 eligible.append(index);
         }
@@ -796,48 +819,117 @@ LinearTrialResult runSingleRoiTemplateLengthTrial(const QImage& source,
                 .arg(candidates.cornerEdges.size()).arg(eligible.size()).arg(candidates.diagnostic);
             return result;
         }
-        QString edgeSelection = QStringLiteral("横向候选2条，直接采用");
-        int firstIndex = eligible[0];
-        int secondIndex = eligible[1];
-        if (eligible.size() > 2) {
-            std::sort(eligible.begin(), eligible.end(), [&candidates](int first, int second) {
-                const GraphicalCornerEdge& firstEdge = candidates.cornerEdges[first];
-                const GraphicalCornerEdge& secondEdge = candidates.cornerEdges[second];
-                return (firstEdge.first.y() + firstEdge.second.y())
-                    < (secondEdge.first.y() + secondEdge.second.y());
-            });
-            double largestGap = -1;
-            double secondLargestGap = -1;
-            int largestGapPosition = -1;
-            for (int index = 0; index + 1 < eligible.size(); ++index) {
-                const GraphicalCornerEdge& upper = candidates.cornerEdges[eligible[index]];
-                const GraphicalCornerEdge& lower = candidates.cornerEdges[eligible[index + 1]];
-                const double upperRow = (upper.first.y() + upper.second.y()) / 2.0;
-                const double lowerRow = (lower.first.y() + lower.second.y()) / 2.0;
-                const double gap = std::abs(lowerRow - upperRow);
-                if (gap > largestGap) {
-                    secondLargestGap = largestGap;
-                    largestGap = gap;
-                    largestGapPosition = index;
+        QPainterPath candidateFittedLines;
+        for (int index : eligible) {
+            const GraphicalCornerEdge& edge = candidates.cornerEdges[index];
+            candidateFittedLines.moveTo(edge.first);
+            candidateFittedLines.lineTo(edge.second);
+        }
+        result.fitted = candidateFittedLines;
+        QPointF roiCenter;
+        for (const QPointF& corner : matchedRoi.corners) roiCenter += corner;
+        roiCenter /= matchedRoi.corners.size();
+        const double centerProjection = cornerNormalProjection(roiCenter, roiDirection);
+        double roiProjectionLow = std::numeric_limits<double>::infinity();
+        double roiProjectionHigh = -std::numeric_limits<double>::infinity();
+        for (const QPointF& corner : matchedRoi.corners) {
+            const double projection = cornerNormalProjection(corner, roiDirection);
+            roiProjectionLow = qMin(roiProjectionLow, projection);
+            roiProjectionHigh = qMax(roiProjectionHigh, projection);
+        }
+        struct LengthPairCandidate {
+            int first = -1; int second = -1;
+            double gap = -1; double overlap = -1; double boundaryError = -1;
+            bool extrapolated = false;
+        };
+        QVector<LengthPairCandidate> validPairs;
+        int rejectedParallel = 0, rejectedOverlap = 0, rejectedCenter = 0;
+        for (int firstPosition = 0; firstPosition < eligible.size(); ++firstPosition) {
+            for (int secondPosition = firstPosition + 1; secondPosition < eligible.size(); ++secondPosition) {
+                const int firstCandidate = eligible[firstPosition];
+                const int secondCandidate = eligible[secondPosition];
+                const double pairAngleDifference = undirectedAngleDifference(
+                    candidateAngles[firstCandidate], candidateAngles[secondCandidate]);
+                if (pairAngleDifference > 10.0) {
+                    ++rejectedParallel; continue;
                 }
-                else if (gap > secondLargestGap) {
-                    secondLargestGap = gap;
+                const GraphicalCornerEdge& firstEdge = candidates.cornerEdges[firstCandidate];
+                const GraphicalCornerEdge& secondEdge = candidates.cornerEdges[secondCandidate];
+                double overlapRatio = 0;
+                const double overlap = cornerProjectedOverlap(firstEdge, secondEdge, &overlapRatio);
+                if (!std::isfinite(overlap)) {
+                    ++rejectedOverlap; continue;
                 }
+                const bool hasObservedOverlap = overlap >= qMax(2.0, parameters.minLength * 0.10)
+                    && overlapRatio >= 0.10;
+                // Non-overlapping shoulder edges are valid for a parallel-line
+                // distance, but keep a tighter angle gate because that distance
+                // otherwise depends too strongly on where the lines are extended.
+                if (!hasObservedOverlap && pairAngleDifference > 1.0) {
+                    ++rejectedOverlap; continue;
+                }
+                QPointF measurementReference = roiCenter;
+                if (hasObservedOverlap && !cornerOverlapReferencePoint(firstEdge, secondEdge,
+                    roiCenter, measurementReference)) { ++rejectedOverlap; continue; }
+                GraphicalParallelLineMeasurement pairMeasurement;
+                const bool measured = hasObservedOverlap
+                    ? cornerParallelLineMeasurement(firstEdge, secondEdge,
+                        pairMeasurement, &measurementReference)
+                    : cornerSharedDirectionMeasurement(firstEdge, secondEdge,
+                        measurementReference, pairMeasurement);
+                if (!measured) continue;
+                const double firstProjection = cornerNormalProjection(
+                    pairMeasurement.firstPoint, roiDirection);
+                const double secondProjection = cornerNormalProjection(
+                    pairMeasurement.secondPoint, roiDirection);
+                if (!std::isfinite(centerProjection) || !std::isfinite(firstProjection)
+                    || !std::isfinite(secondProjection)
+                    || std::abs(firstProjection - centerProjection) < 2.0
+                    || std::abs(secondProjection - centerProjection) < 2.0
+                    || (firstProjection - centerProjection) * (secondProjection - centerProjection) >= 0) {
+                    ++rejectedCenter; continue;
+                }
+                const double gap = pairMeasurement.distance;
+                if (!std::isfinite(gap) || gap <= 0) continue;
+                const double pairLow = qMin(firstProjection, secondProjection);
+                const double pairHigh = qMax(firstProjection, secondProjection);
+                const double lowBoundaryError = std::abs(pairLow - roiProjectionLow);
+                const double highBoundaryError = std::abs(roiProjectionHigh - pairHigh);
+                const double roiNormalSpan = roiProjectionHigh - roiProjectionLow;
+                if (!std::isfinite(roiNormalSpan) || roiNormalSpan <= 0
+                    || lowBoundaryError > roiNormalSpan * 0.35
+                    || highBoundaryError > roiNormalSpan * 0.35) {
+                    ++rejectedCenter; continue;
+                }
+                const double boundaryError = lowBoundaryError + highBoundaryError;
+                if (!std::isfinite(boundaryError)) continue;
+                validPairs.append({ firstCandidate, secondCandidate, gap, overlap,
+                    boundaryError, !hasObservedOverlap });
             }
-            const double requiredLead = qMax(5.0, secondLargestGap * 0.5);
-            if (largestGapPosition < 0 || largestGap <= 0
-                || (secondLargestGap >= 0 && largestGap - secondLargestGap < requiredLead)) {
-                result.status = QStringLiteral("测量失败［单ROI目标边拟合］：检测到%1条横向候选，但相邻间距没有明显唯一的最大值（最大=%2 px，次大=%3 px）；请收紧ROI或调整检测参数\n%4")
-                    .arg(eligible.size()).arg(largestGap, 0, 'f', 3)
-                    .arg(secondLargestGap, 0, 'f', 3).arg(candidates.diagnostic);
+        }
+        std::sort(validPairs.begin(), validPairs.end(), [](const LengthPairCandidate& first,
+            const LengthPairCandidate& second) { return first.boundaryError < second.boundaryError; });
+        if (validPairs.isEmpty()) {
+            result.status = QStringLiteral("测量失败［单ROI目标边拟合］：%1条横向候选中没有同时满足平行度和ROI两侧边界位置的目标线对（平行排除%2、非重叠且角差超过1°排除%3、中心/边界位置排除%4）；青色为边缘、拟合直线已单独叠加显示，请据此收紧ROI\n%5")
+                .arg(eligible.size()).arg(rejectedParallel).arg(rejectedOverlap)
+                .arg(rejectedCenter).arg(candidates.diagnostic);
+            return result;
+        }
+        if (validPairs.size() > 1) {
+            const double requiredLead = qMax(3.0, validPairs[0].boundaryError * 0.10);
+            if (validPairs[1].boundaryError - validPairs[0].boundaryError < requiredLead) {
+                result.status = QStringLiteral("测量失败［单ROI目标边拟合］：找到%1对空间关系有效的目标线，但最贴近ROI两侧边界的线对不唯一（最佳边界误差=%2 px，次佳=%3 px）；请收紧ROI\n%4")
+                    .arg(validPairs.size()).arg(validPairs[0].boundaryError, 0, 'f', 3)
+                    .arg(validPairs[1].boundaryError, 0, 'f', 3).arg(candidates.diagnostic);
                 return result;
             }
-            firstIndex = eligible[largestGapPosition];
-            secondIndex = eligible[largestGapPosition + 1];
-            edgeSelection = QStringLiteral("横向候选%1条，采用相邻间距明显最大的一对（%2 px；次大%3 px）")
-                .arg(eligible.size()).arg(largestGap, 0, 'f', 3)
-                .arg(secondLargestGap, 0, 'f', 3);
         }
+        const int firstIndex = validPairs[0].first;
+        const int secondIndex = validPairs[0].second;
+        const QString edgeSelection = QStringLiteral("横向候选%1条、空间关系有效%2对，采用最贴近ROI两侧边界的一对（间距%3 px、重叠%4 px、边界误差%5 px%6）")
+            .arg(eligible.size()).arg(validPairs.size()).arg(validPairs[0].gap, 0, 'f', 3)
+            .arg(validPairs[0].overlap, 0, 'f', 3).arg(validPairs[0].boundaryError, 0, 'f', 3)
+            .arg(validPairs[0].extrapolated ? QStringLiteral("，无重叠肩线") : QString());
         const GraphicalCornerEdge& first = candidates.cornerEdges[firstIndex];
         const GraphicalCornerEdge& second = candidates.cornerEdges[secondIndex];
         const QPointF firstDelta = first.second - first.first;
@@ -849,31 +941,53 @@ LinearTrialResult runSingleRoiTemplateLengthTrial(const QImage& source,
         while (secondAngle < 0) secondAngle += 180.0;
         while (secondAngle >= 180.0) secondAngle -= 180.0;
         const double directionDifference = undirectedAngleDifference(firstAngle, secondAngle);
-        if (directionDifference > 10.0) {
+        if (directionDifference > 10.0
+            || (validPairs[0].extrapolated && directionDifference > 1.0)) {
             result.status = QStringLiteral("测量失败［长度计算］：两条自动拟合边不平行；边1=%1°，边2=%2°，方向差=%3°")
                 .arg(firstAngle, 0, 'f', 3).arg(secondAngle, 0, 'f', 3)
                 .arg(directionDifference, 0, 'f', 3);
             return result;
         }
-        const QPointF firstMidpoint = (first.first + first.second) / 2.0;
-        const QPointF secondMidpoint = (second.first + second.second) / 2.0;
-        result.distancePixels = std::abs(secondMidpoint.y() - firstMidpoint.y());
+        GraphicalParallelLineMeasurement lineMeasurement;
+        QPointF measurementReference = roiCenter;
+        double finalOverlapRatio = 0;
+        const double finalOverlap = cornerProjectedOverlap(first, second, &finalOverlapRatio);
+        const bool finalHasOverlap = std::isfinite(finalOverlap)
+            && finalOverlap >= qMax(2.0, parameters.minLength * 0.10) && finalOverlapRatio >= 0.10;
+        if (finalHasOverlap && !cornerOverlapReferencePoint(first, second,
+            roiCenter, measurementReference)) {
+            result.status = QStringLiteral("测量失败［长度计算］：无法确定两条拟合边的共同观测截面");
+            return result;
+        }
+        const bool finalMeasured = finalHasOverlap
+            ? cornerParallelLineMeasurement(first, second, lineMeasurement, &measurementReference)
+            : cornerSharedDirectionMeasurement(first, second, measurementReference, lineMeasurement);
+        if (!finalMeasured) {
+            result.status = QStringLiteral("测量失败［长度计算］：无法在共同截面计算两条拟合边的距离");
+            return result;
+        }
+        const double consistencyTolerance = qMax(1e-6, validPairs[0].gap * 1e-6);
+        if (std::abs(lineMeasurement.distance - validPairs[0].gap) > consistencyTolerance) {
+            result.status = QStringLiteral("测量失败［长度计算］：候选筛选与最终距离不一致");
+            return result;
+        }
+        result.distancePixels = lineMeasurement.distance;
         result.distanceMm = result.distancePixels * calibration;
         if (!std::isfinite(result.distancePixels) || result.distancePixels <= 0
             || !std::isfinite(result.distanceMm) || result.distanceMm <= 0) {
             result.distancePixels = -1;
             result.distanceMm = -1;
-            result.status = QStringLiteral("测量失败［长度计算］：两条拟合边的图像Y方向距离无效");
+            result.status = QStringLiteral("测量失败［长度计算］：两条拟合边在共同截面的距离无效");
             return result;
         }
         result.edges = first.contour;
         result.edges.addPath(second.contour);
         result.edges.addPath(matchedBoundary);
+        result.fitted = QPainterPath();
         result.fitted.moveTo(first.first); result.fitted.lineTo(first.second);
         result.fitted.moveTo(second.first); result.fitted.lineTo(second.second);
-        const double connectorX = (firstMidpoint.x() + secondMidpoint.x()) / 2.0;
-        result.fitted.moveTo(connectorX, firstMidpoint.y());
-        result.fitted.lineTo(connectorX, secondMidpoint.y());
+        result.fitted.moveTo(lineMeasurement.firstPoint);
+        result.fitted.lineTo(lineMeasurement.secondPoint);
         result.status = QStringLiteral("单ROI模板长度试测完成；模板分数=%1（最高分匹配）；%2；边1=%3°，边2=%4°，方向差=%5°；%6")
             .arg(result.templateScore, 0, 'f', 4).arg(edgeSelection).arg(firstAngle, 0, 'f', 3)
             .arg(secondAngle, 0, 'f', 3).arg(directionDifference, 0, 'f', 3)
@@ -2410,6 +2524,13 @@ void GraphicalProgramEditor::buildInterface()
     QAction* openProjectAction = toolBar->addAction(QStringLiteral("打开方案"));
     QAction* saveProjectAction = toolBar->addAction(QStringLiteral("保存方案"));
     saveProjectAction->setShortcut(QKeySequence::Save);
+    m_undoAction = toolBar->addAction(QStringLiteral("撤销"));
+    m_redoAction = toolBar->addAction(QStringLiteral("重做"));
+    m_undoAction->setObjectName(QStringLiteral("graphicalUndoAction"));
+    m_redoAction->setObjectName(QStringLiteral("graphicalRedoAction"));
+    m_undoAction->setShortcut(QKeySequence::Undo);
+    m_redoAction->setShortcut(QKeySequence::Redo);
+    toolBar->addSeparator();
     QAction* cameraAction = toolBar->addAction(QStringLiteral("相机图像"));
     m_frameSelector = new QComboBox(toolBar);
     m_frameSelector->setMinimumWidth(120);
@@ -2425,13 +2546,7 @@ void GraphicalProgramEditor::buildInterface()
     QAction* arcAction = toolBar->addAction(QStringLiteral("圆弧"));
     toolBar->addSeparator();
     QAction* fitAction = toolBar->addAction(QStringLiteral("适合窗口"));
-    QAction* undoAction = toolBar->addAction(QStringLiteral("撤销"));
-    QAction* redoAction = toolBar->addAction(QStringLiteral("重做"));
     QAction* deleteAction = toolBar->addAction(QStringLiteral("删除"));
-    m_undoAction = undoAction;
-    m_redoAction = redoAction;
-    m_undoAction->setShortcut(QKeySequence::Undo);
-    m_redoAction->setShortcut(QKeySequence::Redo);
 
     //图标资源已注册在 AxisMeasurement.qrc（:/AxisMeasurement/config/icons/）
     const struct { QAction* action; const char* icon; const char* key; const char* tip; } toolbarInfo[] = {
@@ -2446,8 +2561,8 @@ void GraphicalProgramEditor::buildInterface()
         { circleAction, "circle", "C", "圆 (C)：拖动画圆，下拉可选绘制模式" },
         { arcAction, "arc", "A", "圆弧 (A)：依次点击起点、弧上点、终点" },
         { fitAction, "fit", "F", "适合窗口 (F)：图像缩放到充满画布" },
-        { undoAction, "undo", nullptr, "撤销" },
-        { redoAction, "redo", nullptr, "重做" },
+        { m_undoAction, "undo", nullptr, "撤销上一步编辑（Ctrl+Z）" },
+        { m_redoAction, "redo", nullptr, "重做上一步编辑（Ctrl+Y）" },
         { deleteAction, "delete", nullptr, "删除选中图形" },
     };
     for (const auto& info : toolbarInfo) {
@@ -2732,7 +2847,8 @@ void GraphicalProgramEditor::buildInterface()
     connect(m_measurementType, &QComboBox::currentTextChanged, this, [this](const QString& type) {
         m_holeUniformCount->setEnabled(type == QStringLiteral("孔径"));
         m_holeCalibration->setEnabled(type == QStringLiteral("孔径"));
-        m_lengthCalibration->setEnabled(type == QStringLiteral("长度"));
+        m_lengthCalibration->setEnabled(type == QStringLiteral("长度")
+            || type == QStringLiteral("圆弧半径"));
         m_lengthMode->setEnabled(type == QStringLiteral("长度"));
         const bool axialScan = type == QStringLiteral("圆柱度") || type == QStringLiteral("跳动");
         m_lowerAxialOffset->setEnabled(axialScan);
@@ -2775,6 +2891,7 @@ void GraphicalProgramEditor::buildInterface()
         const bool angle = type == QStringLiteral("角度");
         const bool hole = type == QStringLiteral("孔径");
         const bool length = type == QStringLiteral("长度");
+        const bool telecentricCalibration = length || type == QStringLiteral("圆弧半径");
         const bool axialScan = type == QStringLiteral("圆柱度") || type == QStringLiteral("跳动");
         const bool roundout = type == QStringLiteral("跳动");
         setFormFieldVisible(m_angleInputMode, angle);
@@ -2782,7 +2899,7 @@ void GraphicalProgramEditor::buildInterface()
         setFormFieldVisible(m_angleResultMode, angle);
         setFormFieldVisible(m_holeUniformCount, hole);
         setFormFieldVisible(m_holeCalibration, hole);
-        setFormFieldVisible(m_lengthCalibration, length);
+        setFormFieldVisible(m_lengthCalibration, telecentricCalibration);
         setFormFieldVisible(m_lengthMode, length);
         setFormFieldVisible(m_lowerAxialOffset, axialScan);
         setFormFieldVisible(m_upperAxialOffset, axialScan);

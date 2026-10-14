@@ -164,7 +164,12 @@ void GraphicalCanvas::setLivePreviewImage(const QImage& image)
     if (image.isNull()) return;
 
     if (!m_liveTrackingInitialized) initializeLiveTracking();
-    updateLiveTracking(image);
+    if (!m_liveTrackingTimer.isValid()) m_liveTrackingTimer.start();
+    const qint64 now = m_liveTrackingTimer.elapsed();
+    if (m_lastLiveTrackingMs < 0 || now - m_lastLiveTrackingMs >= 80) {
+        updateLiveTracking(image);
+        m_lastLiveTrackingMs = now;
+    }
 
     const QPixmap pixmap = QPixmap::fromImage(image);
     const bool geometryChanged = !m_livePreviewItem
@@ -231,11 +236,14 @@ void GraphicalCanvas::resetLiveTracking()
 {
     m_liveTrackingFeatures.clear();
     m_liveTrackingTemplate = QImage();
+    m_liveTrackingTemplateGray = QImage();
     m_liveTrackingTemplateRect = QRect();
     m_liveTrackingOffset = QPointF();
     m_liveTrackingScore = 0.0;
     m_liveTrackingValid = false;
     m_liveTrackingInitialized = false;
+    m_liveTrackingTimer.invalidate();
+    m_lastLiveTrackingMs = -1;
 }
 
 void GraphicalCanvas::initializeLiveTracking()
@@ -245,45 +253,36 @@ void GraphicalCanvas::initializeLiveTracking()
     m_liveTrackingFeatures = featureSnapshots();
     if (m_sourceImage.isNull() || m_liveTrackingFeatures.isEmpty()) return;
 
-    QRectF featureBounds;
-    bool hasFeatureBounds = false;
+    const QSize imageSize = m_sourceImage.size();
+    const int minimumSide = qMin(32, qMin(imageSize.width(), imageSize.height()));
+    const QSize maximumSize(qMin(384, imageSize.width()), qMin(384, imageSize.height()));
+    QRect bestRect;
+    double bestDeviation = 0.0;
     for (const FeatureSnapshot& snapshot : m_liveTrackingFeatures) {
         const QRectF bounds = snapshotBounds(snapshot);
-        featureBounds = hasFeatureBounds ? featureBounds.united(bounds) : bounds;
-        hasFeatureBounds = true;
-    }
-    if (!hasFeatureBounds || !qIsFinite(featureBounds.center().x())
-        || !qIsFinite(featureBounds.center().y())) return;
-
-    const QSize imageSize = m_sourceImage.size();
-    const int margin = qMax(16, qRound(qMax(featureBounds.width(), featureBounds.height()) * 0.2));
-    QRect trackingRect = featureBounds.toAlignedRect().adjusted(-margin, -margin, margin, margin)
-        .intersected(QRect(QPoint(), imageSize));
-    const QSize maximumSize(qMax(32, qRound(imageSize.width() * 0.65)),
-        qMax(32, qRound(imageSize.height() * 0.65)));
-    if (trackingRect.width() > maximumSize.width()
-        || trackingRect.height() > maximumSize.height()) {
-        const QPoint center = trackingRect.center();
-        trackingRect = QRect(center.x() - maximumSize.width() / 2,
-            center.y() - maximumSize.height() / 2,
-            qMin(trackingRect.width(), maximumSize.width()),
-            qMin(trackingRect.height(), maximumSize.height()))
+        if (!qIsFinite(bounds.center().x()) || !qIsFinite(bounds.center().y())) continue;
+        const int margin = qMax(16, qRound(qMax(bounds.width(), bounds.height()) * 0.2));
+        QRect candidate = bounds.toAlignedRect().adjusted(-margin, -margin, margin, margin)
             .intersected(QRect(QPoint(), imageSize));
+        QSize targetSize(qBound(minimumSide, candidate.width(), maximumSize.width()),
+            qBound(minimumSide, candidate.height(), maximumSize.height()));
+        const QPoint center = candidate.center();
+        candidate = QRect(center.x() - targetSize.width() / 2,
+            center.y() - targetSize.height() / 2, targetSize.width(), targetSize.height())
+            .intersected(QRect(QPoint(), imageSize));
+        if (candidate.width() < 8 || candidate.height() < 8) continue;
+        const cv::Mat reference = grayscaleCopy(m_sourceImage.copy(candidate));
+        cv::Scalar mean, deviation;
+        cv::meanStdDev(reference, mean, deviation);
+        if (deviation[0] > bestDeviation) {
+            bestDeviation = deviation[0];
+            bestRect = candidate;
+        }
     }
-    const int minimumSide = qMin(32, qMin(imageSize.width(), imageSize.height()));
-    if (trackingRect.width() < minimumSide || trackingRect.height() < minimumSide) {
-        const QPoint center = trackingRect.center();
-        trackingRect = QRect(center.x() - minimumSide / 2, center.y() - minimumSide / 2,
-            minimumSide, minimumSide).intersected(QRect(QPoint(), imageSize));
-    }
-    if (trackingRect.width() < 8 || trackingRect.height() < 8) return;
-
-    const cv::Mat reference = grayscaleCopy(m_sourceImage.copy(trackingRect));
-    cv::Scalar mean, deviation;
-    cv::meanStdDev(reference, mean, deviation);
-    if (deviation[0] < 2.0) return;
-    m_liveTrackingTemplateRect = trackingRect;
-    m_liveTrackingTemplate = m_sourceImage.copy(trackingRect);
+    if (bestRect.isEmpty() || bestDeviation < 2.0) return;
+    m_liveTrackingTemplateRect = bestRect;
+    m_liveTrackingTemplate = m_sourceImage.copy(bestRect);
+    m_liveTrackingTemplateGray = m_liveTrackingTemplate.convertToFormat(QImage::Format_Grayscale8);
 }
 
 void GraphicalCanvas::updateLiveTracking(const QImage& image)
@@ -291,16 +290,30 @@ void GraphicalCanvas::updateLiveTracking(const QImage& image)
     const bool wasValid = m_liveTrackingValid;
     m_liveTrackingValid = false;
     m_liveTrackingScore = 0.0;
-    if (m_liveTrackingTemplate.isNull() || image.size() != m_sourceImage.size()) {
+    if (m_liveTrackingTemplateGray.isNull() || image.size() != m_sourceImage.size()) {
         if (wasValid) emit canvasMessage(QStringLiteral("实时特征定位已丢失，跟踪框已隐藏。"));
         return;
     }
 
     const cv::Mat frame = grayscaleCopy(image);
-    const cv::Mat reference = grayscaleCopy(m_liveTrackingTemplate);
+    const cv::Mat reference(m_liveTrackingTemplateGray.height(), m_liveTrackingTemplateGray.width(),
+        CV_8UC1, const_cast<uchar*>(m_liveTrackingTemplateGray.constBits()),
+        m_liveTrackingTemplateGray.bytesPerLine());
     if (frame.cols < reference.cols || frame.rows < reference.rows) return;
+    QRect searchRect(0, 0, frame.cols, frame.rows);
+    if (wasValid) {
+        const QPoint expected(qRound(m_liveTrackingTemplateRect.x() + m_liveTrackingOffset.x()),
+            qRound(m_liveTrackingTemplateRect.y() + m_liveTrackingOffset.y()));
+        const int margin = qMax(64, qMax(reference.cols, reference.rows) / 2);
+        searchRect = QRect(expected.x() - margin, expected.y() - margin,
+            reference.cols + margin * 2, reference.rows + margin * 2)
+            .intersected(QRect(0, 0, frame.cols, frame.rows));
+        if (searchRect.width() < reference.cols || searchRect.height() < reference.rows)
+            searchRect = QRect(0, 0, frame.cols, frame.rows);
+    }
+    const cv::Rect cvSearch(searchRect.x(), searchRect.y(), searchRect.width(), searchRect.height());
     cv::Mat result;
-    cv::matchTemplate(frame, reference, result, cv::TM_CCOEFF_NORMED);
+    cv::matchTemplate(frame(cvSearch), reference, result, cv::TM_CCOEFF_NORMED);
     double bestScore = 0.0;
     cv::Point bestLocation;
     cv::minMaxLoc(result, nullptr, &bestScore, nullptr, &bestLocation);
@@ -310,8 +323,8 @@ void GraphicalCanvas::updateLiveTracking(const QImage& image)
         return;
     }
 
-    m_liveTrackingOffset = QPointF(bestLocation.x - m_liveTrackingTemplateRect.x(),
-        bestLocation.y - m_liveTrackingTemplateRect.y());
+    m_liveTrackingOffset = QPointF(searchRect.x() + bestLocation.x - m_liveTrackingTemplateRect.x(),
+        searchRect.y() + bestLocation.y - m_liveTrackingTemplateRect.y());
     m_liveTrackingValid = true;
     if (!wasValid)
         emit canvasMessage(QStringLiteral("实时特征定位已锁定（置信度 %1）。")
