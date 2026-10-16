@@ -16,7 +16,7 @@
    </font>
   </property>
   <property name="windowTitle">
-   <string>AxisMeasurement</string>
+   <string>复杂轴类测量软件</string>
   </property>
   <property name="windowIcon">
    <iconset theme="battery">
