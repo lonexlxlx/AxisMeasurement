@@ -1401,7 +1401,7 @@ static QString cameraCaptureCachePath(int camera, QString& error)
 GraphicalProgramEditor::GraphicalProgramEditor(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("图形化二次开发"));
+    setWindowTitle(QStringLiteral("复杂轴类测量软件"));
     setObjectName(QStringLiteral("graphicalProgramEditor"));
     resize(1500, 900);
     setWindowFlag(Qt::Window, true);
